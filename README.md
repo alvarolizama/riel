@@ -21,7 +21,6 @@ structure, evaluation — without touching weights or internals.
 | `riel-ledger` | **State** — Goal/Core/Verified/Open/Next, re-read at every seam; recovery via checkpoints; local-first, no remote dependency | the track level | ✅ skill v1.1 + specs (Dran patches pending) |
 | `riel-contract` | **Structure** — mermaid as contract, verification funnel, BRAID/FlowBench evidence | the rails themselves | ✅ skill v3.0 (migrated from mermaid-skill-authoring) |
 | `riel-briefs` | **Delegation briefs** — curated context, verb-graph, gates, anchored opening | the signage | ✅ skill v3.0 (migrated from agent-instruction-authoring) |
-| `riel-measure` | **Evidence** — measure trajectories + score/time/token | verifying the rail works | pending (phase 4) |
 
 Each component is **independent and optional**: a short task uses zero;
 a long loop may use all four. Inherited philosophy: "use only the machinery
@@ -101,7 +100,8 @@ Distilled in Dran (`personal` context):
   (Minimal schema 5/5; with injections 0/9).
 - **Hypothesis:** that the anchored trajectory improves scores — independent
   replication with 95% CI [−2.6, +9.3]; one A/B found no gain. Riel does not
-  promise better results without measuring: that is `riel-measure`.
+  promise better results; task verification lives in the done-check of
+  `riel-ledger`.
 
 ## Dran project
 

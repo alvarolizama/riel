@@ -7,7 +7,7 @@ license: MIT
 metadata:
   hermes:
     tags: [riel, agent-communication, deepseek, framework]
-    related_skills: [riel-ledger, riel-contract, riel-briefs, riel-measure]
+    related_skills: [riel-ledger, riel-contract, riel-briefs]
 ---
 
 # riel-protocol — Communication protocol (Riel, phase 1)
@@ -106,7 +106,7 @@ In `delegate_task` briefs, apply the same conditions in `goal` + `context`:
 - **Hypothesis, not measured:** that the anchored trajectory improves
   *scores* — independent replication gives 95% CI [−2.6, +9.3]; one
   independent A/B (issue #10) found no measurable gain. Do not claim
-  improvements without measuring (that is `riel-measure`, phase 4).
+  improvements; task verification lives in the done-check of `riel-ledger`.
 
 ## Evidence (summary)
 
