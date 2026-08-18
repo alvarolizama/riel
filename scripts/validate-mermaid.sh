@@ -27,11 +27,17 @@ trap 'rm -rf "$TMP"' EXIT
 fail=0
 total=0
 for f in "${files[@]}"; do
-  [ -f "$ROOT/$f" ] || { echo "SKIP (missing): $f"; continue; }
+  # resolve: absolute paths pass through, relative resolve under ROOT
+  case "$f" in
+    /*) path="$f" ;;
+    *)  path="$ROOT/$f" ;;
+  esac
+  [ -f "$path" ] || { echo "SKIP (missing): $f"; continue; }
+  # clean per-file so stale blocks from a previous file are never re-validated
+  rm -f "$TMP"/*.mmd "$TMP/out.svg" 2>/dev/null
   # extract mermaid blocks with python (regex, re.DOTALL) — awk can't do blocks
-  "$ROOT/scripts/extract-mermaid.py" "$ROOT/$f" "$TMP" 2>/dev/null || {
+  "$ROOT/scripts/extract-mermaid.py" "$path" "$TMP" 2>/dev/null || {
     echo "FAIL (extract): $f"; fail=$((fail+1)); continue; }
-  n=$(ls "$TMP" | wc -l | tr -d ' ')
   for mmd in "$TMP"/*.mmd; do
     [ -e "$mmd" ] || continue
     total=$((total+1))
