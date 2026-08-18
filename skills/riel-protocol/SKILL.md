@@ -1,23 +1,23 @@
 ---
-name: riel-comms
+name: riel-protocol
 description: "Use when opening or maintaining a conversation with an LLM (DeepSeek or other) — functional grammar, persona, minimal-surface protocol. Never rewrites the user's request."
-version: 1.1.0
+version: 1.2.0
 author: Álvaro Lizama
 license: MIT
 metadata:
   hermes:
     tags: [riel, agent-communication, deepseek, framework]
-    related_skills: [agent-instruction-authoring, mermaid-skill-authoring]
+    related_skills: []
 ---
 
-# riel-comms — Communication protocol (Riel, phase 1)
+# riel-protocol — Communication protocol (Riel, phase 1)
 
 **Riel** is a steering framework: the capability already exists in the model;
 Riel prevents it from being lost between having it and delivering it. This
 component steers **the trajectory**: how the agent opens and maintains a
 conversation with an LLM.
 
-**Protocol mode:** the user's request reaches the model **raw**. riel-comms
+**Protocol mode:** the user's request reaches the model **raw**. riel-protocol
 does NOT rephrase or rewrite requests — it changes how the agent **enters**
 the conversation and how it sustains it.
 
@@ -25,13 +25,18 @@ the conversation and how it sustains it.
 
 ```mermaid
 flowchart TD
-  Q{What do you need?} -->|"Open/maintain an LLM\nconversation (protocol)"| SELF["THIS SKILL\nriel-comms"]
-  Q -->|"Reformulate a brief\nfor delegation"| AI[agent-instruction-authoring]
-  Q -->|"Mermaid structure\nof the task"| MS[mermaid-skill-authoring]
-  Q -->|"Verified state\n(ledger)"| RL["riel-ledger\n(phase 2, pending)"]
+  Q{What do you need?} -->|"Open/maintain an LLM\nconversation (protocol)"| SELF["THIS SKILL\nriel-protocol"]
+  Q -->|"Reformulate a brief\nfor delegation"| RB["riel-briefs\n(pending migration)"]
+  Q -->|"Mermaid structure\nof the task"| RC["riel-contract\n(pending migration)"]
+  Q -->|"Verified state\n(ledger)"| RL["riel-ledger\n(specs ready, pending)"]
 
   style SELF fill:#d1fae5,stroke:#059669
 ```
+
+All hand-offs stay inside the Riel framework. `riel-briefs` and
+`riel-contract` are the pending migrations of `agent-instruction-authoring`
+and `mermaid-skill-authoring` — until they exist, those branches fall back
+to the current external skills of the same purpose.
 
 ## Parse contract
 

@@ -17,7 +17,7 @@ structure, evaluation — without touching weights or internals.
 
 | Component | What it steers | Metaphor | Status |
 |---|---|---|---|
-| `riel-comms` | **Trajectory** — functional grammar, persona, minimal surface | the switch: the first turn picks the track | ✅ skill v1 |
+| `riel-protocol` | **Trajectory** — functional grammar, persona, minimal surface | the switch: the first turn picks the track | ✅ skill v1 |
 | `riel-ledger` | **State** — Goal/Core/Verified/Open/Next, re-read at every seam | the track level | 📐 specs ready (`specs/`), patches pending |
 | `riel-contract` | **Structure** — mermaid as contract, verification funnel | the rails themselves | pending (phase 3) |
 | `riel-measure` | **Evidence** — measure trajectories + score/time/token | verifying the rail works | pending (phase 4) |
@@ -39,12 +39,12 @@ the first ~57 characters of the description are the actual trigger.
 
 **Level 2 — mandatory (soul).** One line in the soul (identity system
 prompt): *"In every conversation or brief for an LLM, apply the protocol of
-skill `riel-comms`."* The soul references the skill, never embeds its
+skill `riel-protocol`."* The soul references the skill, never embeds its
 content (it would desync and cost tokens every turn).
 
 **Level 3 — subagents (brief).** `delegate_task` subagents have access to
 the same skills; the parent's brief includes *"load and follow skill
-riel-comms"* and the subagent loads it itself.
+riel-protocol"* and the subagent loads it itself.
 
 General rule: the skill body enters context **only when needed**; the index
 is what lives always.
@@ -53,7 +53,7 @@ is what lives always.
 
 ```bash
 # from the repo
-cp -R ~/Workspace/Repos/alvarolizama/riel/skills/riel-comms ~/.hermes/skills/
+cp -R ~/Workspace/Repos/alvarolizama/riel/skills/riel-protocol ~/.hermes/skills/
 
 # update after repo changes
 cp -R ~/Workspace/Repos/alvarolizama/riel/skills/* ~/.hermes/skills/
@@ -68,7 +68,7 @@ the system listing).
 riel/
 ├── README.md          ← this file
 ├── skills/            ← installable skills (cp to ~/.hermes/skills/)
-│   └── riel-comms/
+│   └── riel-protocol/
 │       └── SKILL.md
 ├── specs/             ← design contracts (source of the patches)
 │   ├── spec-ledger-format.md    ← .riel/ledger.md format + rules
