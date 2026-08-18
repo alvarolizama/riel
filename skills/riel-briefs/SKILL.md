@@ -8,7 +8,7 @@ platforms: [macos, linux]
 metadata:
   hermes:
     tags: [riel, agents, instructions, briefs, mermaid, delegation]
-    related_skills: [riel-protocol, riel-contract, task-definition-pipeline, delegated-implementation-planning]
+    related_skills: [riel-protocol, riel-contract, riel-delegate]
 ---
 
 # riel-briefs — Dispatch briefs for agents (Riel)
@@ -302,7 +302,4 @@ When dispatching, `goal` stays short and `context` carries the packet:
 
 - Verb-graph syntax conventions (canonical): `riel-contract`
 - Opening conditions and functional grammar: `riel-protocol`
-- Specs this skill consumes: `task-definition-pipeline`
-- Multi-phase plans with parallel subagents:
-  `delegated-implementation-planning`
-- Tests written by a separate agent: `parallel-subagent-test-authoring`
+- Delegation end-to-end (plan + dispatch + parent verification): `riel-delegate`
