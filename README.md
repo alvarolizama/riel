@@ -1,99 +1,105 @@
-# Riel — steering layer para harness/LLM
+# Riel — steering layer for harness/LLM
 
-Framework propio de dirección de agentes. **Riel no crea capacidad en el
-modelo: evita que se pierda.** La tesis viene de la investigación sobre
-*capability-realization loss*: la pérdida entre que un modelo tiene una
-capacidad y que la entrega de forma estable (trayectoria inestable, estado
-que deriva, verificación ausente).
+A homegrown agent-steering framework. **Riel does not create capability in the
+model: it prevents capability from being lost.** The thesis comes from
+*capability-realization loss* research: the gap between a model having a
+capability and delivering it reliably (unstable trajectory, drifting state,
+missing verification).
 
-El nombre: el tren ya se mueve solo; el riel solo evita que descarrile.
+The name: the train already moves on its own; the rail just keeps it from
+derailing.
 
-Aplica a cualquier harness/LLM (DeepSeek u otro) operando sobre las
-superficies que el harness expone — system prompt / primer turno, contexto
-entre turns, estructura de la tarea, evaluación — sin tocar pesos ni internals.
+Applies to any harness/LLM (DeepSeek or other) by operating on the surfaces
+the harness exposes — system prompt / first turn, between-turn context, task
+structure, evaluation — without touching weights or internals.
 
-## Componentes
+## Components
 
-| Componente | Qué dirige | Metáfora | Estado |
+| Component | What it steers | Metaphor | Status |
 |---|---|---|---|
-| `riel-comms` | **Trayectoria** — gramática funcional, persona, superficie mínima | el desvío: el primer turno elige la vía | ✅ skill v1 |
-| `riel-ledger` | **Estado** — Goal/Core/Verified/Open/Next, re-leer en cada seam | el nivel de la vía | pendiente (fase 2) |
-| `riel-contract` | **Estructura** — mermaid como contrato, verification funnel | los rieles mismos | pendiente (fase 3) |
-| `riel-measure` | **Evidencia** — medir trayectorias + score/tiempo/token | verificar que el riel funciona | pendiente (fase 4) |
+| `riel-comms` | **Trajectory** — functional grammar, persona, minimal surface | the switch: the first turn picks the track | ✅ skill v1 |
+| `riel-ledger` | **State** — Goal/Core/Verified/Open/Next, re-read at every seam | the track level | 📐 specs ready (`specs/`), patches pending |
+| `riel-contract` | **Structure** — mermaid as contract, verification funnel | the rails themselves | pending (phase 3) |
+| `riel-measure` | **Evidence** — measure trajectories + score/time/token | verifying the rail works | pending (phase 4) |
 
-Cada componente es **independiente y opcional**: una tarea corta usa cero;
-un loop largo puede usar los cuatro. Filosofía heredada: "usa solo la
-maquinaria que la tarea se gana".
+Each component is **independent and optional**: a short task uses zero;
+a long loop may use all four. Inherited philosophy: "use only the machinery
+the task earns".
 
-## Cómo se cargan los skills (mecánica Hermes)
+## How skills get loaded (Hermes mechanics)
 
-Los skills NO se inyectan completos en cada conversación — solo su
-nombre+descripción vive en el índice del system prompt de cada turno. Hay
-tres niveles de activación:
+Skills are NOT injected whole into every conversation — only their
+name+description lives in each turn's system-prompt index. There are three
+activation levels:
 
-**Nivel 1 — disponible (automático).** Skill instalado en
-`~/.hermes/skills/` → su descripción aparece en el índice de cada turno →
-el agente lo carga (`skill_view`) cuando la tarea hace match con el
-trigger de la descripción. Por eso los primeros ~57 caracteres de la
-descripción son el trigger real.
+**Level 1 — available (automatic).** Skill installed in `~/.hermes/skills/`
+→ its description appears in each turn's index → the agent loads it
+(`skill_view`) when the task matches the description trigger. That is why
+the first ~57 characters of the description are the actual trigger.
 
-**Nivel 2 — obligatorio (soul).** Una línea en el soul (system prompt de
-identidad): *"En toda conversación o brief para un LLM, aplicar el
-protocolo del skill `riel-comms`."* El soul referencia al skill, nunca
-incrusta su contenido (se desincronizaría y pesaría en cada turno).
+**Level 2 — mandatory (soul).** One line in the soul (identity system
+prompt): *"In every conversation or brief for an LLM, apply the protocol of
+skill `riel-comms`."* The soul references the skill, never embeds its
+content (it would desync and cost tokens every turn).
 
-**Nivel 3 — subagentes (brief).** Los subagentes de `delegate_task` tienen
-acceso a los mismos skills; el brief del padre incluye *"carga y sigue el
-skill riel-comms"* y el subagente lo carga él.
+**Level 3 — subagents (brief).** `delegate_task` subagents have access to
+the same skills; the parent's brief includes *"load and follow skill
+riel-comms"* and the subagent loads it itself.
 
-Regla general: el cuerpo del skill entra al contexto **solo cuando se
-necesita**; el índice es lo que vive siempre.
+General rule: the skill body enters context **only when needed**; the index
+is what lives always.
 
-## Instalación
+## Installation
 
 ```bash
-# desde el repo
+# from the repo
 cp -R ~/Workspace/Repos/alvarolizama/riel/skills/riel-comms ~/.hermes/skills/
 
-# actualizar tras cambios en el repo
+# update after repo changes
 cp -R ~/Workspace/Repos/alvarolizama/riel/skills/* ~/.hermes/skills/
 ```
 
-Verificar: el skill debe aparecer en el índice de skills de la sesión
-(`skills_list` o el listado del sistema).
+Verify: the skill must appear in the session's skill index (`skills_list` or
+the system listing).
 
-## Estructura
+## Structure
 
 ```
 riel/
-├── README.md          ← este archivo
-├── skills/            ← skills instalables (cp a ~/.hermes/skills/)
+├── README.md          ← this file
+├── skills/            ← installable skills (cp to ~/.hermes/skills/)
 │   └── riel-comms/
 │       └── SKILL.md
-└── references/        ← evidencia destilada (apuntes locales)
+├── specs/             ← design contracts (source of the patches)
+│   ├── spec-ledger-format.md    ← .riel/ledger.md format + rules
+│   ├── spec-todo-contract.md    ← what the todo body must carry → todo-flow patch
+│   ├── spec-pull-push.md        ← local↔remote protocol → coder-flow patch
+│   ├── spec-phase-advance.md    ← per-phase ledger: ledger+contract fusion
+│   └── spec-adapters.md         ← system-agnostic contract (Dran first)
+└── references/        ← distilled evidence (local notes)
 ```
 
-## Evidencia de base
+## Evidence base
 
-Destilada en Dran (contexto `personal`):
+Distilled in Dran (`personal` context):
 
-- `j-space-global-workspace-papers` — 24 fuentes verificadas (Anthropic
-  global workspace, razonamiento ilegible, metacognición)
-- `deepseek-v4-interfaz-y-trayectoria-we-need` — las 3 palancas del
-  anclaje de trayectoria en DeepSeek
+- `j-space-global-workspace-papers` — 24 verified sources (Anthropic global
+  workspace, illegible reasoning, metacognition)
+- `deepseek-v4-interfaz-y-trayectoria-we-need` — the 3 anchoring levers for
+  trajectory in DeepSeek
 - `graph-engineering-instrucciones-agentes` — BRAID/FlowBench/mermaid
 - `ledger-pattern-estado-de-agentes` — Goal/Core/Verified/Open/Next
-- `capability-realization-loss` — el marco del problema
-- `harness-analysis-papers-en-extension-points` — mapa paper → harness
+- `capability-realization-loss` — the problem frame
+- `harness-analysis-papers-en-extension-points` — paper → harness map
 
-## Honestidad sobre la evidencia
+## Honesty about evidence
 
-- **Medido:** las condiciones del primer turno anclan la trayectoria en
-  DeepSeek (schema Minimal 5/5; con inyecciones 0/9).
-- **Hipótesis:** que la trayectoria anclada mejore scores — replicación
-  independiente con IC 95% [−2.6, +9.3]; un A/B no encontró ganancia.
-  Riel no promete mejores resultados sin medir: eso lo hace `riel-measure`.
+- **Measured:** first-turn conditions anchor the trajectory on DeepSeek
+  (Minimal schema 5/5; with injections 0/9).
+- **Hypothesis:** that the anchored trajectory improves scores — independent
+  replication with 95% CI [−2.6, +9.3]; one A/B found no gain. Riel does not
+  promise better results without measuring: that is `riel-measure`.
 
-## Proyecto en Dran
+## Dran project
 
-Página `riel` (tipo project, contexto `personal`) — visión, fases, estado.
+Page `riel` (project type, `personal` context) — vision, phases, status.
