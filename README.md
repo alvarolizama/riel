@@ -1,5 +1,7 @@
 # Riel — steering layer for harness/LLM
 
+![Riel framework](assets/riel-framework.png)
+
 A homegrown agent-steering framework. **Riel does not create capability in the
 model: it prevents capability from being lost.** The thesis comes from
 *capability-realization loss* research: the gap between a model having a
@@ -11,20 +13,104 @@ derailing.
 
 Applies to any harness/LLM (DeepSeek or other) by operating on the surfaces
 the harness exposes — system prompt / first turn, between-turn context, task
-structure, evaluation — without touching weights or internals.
+structure — without touching weights or internals.
+
+## How it works
+
+```mermaid
+flowchart LR
+  TASK["Task\n(Dran todo / Hub / chat)"] --> P["riel-protocol\nanchored first turn\ngrammar · persona ·\nminimal surface"]
+  B["riel-briefs\ndelegation briefs"] -.->|"when delegating"| P
+  P --> LLM["LLM / harness\n(DeepSeek or other)"]
+  C["riel-contract\nmermaid DAG as contract\nverb-graph · verification funnel"] -.->|"task structure"| LLM
+  LLM <-->|"re-read at every seam"| LEDGER["riel-ledger\n.riel/ledger.md\nGoal · Core · Verified\nOpen · Next"]
+  LEDGER --> DC["done-check\n✓NN ↔ Goal, line by line"]
+  DC -->|"optional writeback"| REMOTE["remote\n## Verification\n## Pending"]
+```
+
+Every component operates on a different control surface:
+
+```mermaid
+flowchart TD
+  subgraph S1["Surface 1 — first turn"]
+    A["riel-protocol: grammar, persona,\nminimal surface, zero injections"]
+  end
+  subgraph S2["Surface 2 — task structure"]
+    B["riel-contract: mermaid DAG,\n6 verbs, verification funnel"]
+    C["riel-briefs: curated context,\ngates, anchored opening"]
+  end
+  subgraph S3["Surface 3 — between-turn state"]
+    D["riel-ledger: Goal/Core/Verified/\nOpen/Next + recovery checkpoints"]
+  end
+  S1 --> M["Model delivers\nwithout losing capability"]
+  S2 --> M
+  S3 --> M
+```
 
 ## Components
 
 | Component | What it steers | Metaphor | Status |
 |---|---|---|---|
 | `riel-protocol` | **Trajectory** — functional grammar, persona, minimal surface | the switch: the first turn picks the track | ✅ skill v1.2 |
-| `riel-ledger` | **State** — Goal/Core/Verified/Open/Next, re-read at every seam; recovery via checkpoints; local-first, no remote dependency | the track level | ✅ skill v1.1 + specs (Dran patches pending) |
-| `riel-contract` | **Structure** — mermaid as contract, verification funnel, BRAID/FlowBench evidence | the rails themselves | ✅ skill v3.0 (migrated from mermaid-skill-authoring) |
-| `riel-briefs` | **Delegation briefs** — curated context, verb-graph, gates, anchored opening | the signage | ✅ skill v3.0 (migrated from agent-instruction-authoring) |
+| `riel-ledger` | **State** — Goal/Core/Verified/Open/Next, re-read at every seam; recovery via checkpoints; local-first, no remote dependency | the track level | ✅ skill v1.1 + specs |
+| `riel-contract` | **Structure** — mermaid as contract, verification funnel, BRAID/FlowBench evidence | the rails themselves | ✅ skill v3.0 |
+| `riel-briefs` | **Delegation briefs** — curated context, verb-graph, gates, anchored opening | the signage | ✅ skill v3.0 |
 
 Each component is **independent and optional**: a short task uses zero;
 a long loop may use all four. Inherited philosophy: "use only the machinery
 the task earns".
+
+## The ledger cycle (heart of the framework)
+
+```mermaid
+flowchart TD
+  OPEN["Open .riel/ledger.md\nGoal + Core + Next"] --> W[Work]
+  W --> S{"seam: phase change,\ntool call, file change,\nlong gap"}
+  S --> R["Re-read the ledger\n(the whole mechanism)"]
+  R --> ST{"stalled? same Next\n3 seams?"}
+  ST -->|yes| FIX["Diagnose or\nchange course"]
+  FIX --> W
+  ST -->|no| DEG{"degraded?\ncascading errors"}
+  DEG -->|yes| REC["Recovery: last ✓NN =\ncheckpoint → fresh plan,\nre-enter at step 1"]
+  REC --> W
+  DEG -->|no| V{"verified?"}
+  V -->|yes| APP["Append ✓NN\nverifier + coverage"]
+  APP --> W
+  V -->|no| W
+  W --> END{"all phases done"}
+  END --> DC["done-check: every Goal\nline maps to a ✓NN"]
+  DC --> DONE([Done])
+```
+
+## System prompt initialization
+
+To make the framework mandatory, paste this block into `soul.md` or an
+injected system prompt (full version with rationale: `system-prompt.md`):
+
+```
+## Riel — steering framework
+
+When operating on any LLM conversation or task, follow the Riel framework
+(load the matching skill when it applies):
+
+1. riel-protocol — open every conversation and subagent brief with a shared
+   objective ("We need…"), a short stable persona, and minimal surface.
+   Never rewrite the user's request.
+2. riel-ledger — for multi-phase or long tasks, keep
+   Goal/Core/Verified/Open/Next in .riel/ledger.md and re-read it at every
+   seam. No done until every Goal line maps to a ✓NN with verifier and
+   coverage; recover from the last ✓NN with a fresh plan.
+3. riel-contract — express instructions and phases as mermaid DAGs with the
+   closed verb vocabulary (READ/EDIT/CREATE/RUN/VERIFY/ASK); every flow ends
+   in VERIFY nodes before End.
+4. riel-briefs — when delegating, briefs are self-contained: curated
+   context, executable gates, explicit DO NOT.
+
+Riel never rewrites capability in — it only prevents it from being lost.
+```
+
+Keep it this short: the soul references the skills, it never embeds them
+(embedding desyncs and costs tokens every turn).
 
 ## How skills get loaded (Hermes mechanics)
 
@@ -67,9 +153,10 @@ the system listing).
 ```
 riel/
 ├── README.md          ← this file
+├── assets/            ← framework infographic
 ├── skills/            ← installable skills (cp to ~/.hermes/skills/)
 │   ├── riel-protocol/   ← trajectory: grammar, persona, minimal surface
-│   ├── riel-ledger/     ← state: local Goal/Core/Verified/Open/Next
+│   ├── riel-ledger/     ← state: local Goal/Core/Verified/Open/Next + recovery
 │   ├── riel-contract/   ← structure: mermaid contract + verification funnel
 │   └── riel-briefs/     ← delegation briefs with anchored opening
 ├── specs/             ← design contracts (source of the patches)
@@ -81,18 +168,24 @@ riel/
 └── references/        ← distilled evidence (local notes)
 ```
 
-## Evidence base
+## Papers & sources actually used
 
-Distilled in Dran (`personal` context):
+| Source | What it contributed | Component(s) |
+|---|---|---|
+| Gurnee et al., *Verbalizable Representations Form a Global Workspace in Language Models* (Anthropic, 2026) | Workspace concept: capacity of 1-2 active ideas, broadcast hub, written externalization survives workspace ablation | `riel-protocol`, `riel-ledger` |
+| DeepSeek community research: [dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard) + [DeepseekCotexplorations](https://github.com/0liveiraaa/DeepseekCotexplorations) | The 3 anchoring levers: Minimal tool schema 5/5, output budget 26/32, skill-catalog injections 0/9; "We need…" trajectory | `riel-protocol` |
+| DeepSeek-V4 official paper ([arXiv:2606.19348](https://arxiv.org/abs/2606.19348)) | Model facts (1.6T/49B, 1M context); confirmation that anchoring is NOT officially documented — it is black-box evidence | `riel-protocol` |
+| DeepSeek Harness source ([deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)) | First-hand confirmation of the Minimal preset (complete persona, zero runtime context, two-tool pair); `ctx.invariants` registry; capability seams | `riel-protocol`, `riel-ledger` |
+| BRAID ([arXiv:2512.15959](https://arxiv.org/abs/2512.15959)) | Mermaid graphs as executable plans: +4 to +33.8 accuracy points, up to 74x performance-per-dollar; atomic nodes; verification funnel; generator/solver split | `riel-contract`, `riel-briefs` |
+| FlowBench (EMNLP 2024 Findings) | Flowcharts > prose for agent planning; text + code + flowchart together > any single format | `riel-contract` |
+| Lost in the Middle ([arXiv:2307.03172](https://arxiv.org/abs/2307.03172)) | Branch logic in paragraphs gets lost in long context; graphs are position-proof | `riel-contract` |
+| Metacognitive control harness ([arXiv:2605.14186](https://arxiv.org/abs/2605.14186)) + Nelson & Narens 1990 | Every monitoring signal must select an action (48.3 → 56.9 without weight changes) | `riel-ledger` |
+| Long-horizon agent failures ([arXiv:2607.05775](https://arxiv.org/abs/2607.05775), [arXiv:2607.00692](https://arxiv.org/abs/2607.00692), [arXiv:2607.08964](https://arxiv.org/abs/2607.08964)) | Context-handling gap, no-recovery bottleneck, completion overestimation → ledger fields, recovery protocol, done-check | `riel-ledger` |
+| Re-reading the input ([arXiv:2309.06275](https://arxiv.org/abs/2309.06275)) | Re-reading improves reasoning across 14 datasets → the seam re-read | `riel-ledger` |
+| METR GPT-5 evaluation report | The recovery template: "Stop. Focus. Return to step by step" — fresh plan, re-enter at step 1 | `riel-ledger` |
 
-- `j-space-global-workspace-papers` — 24 verified sources (Anthropic global
-  workspace, illegible reasoning, metacognition)
-- `deepseek-v4-interfaz-y-trayectoria-we-need` — the 3 anchoring levers for
-  trajectory in DeepSeek
-- `graph-engineering-instrucciones-agentes` — BRAID/FlowBench/mermaid
-- `ledger-pattern-estado-de-agentes` — Goal/Core/Verified/Open/Next
-- `capability-realization-loss` — the problem frame
-- `harness-analysis-papers-en-extension-points` — paper → harness map
+Full distillation of 24 verified sources lives in the Dran page
+`j-space-global-workspace-papers` and the local `references/` directory.
 
 ## Honesty about evidence
 
