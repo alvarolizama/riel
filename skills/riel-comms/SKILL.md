@@ -1,7 +1,7 @@
 ---
 name: riel-comms
-description: "Use al abrir o mantener conversación con un LLM (DeepSeek u otro) — protocolo de gramática funcional, persona y superficie mínima. No reescribe el pedido."
-version: 1.0.0
+description: "Use when opening or maintaining a conversation with an LLM (DeepSeek or other) — functional grammar, persona, minimal-surface protocol. Never rewrites the user's request."
+version: 1.1.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -10,118 +10,123 @@ metadata:
     related_skills: [agent-instruction-authoring, mermaid-skill-authoring]
 ---
 
-# riel-comms — Protocolo de comunicación (Fase 1 de Riel)
+# riel-comms — Communication protocol (Riel, phase 1)
 
-**Riel** es el framework de steering: la capacidad ya existe en el modelo; Riel
-evita que se pierda entre tenerla y entregarla. Este componente dirige **la
-trayectoria**: cómo el agente abre y mantiene la conversación con el LLM.
+**Riel** is a steering framework: the capability already exists in the model;
+Riel prevents it from being lost between having it and delivering it. This
+component steers **the trajectory**: how the agent opens and maintains a
+conversation with an LLM.
 
-**Modo protocolo:** el pedido del usuario llega **crudo** al modelo. riel-comms
-NO reformula ni reescribe peticiones — cambia cómo el agente **entra** a la
-conversación y cómo la sostiene.
+**Protocol mode:** the user's request reaches the model **raw**. riel-comms
+does NOT rephrase or rewrite requests — it changes how the agent **enters**
+the conversation and how it sustains it.
 
 ## Entry router
 
 ```mermaid
 flowchart TD
-  Q{¿Qué necesitas?} -->|"Abrir/mantener conversación\ncon un LLM (protocolo)"| SELF["ESTE SKILL\nriel-comms"]
-  Q -->|"Reformular un brief\npara delegar"| AI[agent-instruction-authoring]
-  Q -->|"Estructura mermaid\nde la tarea"| MS[mermaid-skill-authoring]
-  Q -->|"Estado verificado\n(ledger)"| RL["riel-ledger\n(fase 2, pendiente)"]
+  Q{What do you need?} -->|"Open/maintain an LLM\nconversation (protocol)"| SELF["THIS SKILL\nriel-comms"]
+  Q -->|"Reformulate a brief\nfor delegation"| AI[agent-instruction-authoring]
+  Q -->|"Mermaid structure\nof the task"| MS[mermaid-skill-authoring]
+  Q -->|"Verified state\n(ledger)"| RL["riel-ledger\n(phase 2, pending)"]
 
   style SELF fill:#d1fae5,stroke:#059669
 ```
 
 ## Parse contract
 
-### Qué CONSUME este skill
-- Una petición o tarea para ejecutar con un LLM (chat directo o vía subagente)
+### What this skill CONSUMES
+- A request or task to execute with an LLM (direct chat or via subagent)
 
-### Qué PRODUCE este skill
-- Apertura anclada (gramática funcional + persona + superficie mínima)
-- Mantenimiento de la trayectoria durante la conversación (eco funcional)
+### What this skill PRODUCES
+- An anchored opening (functional grammar + persona + minimal surface)
+- Trajectory maintenance during the conversation (functional echo)
 
-## La gramática funcional
+## Functional grammar
 
-Asignación de primera persona por función — cada enunciado debe **descargarse**
-en una acción, un check o un cierre (eso es el "eco funcional"):
+First-person assignment by function — every statement must **discharge** into
+an action, a check, or a closure (that is the "functional echo"):
 
-| Forma | Función | Ejemplo |
+| Form | Function | Example |
 |---|---|---|
-| `We need…` | Objetivo compartido: el agente + su entorno trabajando hacia algo | "We need hacer que el login valide ambos proveedores" |
-| `I` | Percepción, juicio local, compromiso | "I see el test falla por el mock; I will corregirlo" |
-| `Let's` | Operación conjunta inmediata | "Let's verificar el endpoint antes de continuar" |
+| `We need…` | Shared objective: agent + environment working toward something | "We need the login to validate both providers" |
+| `I` | Perception, local judgment, commitment | "I see the test fails on the mock; I will fix it" |
+| `Let's` | Immediate joint operation | "Let's verify the endpoint before continuing" |
 
-Reglas:
+Rules:
 
-1. **Abrir con `We need…`** en DeepSeek: la evidencia comunitaria (dsh-anchored-standard)
-   muestra que esta forma corresponde a la trayectoria estable del post-training
-   de agente (condición Minimal). En otros modelos funciona como control genérico.
-2. **Descarga obligatoria:** un `we need` que no se convierte en acción/check/cierre
-   en los próximos pasos es ruido — completarlo o descartarlo.
-3. **Lo que NO se suprime:** `Let me` o dudas ocasionales no son fallos. Lo que se
-   evita son los bucles de auto-diálogo: duda → duda → duda sin acción.
-4. **En español también aplica:** "Necesitamos…" / "Veo que…" / "Vamos a…" — la
-   función importa más que la palabra literal.
+1. **Open with `We need…` on DeepSeek:** community evidence (dsh-anchored-standard)
+   shows this form corresponds to the stable trajectory of the agent
+   post-training (Minimal condition). On other models it works as generic
+   control without anchoring expectations.
+2. **Mandatory discharge:** a `we need` that does not turn into an
+   action/check/closure within the next steps is noise — complete it or drop it.
+3. **What is NOT suppressed:** an occasional `Let me` or doubt is not a
+   failure. What is avoided are self-dialogue loops: doubt → doubt → doubt
+   without action.
+4. **Applies in any language:** the function matters more than the literal
+   words ("Necesitamos…" / "Veo que…" / "Vamos a…" in Spanish).
 
-## Condiciones de apertura (el primer turno)
+## Opening conditions (the first turn)
 
-Lo que ancla en DeepSeek es el **estado completo del primer turno**, no una
-palabra mágica. Tres condiciones:
+What anchors on DeepSeek is the **complete state of the first turn**, not a
+magic word. Three conditions:
 
-1. **Persona corta y estable** — estilo *"You are a helpful software engineer
-   assistant"*. No apilar capas de rol encima durante la conversación.
-2. **Superficie mínima primero** — presentar el alcance y las herramientas
-   necesarias para la primera acción, no el catálogo completo de capacidades.
-   Las capacidades pesadas se introducen cuando la tarea las pide.
-3. **Cero inyecciones irrelevantes** — no arrastrar skill-catalogs, digests ni
-   contexto que la primera acción no necesita. (Evidencia: con catálogo de
-   skills presente el anclaje no se reprodujo 0/9.)
+1. **Short, stable persona** — along the lines of *"You are a helpful
+   software engineer assistant"*. Do not stack role layers on top during the
+   conversation.
+2. **Minimal surface first** — present the scope and the tools needed for the
+   first action, not the full capability catalog. Heavier capabilities are
+   introduced when the task asks for them.
+3. **Zero irrelevant injections** — do not drag in skill catalogs, digests, or
+   context the first action does not need. (Evidence: with the skill catalog
+   present the anchor did not reproduce, 0/9.)
 
-### Al delegar (subagentes)
+### When delegating (subagents)
 
-En briefs de `delegate_task`, aplicar las mismas condiciones en `goal` + `context`:
-- `goal` abre con el objetivo compartido ("We need…")
-- `context` lleva solo lo que la primera acción necesita (repo, archivos, criterios)
-- No volcar herramientas ni instrucciones que no corresponden a la fase actual
+In `delegate_task` briefs, apply the same conditions in `goal` + `context`:
+- `goal` opens with the shared objective ("We need…")
+- `context` carries only what the first action needs (repo, files, criteria)
+- Do not dump tools or instructions that do not belong to the current phase
 
-## Mantenimiento (durante la conversación)
+## Maintenance (during the conversation)
 
-- Cada enunciado funcional se descarga: acción → check → cierre
-- Si la conversación deriva a planificación infinita sin acción: volver a
-  `We need…` + la siguiente acción concreta
-- Si aparecen bucles de duda: `I see` (diagnóstico de por qué se traba) +
-  `Let's` (acción pequeña para salir)
+- Every functional statement discharges: action → check → closure
+- If the conversation drifts into infinite planning without action: return to
+  `We need…` + the next concrete action
+- If doubt loops appear: `I see` (diagnosis of why it is stuck) + `Let's`
+  (a small action to get out)
 
-## Límites de evidencia (honesto)
+## Evidence limits (be honest)
 
-- **Medido con fuerza:** que las condiciones de primer turno **anclan la
-  trayectoria** (schema Minimal 5/5; con inyecciones 0/9).
-- **Hipótesis, no medida:** que la trayectoria anclada mejora *scores* — la
-  replicación independiente da IC 95% [−2.6, +9.3]; un A/B independiente
-  (issue #10) no encontró ganancia medible. No afirmar mejoras sin medir
-  (para eso está `riel-measure`, fase 4).
+- **Strongly measured:** first-turn conditions **anchor the trajectory**
+  (Minimal schema 5/5; with injections 0/9).
+- **Hypothesis, not measured:** that the anchored trajectory improves
+  *scores* — independent replication gives 95% CI [−2.6, +9.3]; one
+  independent A/B (issue #10) found no measurable gain. Do not claim
+  improvements without measuring (that is `riel-measure`, phase 4).
 
-## Evidencia (páginas Dran)
+## Evidence (Dran pages)
 
-- `deepseek-v4-interfaz-y-trayectoria-we-need` — las 3 palancas del anclaje
-- `harness-analysis-papers-en-extension-points` — confirmado en el preset
-  Minimal oficial (persona completa + cero inyecciones + par de tools)
-- `j-space-global-workspace-papers` — base científica del workspace
+- `deepseek-v4-interfaz-y-trayectoria-we-need` — the 3 anchoring levers
+- `harness-analysis-papers-en-extension-points` — confirmed in the official
+  Minimal preset (complete persona + zero injections + two-tool pair)
+- `j-space-global-workspace-papers` — workspace scientific base
 
 ## Pitfalls
 
-- **Reescribir el pedido del usuario** — este skill es protocolo, no traductor;
-  el mensaje llega crudo.
-- **Forzar la gramática en cada frase** — el eco funcional no es contar palabras;
-  un `we need` por tarea basta si se descarga bien.
-- **Afirmar que mejora resultados** — ancla la trayectoria; la ganancia se mide.
+- **Rewriting the user's request** — this skill is a protocol, not a
+  translator; the message arrives raw.
+- **Forcing the grammar into every sentence** — functional echo is not about
+  counting words; one well-discharged `we need` per task is enough.
+- **Claiming it improves results** — it anchors the trajectory; gains are
+  measured.
 
 ## Checklist
 
-- [ ] Apertura con objetivo compartido (`We need…` / "Necesitamos…")
-- [ ] Persona corta y estable, sin capas apiladas
-- [ ] Superficie mínima en el primer turno (solo lo que la primera acción necesita)
-- [ ] Cero contexto inyectado irrelevante al inicio
-- [ ] Cada enunciado funcional se descargó en acción/check/cierre
-- [ ] El pedido del usuario no fue reescrito
+- [ ] Opening with a shared objective (`We need…`)
+- [ ] Short, stable persona, no stacked layers
+- [ ] Minimal surface on the first turn (only what the first action needs)
+- [ ] Zero irrelevant injected context at the start
+- [ ] Every functional statement discharged into action/check/closure
+- [ ] The user's request was not rewritten
