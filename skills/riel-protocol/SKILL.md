@@ -7,7 +7,7 @@ license: MIT
 metadata:
   hermes:
     tags: [riel, agent-communication, deepseek, framework]
-    related_skills: []
+    related_skills: [riel-ledger, riel-contract, riel-briefs, riel-measure]
 ---
 
 # riel-protocol — Communication protocol (Riel, phase 1)
@@ -26,17 +26,14 @@ the conversation and how it sustains it.
 ```mermaid
 flowchart TD
   Q{What do you need?} -->|"Open/maintain an LLM\nconversation (protocol)"| SELF["THIS SKILL\nriel-protocol"]
-  Q -->|"Reformulate a brief\nfor delegation"| RB["riel-briefs\n(pending migration)"]
-  Q -->|"Mermaid structure\nof the task"| RC["riel-contract\n(pending migration)"]
-  Q -->|"Verified state\n(ledger)"| RL["riel-ledger\n(specs ready, pending)"]
+  Q -->|"Write a brief for\ndelegation"| RB[riel-briefs]
+  Q -->|"Mermaid structure\nof the task"| RC[riel-contract]
+  Q -->|"Verified state\n(ledger)"| RL[riel-ledger]
 
   style SELF fill:#d1fae5,stroke:#059669
 ```
 
-All hand-offs stay inside the Riel framework. `riel-briefs` and
-`riel-contract` are the pending migrations of `agent-instruction-authoring`
-and `mermaid-skill-authoring` — until they exist, those branches fall back
-to the current external skills of the same purpose.
+All hand-offs stay inside the Riel framework.
 
 ## Parse contract
 
