@@ -18,7 +18,7 @@ task state** after every seam: a tool call, a file change, a context
 compaction, an hours-long gap.
 
 **Local-first:** this skill operates entirely inside the task worktree.
-It does NOT depend on Dran, Hub, Notion, or any remote. Remote sync
+It does NOT depend on any remote task system. Remote sync
 (pulling the task in, pushing verification back) is an optional adapter
 layer — see "Optional remote sync" at the end. The full contracts live in
 `riel/specs/` (repo `Repos/alvarolizama/riel`).
@@ -66,7 +66,7 @@ The ledger is local state, not a deliverable. When working inside a repo:
 <one sentence: what "done" means>
 
 ## Source
-<optional: remote system + identifier — e.g. dran:todo-slug>
+<optional: remote system + identifier — e.g. todo:<slug>>
 
 ## Phase
 <active phase if the task has phases — e.g. "F2: CREATE router_test.exs">
@@ -208,8 +208,8 @@ only — the remote is never the live ledger:
   pending section, then set status done via the safe route.
 
 Adapter contracts (4 operations: pull / push-verify / push-phase /
-push-close) and system-specific safety rules (Dran today; Hub/Notion
-future) live in `riel/specs/spec-adapters.md`. The Dran-specific patches to
+push-close) and system-specific safety rules live in
+`riel/specs/spec-adapters.md`. The per-system patches to
 `todo-flow` and `coder-flow` are derived separately from
 `spec-todo-contract.md` and `spec-pull-push.md` — they add compatibility,
 this skill does not require them.
@@ -252,5 +252,5 @@ this skill does not require them.
 - Local format and rules: `riel/specs/spec-ledger-format.md` (repo)
 - Pull/push protocol: `riel/specs/spec-pull-push.md`
 - Phase advancement: `riel/specs/spec-phase-advance.md`
-- System adapters (Dran first): `riel/specs/spec-adapters.md`
+- System adapters: `riel/specs/spec-adapters.md`
 - The phases graph the ledger navigates: `riel-contract`

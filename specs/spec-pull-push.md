@@ -1,8 +1,8 @@
 # Spec 3 — Pull/push protocol (local ↔ remote)
 
 Status: draft v1 · Riel phase 2
-How the local ledger syncs with the remote (today Dran; tomorrow Hub/Notion via spec-adapters).
-**Derived patch: `coder-flow`** (Dran repo).
+How the local ledger syncs with the remote (any task system via spec-adapters).
+**Derived patch: `coder-flow`** (compatibility layer).
 
 ## Full cycle
 
@@ -23,7 +23,7 @@ flowchart TD
 
 1. Read the remote task COMPLETELY (adapter: spec-adapters) — never from search excerpts.
 2. `Goal` ← todo title/objective.
-3. `Source` ← remote system + task identifier (e.g. `dran:<slug>`).
+3. `Source` ← remote system + task identifier (e.g. `todo:<slug>`).
 4. `Phase` ← first DAG phase without a checkbox (spec-phase-advance).
 5. `Verified` ← seed from the existing `## Verification` (when resuming a half-done task).
 6. `Open` ← from existing `## Pending`, if they apply to the active phase.
@@ -58,3 +58,4 @@ flowchart TD
 - Never split an update across multiple calls (the second wipes the first).
 - Status only through the system's meta-merge operation (spec-adapters).
 - Never blank-retry: if a push fails, retry with the diagnosis attached; counter <3 / ≥3 escalate to Álvaro.
+- **Git hygiene:** the local ledger is never committed — see spec-ledger-format.

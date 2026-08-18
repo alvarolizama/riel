@@ -2,7 +2,7 @@
 
 Status: draft v1 · Riel phase 2
 The remote todo IS the durable ledger. This spec defines what its body must carry to be one.
-**Derived patch: `todo-flow`** (Dran repo).
+**Derived patch: `todo-flow`** (compatibility layer).
 
 ## Required structure (variant 3 — development feature)
 

@@ -148,6 +148,19 @@ cp -R ~/Workspace/Repos/alvarolizama/riel/skills/* ~/.hermes/skills/
 Verify: the skill must appear in the session's skill index (`skills_list` or
 the system listing).
 
+## Validate mermaid blocks
+
+```bash
+scripts/validate-mermaid.sh            # README + specs + skills + system-prompt
+scripts/validate-mermaid.sh README.md  # a single file
+```
+
+Requires mermaid-cli (`npm install -g @mermaid-js/mermaid-cli`). Extracts the
+` ```mermaid ` blocks with `scripts/extract-mermaid.py` (regex + `re.DOTALL`,
+not awk — awk works line-by-line, not whole blocks) and pipes each through
+`mmdc`. Practicing what riel-contract preaches: the repo's own diagrams must
+parse.
+
 ## Structure
 
 ```
@@ -160,12 +173,15 @@ riel/
 │   ├── riel-contract/   ← structure: mermaid contract + verification funnel
 │   └── riel-briefs/     ← delegation briefs with anchored opening
 ├── specs/             ← design contracts (source of the patches)
-│   ├── spec-ledger-format.md    ← .riel/ledger.md format + rules
+│   ├── spec-ledger-format.md    ← .riel/ledger.md format + rules + git hygiene
 │   ├── spec-todo-contract.md    ← what the todo body must carry → todo-flow patch
 │   ├── spec-pull-push.md        ← local↔remote protocol → coder-flow patch
 │   ├── spec-phase-advance.md    ← per-phase ledger: ledger+contract fusion
 │   └── spec-adapters.md         ← system-agnostic contract for remote task systems
-└── references/        ← distilled evidence (local notes)
+├── scripts/           ← repo tooling
+│   ├── validate-mermaid.sh   ← validates every mermaid block with mmdc
+│   └── extract-mermaid.py    ← extracts mermaid blocks (regex, re.DOTALL)
+└── references/        ← local-only notes (gitignored; public contract in specs/)
 ```
 
 ## Papers & sources actually used

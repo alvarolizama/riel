@@ -47,3 +47,4 @@ Gate content (what coder-flow already does + coverage):
 - **Disjoint** phases (different files, no DAG edge) may run in parallel: each with its own worktree + its own local ledger.
 - Phases touching the same file → serialize.
 - The parent coordinates pushes to the remote (same lesson as git index races).
+- **Git hygiene:** each parallel ledger lives in its own worktree and is never committed — see spec-ledger-format.

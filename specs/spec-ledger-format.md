@@ -28,7 +28,7 @@ Applies to every task in `loop` mode (multi-file, multi-tool, multi-phase, or sp
 <one sentence: what "done" means — from the remote todo's title/objective>
 
 ## Source
-<remote system + identifier — e.g. dran:todo-slug>
+<remote system + identifier — e.g. todo:<slug>>
 
 ## Phase
 <active phase derived from the DAG — e.g. "F2: CREATE router_test.exs">

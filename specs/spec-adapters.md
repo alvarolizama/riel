@@ -22,22 +22,15 @@ The local format (spec-ledger-format) and the pull/push cycle (spec-pull-push) a
 3. Never split a write across multiple calls.
 4. Status only via the system's meta-merge route.
 5. One workstream = one worktree = one ledger.
+6. The ledger file is local state: git hygiene from spec-ledger-format applies in every worktree.
 
-## Dran — first implementation
+## Reference implementation
 
-| Operation | Implementation | Safety notes |
-|---|---|---|
-| `pull` | `dran_get_page(slug, context)` | Read the full body; never from search excerpts |
-| `push-verify` | `dran_update_page(slug, body=full)` | **Replaces the whole body**: rebuild first; pass body ONLY (no meta, or TipTap strips the mermaid) |
-| `push-phase` | `dran_update_page(slug, body=full)` | Same — the checkbox is part of the body |
-| `push-close` | `dran_update_todo(slug, kanban_status)` | **Status ONLY via update_todo (meta merge)**; the body was already written before |
-
-Dran-specific rules:
-
-- Context: `personal` (default profile).
-- `created_by`: whoever executes (`chaos manager` / `alvaro` / `aluxe`).
-- Body over the tool-call token limit → local file + REST `PUT /api/pages/:slug?context=personal`; verify integrity by comparing `body_hash` against the sha256 of the sent body.
-- REST GET returns metadata without body — integrity verification is by hash, not re-reading.
+The first adapter targets a private second-brain server. Its operational
+detail — concrete tool calls, safety notes, token-limit fallback, hash
+verification — lives in a **local, gitignored** note
+(`references/<adapter>-notes.md`), not in this public spec. The public
+contract stays system-agnostic on purpose.
 
 ## Hub and Notion — future mapping (interface only)
 
@@ -48,7 +41,8 @@ Dran-specific rules:
 | `push-phase` | subtask status change | checkbox toggle |
 | `push-close` | close ticket | page status |
 
-When implemented: full column + each system's own safety notes.
+When implemented: full column + each system's own safety notes (in the local
+notes file, same as the reference implementation).
 
 ## Honest limit
 
