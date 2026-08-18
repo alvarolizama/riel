@@ -1,6 +1,18 @@
-# Riel — steering layer for harness/LLM
+<div align="center">
 
-![Riel framework](assets/riel-framework.png)
+# 🛤️ Riel
+
+### Steering Layer for Harness/LLM
+
+A homegrown agent-steering framework. **Riel does not create capability in the model: it prevents capability from being lost.**
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![LLM](https://img.shields.io/badge/LLM-Agnostic-8B5CF6?logo=openai&logoColor=white)](https://elixir-lang.org)
+[![Steering](https://img.shields.io/badge/Steering-DAG-F59E0B?logo=mermaid&logoColor=white)](https://mermaid.js.org)
+
+![Riel](assets/riel-header.png)
+
+</div>
 
 A homegrown agent-steering framework. **Riel does not create capability in the
 model: it prevents capability from being lost.** The thesis comes from
