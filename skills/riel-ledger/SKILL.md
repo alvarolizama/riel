@@ -1,7 +1,7 @@
 ---
 name: riel-ledger
 description: "Use when running a loop-mode task — write the local Goal/Core/Verified/Open/Next ledger in the worktree, re-read at every seam, verify before done. No remote dependency."
-version: 1.0.0
+version: 1.1.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -94,7 +94,10 @@ flowchart TD
   R --> ST{"stalled? same Next\nfor 3 seams?"}
   ST -->|yes| F["Diagnose: document why,\nor change course"]
   F --> W
-  ST -->|no| CK{"verified something?"}
+  ST -->|no| DEG{"degraded? cascading\nerrors, corrupted output"}
+  DEG -->|yes| REC["Recovery: last ✓NN =\ncheckpoint → fresh plan,\nre-enter at step 1"]
+  REC --> W
+  DEG -->|no| CK{"verified something?"}
   CK -->|yes| APP["Append ✓NN with\nverifier + coverage"]
   APP --> W
   CK -->|no| W
@@ -126,6 +129,35 @@ re-read is. Without any tooling it is 4 steps and 15 seconds.
 Stall detection: same Next for 3 seams → document why or change course.
 Goal misaligned with what is being executed → return to the Goal before
 acting.
+
+### Recovery (when work degrades)
+
+Long-horizon failure mode (research): once an agent commits to a wrong
+intermediate state deep into a trajectory, it cannot detect it and roll
+back on its own. The ✓NN entries are numbered on purpose — they are
+addressable checkpoints. When work degrades (cascading errors, doubt
+loops, corrupted output):
+
+1. **Do NOT resume where it broke.**
+2. Re-read the ledger in full.
+3. Identify the last ✓NN — that is the return checkpoint.
+4. Write a fresh explicit plan from that checkpoint.
+5. Re-enter at step 1 of the fresh plan — a new plan, not a continuation
+   of the broken one.
+
+The recovery does not pick up where it left off; it writes a fresh plan
+and re-enters at step 1. That is the template.
+
+### Failure invariants (not working if...)
+
+Checked whenever the ledger is re-read:
+
+1. A ✓NN was declared and never written to the ledger
+2. Something was called verified without stated coverage
+3. The Next changed without the real work changing (churn)
+4. Something with an existing ✓NN got re-verified
+5. The Goal does not match what is being executed
+6. Open questions keep growing at every seam with nothing being settled
 
 ### Recording verification
 
@@ -187,6 +219,8 @@ this skill does not require them.
 - [ ] `.riel/ledger.md` opened with Goal + Core + Next (Source if remote)
 - [ ] One worktree per workstream
 - [ ] Ledger re-read at every seam
+- [ ] Failure invariants checked (no unwritten ✓NN, no coverage-less verifies, no churn)
+- [ ] On degradation: recovery via last ✓NN + fresh plan, never resumed broken
 - [ ] Every ✓NN has verifier + coverage, appended as it happens
 - [ ] Every ?NN has a settled-by
 - [ ] Next never empty

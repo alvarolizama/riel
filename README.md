@@ -18,7 +18,7 @@ structure, evaluation — without touching weights or internals.
 | Component | What it steers | Metaphor | Status |
 |---|---|---|---|
 | `riel-protocol` | **Trajectory** — functional grammar, persona, minimal surface | the switch: the first turn picks the track | ✅ skill v1.2 |
-| `riel-ledger` | **State** — Goal/Core/Verified/Open/Next, re-read at every seam; local-first, no remote dependency | the track level | ✅ skill v1.0 + specs (Dran patches pending) |
+| `riel-ledger` | **State** — Goal/Core/Verified/Open/Next, re-read at every seam; recovery via checkpoints; local-first, no remote dependency | the track level | ✅ skill v1.1 + specs (Dran patches pending) |
 | `riel-contract` | **Structure** — mermaid as contract, verification funnel, BRAID/FlowBench evidence | the rails themselves | ✅ skill v3.0 (migrated from mermaid-skill-authoring) |
 | `riel-briefs` | **Delegation briefs** — curated context, verb-graph, gates, anchored opening | the signage | ✅ skill v3.0 (migrated from agent-instruction-authoring) |
 | `riel-measure` | **Evidence** — measure trajectories + score/time/token | verifying the rail works | pending (phase 4) |
