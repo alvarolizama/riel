@@ -19,7 +19,7 @@ structure — without touching weights or internals.
 
 ```mermaid
 flowchart LR
-  TASK["Task\n(Dran todo / Hub / chat)"] --> P["riel-protocol\nanchored first turn\ngrammar · persona ·\nminimal surface"]
+  TASK["Task\n(todo / ticket / chat)"] --> P["riel-protocol\nanchored first turn\ngrammar · persona ·\nminimal surface"]
   B["riel-briefs\ndelegation briefs"] -.->|"when delegating"| P
   P --> LLM["LLM / harness\n(DeepSeek or other)"]
   C["riel-contract\nmermaid DAG as contract\nverb-graph · verification funnel"] -.->|"task structure"| LLM
@@ -164,7 +164,7 @@ riel/
 │   ├── spec-todo-contract.md    ← what the todo body must carry → todo-flow patch
 │   ├── spec-pull-push.md        ← local↔remote protocol → coder-flow patch
 │   ├── spec-phase-advance.md    ← per-phase ledger: ledger+contract fusion
-│   └── spec-adapters.md         ← system-agnostic contract (Dran first)
+│   └── spec-adapters.md         ← system-agnostic contract for remote task systems
 └── references/        ← distilled evidence (local notes)
 ```
 
@@ -184,8 +184,8 @@ riel/
 | Re-reading the input ([arXiv:2309.06275](https://arxiv.org/abs/2309.06275)) | Re-reading improves reasoning across 14 datasets → the seam re-read | `riel-ledger` |
 | METR GPT-5 evaluation report | The recovery template: "Stop. Focus. Return to step by step" — fresh plan, re-enter at step 1 | `riel-ledger` |
 
-Full distillation of 24 verified sources lives in the Dran page
-`j-space-global-workspace-papers` and the local `references/` directory.
+Full distillation of the 24 verified sources lives in the local
+`references/` directory.
 
 ## Honesty about evidence
 
@@ -195,7 +195,3 @@ Full distillation of 24 verified sources lives in the Dran page
   replication with 95% CI [−2.6, +9.3]; one A/B found no gain. Riel does not
   promise better results; task verification lives in the done-check of
   `riel-ledger`.
-
-## Dran project
-
-Page `riel` (project type, `personal` context) — vision, phases, status.
