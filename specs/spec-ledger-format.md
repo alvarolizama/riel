@@ -9,6 +9,16 @@ Applies to every task in `loop` mode (multi-file, multi-tool, multi-phase, or sp
 - **One workstream = one worktree = one ledger** (isolates parallel sessions; same lesson as git index races).
 - It is ephemeral: after the final push it may be deleted — the durable state already lives in the remote.
 
+### Git hygiene (the ledger is local state, never a deliverable)
+
+- Each worktree has its own `.gitignore`; ensure `.riel/` is listed there
+  **before** committing anything — never assume another repo's ignore file
+  covers it.
+- Prefer explicit adds (`git add <file>`) or `git add -p`; never `git add -A`
+  unchecked when a `.riel/` directory exists.
+- Before every commit, `git status` must show no `.riel/` entries. Fix the
+  ignore file first, never after the commit.
+
 ## Exact format
 
 ```markdown
@@ -42,7 +52,7 @@ Applies to every task in `loop` mode (multi-file, multi-tool, multi-phase, or sp
 | Field | Rule |
 |---|---|
 | Goal | One sentence; updated only if the goal changes |
-| Source | Always present; allows pushing back to the right remote |
+| Source | Optional; present only when the task came from a remote todo |
 | Phase | Derived from the DAG (spec-phase-advance); pointer to the active mini-ledger |
 | Core | Max 2 live items; change only via explicit swap; each with its defining fact |
 | Verified | Numbered ✓NN, append-only; never deleted or renumbered |

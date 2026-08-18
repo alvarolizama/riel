@@ -1,7 +1,7 @@
 ---
 name: riel-ledger
 description: "Use when running a loop-mode task — write the local Goal/Core/Verified/Open/Next ledger in the worktree, re-read at every seam, verify before done. No remote dependency."
-version: 1.1.0
+version: 1.2.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -41,6 +41,23 @@ verified; hours passed and you cannot remember where you left off.
 - **One workstream = one worktree = one ledger** — parallel sessions never
   share a ledger (same lesson as git index races).
 - Ephemeral: after the final writeback it may be deleted.
+
+### Git hygiene — the ledger must never be committed
+
+The ledger is local state, not a deliverable. When working inside a repo:
+
+1. **Before committing, ensure `.riel/` is ignored in THAT repo** — add
+   `.riel/` to the worktree's `.gitignore` if it is not already there. Do
+   NOT assume the Riel repo's `.gitignore` covers other repos; each
+   worktree has its own.
+2. **Never `git add .riel/` or `git add -A` without checking** — prefer
+   explicit adds (`git add <file>`) or `git add -p`. The ledger must not
+   leak into a feature commit.
+3. **Before every commit, verify:** `git status` shows no `.riel/` entries.
+   If it does, fix the `.gitignore` before committing, never after.
+4. The `.riel/` directory is created by the agent, not by the project — a
+   reviewer seeing it in a commit is a hygiene failure, same as committing
+   a build artifact.
 
 ```markdown
 # Riel ledger
@@ -210,6 +227,8 @@ this skill does not require them.
   the Next.
 - **Sharing a ledger between parallel sessions** — one worktree per
   workstream.
+- **Committing the ledger** — `.riel/` is local state; add it to the
+  worktree's `.gitignore` and verify with `git status` before any commit.
 - **Doing done from memory** — the done-check re-reads the Goal line by
   line against the ✓NN list, always.
 
@@ -218,6 +237,7 @@ this skill does not require them.
 - [ ] Mode classified: fast/full/loop — ledger only for loop
 - [ ] `.riel/ledger.md` opened with Goal + Core + Next (Source if remote)
 - [ ] One worktree per workstream
+- [ ] `.riel/` ignored in the worktree's `.gitignore`; `git status` clean of it before any commit
 - [ ] Ledger re-read at every seam
 - [ ] Failure invariants checked (no unwritten ✓NN, no coverage-less verifies, no churn)
 - [ ] On degradation: recovery via last ✓NN + fresh plan, never resumed broken
