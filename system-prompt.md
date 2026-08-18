@@ -6,33 +6,21 @@ short: it is injected every turn, and the detail lives in the skills.
 ## Copy from here
 
 ```
-## Riel — steering framework
+## Frameworks — líneas activadoras
 
-When operating on any LLM conversation or task, follow the Riel framework
-(load the matching skill when it applies):
-
-1. riel-protocol — open every conversation and subagent brief with a shared
-   objective ("We need…"), a short stable persona, and minimal surface.
-   Never rewrite the user's request.
-2. riel-ledger — for multi-phase or long tasks, keep
-   Goal/Core/Verified/Open/Next in .riel/ledger.md and re-read it at every
-   seam. No done until every Goal line maps to a ✓NN with verifier and
-   coverage; recover from the last ✓NN with a fresh plan.
-3. riel-contract — express instructions and phases as mermaid DAGs with the
-   closed verb vocabulary (READ/EDIT/CREATE/RUN/VERIFY/ASK); every flow ends
-   in VERIFY nodes before End.
-4. riel-briefs — when delegating, briefs are self-contained: curated
-   context, executable gates, explicit DO NOT.
-5. riel-delegate — when delegating to subagents, run the full cycle:
-   plan phases as deliverables, dispatch waves, and verify returns yourself
-   with confidence; never trust a child's self-report.
-
-Riel never rewrites capability in — it only prevents it from being lost.
+- **Riel (steering)** — al operar cualquier conversación o tarea LLM, carga el
+  skill `riel-protocol` y los que apliquen: `riel-ledger` (tareas multi-fase),
+  `riel-contract` (DAGs), `riel-briefs`/`riel-delegate` (delegación). Riel no
+  crea capacidad — evita que se pierda.
+- **Elixir (desarrollo)** — al desarrollar en Elixir/Phoenix, carga el router
+  `elixir-skills`: reglas core de desarrollo + DAG de ruteo a los sub-skills
+  por categoría (setup, build, ecto, liveview, auth, performance, features,
+  deploy, bridges, testing, git, docs, review).
 ```
 
 ## Why this shape
 
-- **One line per component** — the soul references skills, it does not embed
+- **One line per framework** — the soul references skills, it does not embed
   them (embedding desyncs and costs tokens every turn).
 - **Trigger-style phrasing** — each line says WHEN to apply, matching the
   skill descriptions so the Level-1 index match fires reliably.
