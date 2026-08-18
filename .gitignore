@@ -1,0 +1,5 @@
+# Riel ledger — local state, never committed
+.riel/
+
+# macOS
+.DS_Store
