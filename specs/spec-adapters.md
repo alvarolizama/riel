@@ -4,16 +4,15 @@ Status: draft v1 · Riel phase 2
 
 ## Principle
 
-The local format (spec-ledger-format) and the pull/push cycle (spec-pull-push) are **system-agnostic**. Only 4 operations vary by remote. The day Hub or Notion gets connected, one column is added to the table plus a safety note — format and cycle are untouched.
+The local format (spec-ledger-format) and the pull/push cycle (spec-pull-push) are **system-agnostic**. Only 3 operations vary by remote. The day Hub or Notion gets connected, one column is added to the table plus a safety note — format and cycle are untouched.
 
-## The contract (4 operations)
+## The contract (3 operations)
 
 | Operation | Input | Output | Guarantee |
 |---|---|---|---|
-| `pull` | task identifier | title, body with phases, existing Verification | full read of the task before working |
-| `push-verify` | ✓NN | ack | append without losing prior content |
+| `pull` | task identifier | title, body with phases, existing checkboxes | full read of the task before working |
 | `push-phase` | phase identifier | ack | checkbox marked without corrupting other sections |
-| `push-close` | ?NN + status | ack | Pending written; status changed via safe route |
+| `push-close` | status | ack | status changed via safe route |
 
 ## Cross-cutting rules (any system)
 
@@ -37,7 +36,6 @@ contract stays system-agnostic on purpose.
 | Operation | Hub (hub-tracker) | Notion |
 |---|---|---|
 | `pull` | get ticket | read page blocks |
-| `push-verify` | comment on the ticket | append block |
 | `push-phase` | subtask status change | checkbox toggle |
 | `push-close` | close ticket | page status |
 

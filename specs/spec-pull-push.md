@@ -1,8 +1,18 @@
 # Spec 3 — Pull/push protocol (local ↔ remote)
 
-Status: draft v1 · Riel phase 2
-How the local ledger syncs with the remote (any task system via spec-adapters).
+Status: draft v2 · Riel phase 2
+How the local ledger relates to a remote task system (via spec-adapters).
+**The ✓NN stays local.** The remote only ever receives checkboxes and status.
 **Derived patch: `coder-flow`** (compatibility layer).
+
+## The split of responsibilities
+
+- **Local (riel-ledger):** `Goal` / `Core` / `Verified` (✓NN) / `Open` / `Next`
+  live in `.riel/ledger.md` and are **never pushed to the remote**. They are
+  working memory for the execution in flight.
+- **Remote (adapter, e.g. `coder-flow` for Dran):** the task's durable plan
+  (objective + fases + verification checklist) and its status. The adapter only
+  reads the task and writes two things: **checkbox marks** and **status done**.
 
 ## Full cycle
 
@@ -12,43 +22,44 @@ flowchart TD
   W --> S{"seam: phase change,\ntool call, file,\nlong gap"}
   S --> R["re-read .riel/ledger.md"]
   R --> G{"phase gate?"}
-  G -->|"pass"| PUSH["PUSH: phase ✓NN to remote\n+ checkbox + advance Phase"]
+  G -->|"pass"| APP["append ✓NN to LOCAL ledger\n(verifier + coverage)"]
+  APP --> PUSH["PUSH (adapter): mark phase checkbox\non the remote — never ✓NN"]
   PUSH --> N{phases left?}
   N -->|"yes"| W
-  N -->|"no"| DC["done-check against the Goal"]
-  DC --> FP["final PUSH:\n## Pending + status done"]
+  N -->|"no"| DC["done-check against the Goal\n(local, from riel-ledger)"]
+  DC --> FP["final PUSH (adapter):\nstatus done via safe route"]
 ```
 
 ## PULL (at start)
 
 1. Read the remote task COMPLETELY (adapter: spec-adapters) — never from search excerpts.
-2. `Goal` ← todo title/objective.
+2. `Goal` ← task objective.
 3. `Source` ← remote system + task identifier (e.g. `todo:<slug>`).
-4. `Phase` ← first DAG phase without a checkbox (spec-phase-advance).
-5. `Verified` ← seed from the existing `## Verification` (when resuming a half-done task).
-6. `Open` ← from existing `## Pending`, if they apply to the active phase.
-7. `Next` ← first action of the active phase.
-8. Write `.riel/ledger.md`.
+4. `Phase` ← first phase without a checked box (spec-phase-advance).
+5. `Verified` ← seed from the phases already checked (their gates already passed); re-verify only if in doubt.
+6. `Next` ← first action of the active phase.
+7. Write `.riel/ledger.md`.
 
 ## Seam
 
 - Re-read the local file — microseconds, no remote round-trip.
 - Detect stalls: same Next for 3 seams → document why or change course.
 
-## PUSH at every gate (not just at the end)
+## PUSH at every gate (checkboxes only, never ✓NN)
 
-1. Rebuild the full remote body (read-before-write).
-2. Append the phase's `✓NN` to `## Verification`.
-3. Mark the phase checkbox.
+1. Append the phase's `✓NN` to the **local** ledger (riel-ledger) — verifier + coverage.
+2. Rebuild the full remote body (read-before-write).
+3. Mark the phase's checkbox in the remote `## Verificación` checklist.
 4. Write in ONE single call.
 5. Advance Phase (spec-phase-advance).
 
-**Why at every gate:** a mid-task crash must not lose what was verified.
+**Why at every gate:** a mid-task crash must not lose *which phases are done*.
+The checkbox is the only durable trace on the remote; the ✓NN detail is local.
 
 ## Final PUSH
 
-1. **done-check:** every line of the Goal must map to a ✓NN with coverage; if any is missing → not done.
-2. Unclosed `?NN` → to the body's `## Pending`.
+1. **done-check (local):** every line of the Goal must map to a ✓NN with coverage; if any is missing → not done.
+2. Unclosed `?NN` → report to Álvaro (not written to the remote).
 3. Status → done via the adapter's safe route (meta-merge, never content replacement).
 4. Delete `.riel/ledger.md` if desired — it is now disposable.
 

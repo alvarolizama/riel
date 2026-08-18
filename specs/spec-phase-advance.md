@@ -24,7 +24,7 @@ The gate is TWO things at once:
 | Face | Component | Meaning |
 |---|---|---|
 | Contract | riel-contract | "The phase's VERIFY node passed" |
-| Ledger | riel-ledger | "Flush this phase's Verified to the remote" |
+| Ledger | riel-ledger | "Append this phase's ✓NN to the LOCAL ledger" |
 
 Gate content (what coder-flow already does + coverage):
 

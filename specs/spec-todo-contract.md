@@ -39,27 +39,20 @@ flowchart TD
 ## How to verify (global)
 
 - [ ] <criterion> — method: ..., coverage: ...
-
-## Verification
-
-<!-- filled DURING execution: each gate appends a ✓NN (spec-pull-push) -->
-
-## Pending
-
-<!-- filled AT THE END: ?NN that were not closed (spec-pull-push) -->
 ````
 
 ## Rules
 
 1. **Each phase = one mini-ledger:** own scope (files it may touch) + own criteria.
 2. Every criterion names **method + expected coverage** — not just "observable criterion".
-3. A `done` without a populated `## Verification` **is malformed**.
+3. A `done` without a complete `## How to verify` checklist **is malformed** — every criterion checked with evidence.
 4. The phase graph ends in VERIFY node(s) before End — verification funnel (riel-contract): topology forces validation.
-5. `## Verification` and `## Pending` are created empty when the todo is written (reserved sections).
+5. The ✓NN evidence lives in the local ledger (`.riel/ledger.md`, via riel-ledger), NOT in the todo body — the body carries the validation checklist, the ledger carries the evidence.
 
 ## Derived patch to `todo-flow`
 
-- **New golden rule:** the closure contract (rule 3 above).
-- **Base skeleton:** `## How to verify` = criteria with method + coverage.
-- **Variant 3 template:** scope + per-phase verification + reserved sections.
+- **New golden rule:** the closure contract (rule 3 above) — done only with a complete verification checklist.
+- **Base skeleton:** `## Objetivo` + `## Fases` + `## Verificación` (checklist with method + coverage).
+- **3 levels of fase detail:** prosa / DAG / código (scope + context + algorithm + instruction DAG).
+- **No accumulator sections** — the body holds the plan; ✓NN evidence is local (riel-ledger).
 - **Cross-reference:** the Riel specs (`riel/specs/`).
