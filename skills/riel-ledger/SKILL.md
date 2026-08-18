@@ -195,10 +195,8 @@ this skill does not require them.
 
 ## Cross-references
 
-- Local format and rules: `riel/specs/spec-ledger-format.md`
+- Local format and rules: `riel/specs/spec-ledger-format.md` (repo)
 - Pull/push protocol: `riel/specs/spec-pull-push.md`
 - Phase advancement: `riel/specs/spec-phase-advance.md`
 - System adapters (Dran first): `riel/specs/spec-adapters.md`
 - The phases graph the ledger navigates: `riel-contract`
-- Scientific base: Dran pages `ledger-pattern-estado-de-agentes`,
-  `j-space-global-workspace-papers`

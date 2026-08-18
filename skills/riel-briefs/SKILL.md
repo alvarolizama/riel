@@ -29,9 +29,8 @@ packet is incomplete.
 ## Anchored opening (DeepSeek first-turn conditions)
 
 What anchors on DeepSeek is the **complete state of the first turn**
-(evidence: Minimal schema anchored 5/5; with injections 0/9; Dran pages
-`deepseek-v4-interfaz-y-trayectoria-we-need` and
-`harness-analysis-papers-en-extension-points`). Apply in `goal` + `context`:
+(evidence: Minimal schema anchored 5/5; with injections 0/9; see
+`riel-protocol` for the full evidence summary). Apply in `goal` + `context`:
 
 1. **`goal` opens with the shared objective** — "We need…" (functional
    grammar: `We need` shared objective, `I` local judgment, `Let's` joint

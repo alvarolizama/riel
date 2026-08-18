@@ -108,12 +108,20 @@ In `delegate_task` briefs, apply the same conditions in `goal` + `context`:
   independent A/B (issue #10) found no measurable gain. Do not claim
   improvements without measuring (that is `riel-measure`, phase 4).
 
-## Evidence (Dran pages)
+## Evidence (summary)
 
-- `deepseek-v4-interfaz-y-trayectoria-we-need` — the 3 anchoring levers
-- `harness-analysis-papers-en-extension-points` — confirmed in the official
-  Minimal preset (complete persona + zero injections + two-tool pair)
-- `j-space-global-workspace-papers` — workspace scientific base
+- **The 3 anchoring levers** — DeepSeek community finding (dsh-anchored-standard):
+  Minimal tool schema anchored the "We need…" trajectory 5/5; standard schemas
+  fell to "Let me…" 11/11; a 1024-token first-request budget anchored 26/32;
+  with skill-catalog injections present the anchor did not reproduce 0/9.
+  Confirmed first-hand in the official DeepSeek Harness Minimal preset
+  (complete persona + zero runtime context + the two-tool pair).
+- **The workspace base** — Anthropic "Verbalizable Representations Form a
+  Global Workspace in Language Models" (Gurnee et al., 2026): capacity of
+  1-2 active ideas, broadcast hub, written externalization survives workspace
+  ablation. Replicated independently on an open-weights model (DeepMind).
+- Full distilled sources live outside this skill; the skill itself is
+  self-contained.
 
 ## Pitfalls
 

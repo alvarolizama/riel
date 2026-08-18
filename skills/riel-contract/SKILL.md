@@ -19,7 +19,7 @@ and CI-verifiable.
 
 **When to use:** creating a new skill with decision flows, hand-offs, or
 pipelines; adding mermaid to an existing skill; authoring the `## Phases`
-graph of a Dran dev todo.
+graph of a dev todo.
 
 **Do NOT use for:** decorative diagrams without routing/parsing purpose
 (use prose); skills without sequential flows.
@@ -34,7 +34,6 @@ graph of a Dran dev todo.
   agent planning; **text + code + flowchart together > any format alone**.
 - **Lost in the Middle** (arXiv:2307.03172): branch logic buried in
   paragraphs gets lost in long context; the graph makes it position-proof.
-- Distilled detail: Dran page `graph-engineering-instrucciones-agentes`.
 
 ## The 3-layer pattern (every skill with mermaid)
 
@@ -265,5 +264,4 @@ failure show file + block + error.
 
 - One-shot agent instructions with the same vocabulary: `riel-briefs`
 - SKILL.md mechanics (frontmatter, validator): `hermes-agent-skill-authoring`
-- The ledger that the VERIFY nodes feed: `riel-ledger` (specs ready)
-- Evidence detail: Dran page `graph-engineering-instrucciones-agentes`
+- The ledger that the VERIFY nodes feed: `riel-ledger`
