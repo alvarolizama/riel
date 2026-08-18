@@ -23,11 +23,12 @@ flowchart TD
 
 1. Read the remote task COMPLETELY (adapter: spec-adapters) — never from search excerpts.
 2. `Goal` ← todo title/objective.
-3. `Phase` ← first DAG phase without a checkbox (spec-phase-advance).
-4. `Verified` ← seed from the existing `## Verification` (when resuming a half-done task).
-5. `Open` ← from existing `## Pending`, if they apply to the active phase.
-6. `Next` ← first action of the active phase.
-7. Write `.riel/ledger.md`.
+3. `Source` ← remote system + task identifier (e.g. `dran:<slug>`).
+4. `Phase` ← first DAG phase without a checkbox (spec-phase-advance).
+5. `Verified` ← seed from the existing `## Verification` (when resuming a half-done task).
+6. `Open` ← from existing `## Pending`, if they apply to the active phase.
+7. `Next` ← first action of the active phase.
+8. Write `.riel/ledger.md`.
 
 ## Seam
 

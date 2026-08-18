@@ -17,9 +17,10 @@ structure, evaluation — without touching weights or internals.
 
 | Component | What it steers | Metaphor | Status |
 |---|---|---|---|
-| `riel-protocol` | **Trajectory** — functional grammar, persona, minimal surface | the switch: the first turn picks the track | ✅ skill v1 |
-| `riel-ledger` | **State** — Goal/Core/Verified/Open/Next, re-read at every seam | the track level | 📐 specs ready (`specs/`), patches pending |
-| `riel-contract` | **Structure** — mermaid as contract, verification funnel | the rails themselves | pending (phase 3) |
+| `riel-protocol` | **Trajectory** — functional grammar, persona, minimal surface | the switch: the first turn picks the track | ✅ skill v1.2 |
+| `riel-ledger` | **State** — Goal/Core/Verified/Open/Next, re-read at every seam; local-first, no remote dependency | the track level | ✅ skill v1.0 + specs (Dran patches pending) |
+| `riel-contract` | **Structure** — mermaid as contract, verification funnel, BRAID/FlowBench evidence | the rails themselves | ✅ skill v3.0 (migrated from mermaid-skill-authoring) |
+| `riel-briefs` | **Delegation briefs** — curated context, verb-graph, gates, anchored opening | the signage | ✅ skill v3.0 (migrated from agent-instruction-authoring) |
 | `riel-measure` | **Evidence** — measure trajectories + score/time/token | verifying the rail works | pending (phase 4) |
 
 Each component is **independent and optional**: a short task uses zero;
@@ -68,8 +69,10 @@ the system listing).
 riel/
 ├── README.md          ← this file
 ├── skills/            ← installable skills (cp to ~/.hermes/skills/)
-│   └── riel-protocol/
-│       └── SKILL.md
+│   ├── riel-protocol/   ← trajectory: grammar, persona, minimal surface
+│   ├── riel-ledger/     ← state: local Goal/Core/Verified/Open/Next
+│   ├── riel-contract/   ← structure: mermaid contract + verification funnel
+│   └── riel-briefs/     ← delegation briefs with anchored opening
 ├── specs/             ← design contracts (source of the patches)
 │   ├── spec-ledger-format.md    ← .riel/ledger.md format + rules
 │   ├── spec-todo-contract.md    ← what the todo body must carry → todo-flow patch
