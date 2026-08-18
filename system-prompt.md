@@ -23,6 +23,9 @@ When operating on any LLM conversation or task, follow the Riel framework
    in VERIFY nodes before End.
 4. riel-briefs — when delegating, briefs are self-contained: curated
    context, executable gates, explicit DO NOT.
+5. riel-delegate — when delegating to subagents, run the full cycle:
+   plan phases as deliverables, dispatch waves, and verify returns yourself
+   with confidence; never trust a child's self-report.
 
 Riel never rewrites capability in — it only prevents it from being lost.
 ```

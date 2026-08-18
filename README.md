@@ -28,6 +28,7 @@ flowchart LR
   B["riel-briefs\ndelegation briefs"] -.->|"when delegating"| P
   P --> LLM["LLM / harness\n(DeepSeek or other)"]
   C["riel-contract\nmermaid DAG as contract\nverb-graph · verification funnel"] -.->|"task structure"| LLM
+  D["riel-delegate\nplan · dispatch waves\nparent verifies with confidence"] -.->|"when delegating\nto subagents"| LLM
   LLM <-->|"re-read at every seam"| LEDGER["riel-ledger\n.riel/ledger.md\nGoal · Core · Verified\nOpen · Next"]
   LEDGER --> DC["done-check\n✓NN ↔ Goal, line by line"]
   DC -->|"adapter writeback"| REMOTE["remote\ncheckboxes + status\n(adapter's job)"]
@@ -43,6 +44,7 @@ flowchart TD
   subgraph S2["Surface 2 — task structure"]
     B["riel-contract: mermaid DAG,\n6 verbs, verification funnel"]
     C["riel-briefs: curated context,\ngates, anchored opening"]
+    E["riel-delegate: plan phases,\ndispatch waves, parent verifies"]
   end
   subgraph S3["Surface 3 — between-turn state"]
     D["riel-ledger: Goal/Core/Verified/\nOpen/Next + recovery checkpoints"]
@@ -60,9 +62,10 @@ flowchart TD
 | `riel-ledger` | **State** — Goal/Core/Verified/Open/Next, re-read at every seam; recovery via checkpoints; local-first, no remote dependency | the track level | ✅ skill v1.2 + specs |
 | `riel-contract` | **Structure** — mermaid as contract, verification funnel, BRAID/FlowBench evidence | the rails themselves | ✅ skill v3.0 |
 | `riel-briefs` | **Delegation briefs** — curated context, verb-graph, gates, anchored opening | the signage | ✅ skill v3.0 |
+| `riel-delegate` | **Delegation end-to-end** — plan phases as deliverables, dispatch waves, parent verifies returns with confidence | the guard | ✅ skill v1.0 |
 
 Each component is **independent and optional**: a short task uses zero;
-a long loop may use all four. Inherited philosophy: "use only the machinery
+a long loop may use all five. Inherited philosophy: "use only the machinery
 the task earns".
 
 ## The ledger cycle (heart of the framework)
@@ -176,7 +179,8 @@ riel/
 │   ├── riel-protocol/   ← trajectory: grammar, persona, minimal surface
 │   ├── riel-ledger/     ← state: local Goal/Core/Verified/Open/Next + recovery
 │   ├── riel-contract/   ← structure: mermaid contract + verification funnel
-│   └── riel-briefs/     ← delegation briefs with anchored opening
+│   ├── riel-briefs/     ← delegation briefs with anchored opening
+│   └── riel-delegate/   ← delegation end-to-end: plan + dispatch + parent verification
 ├── specs/             ← design contracts (source of the patches)
 │   ├── spec-ledger-format.md    ← .riel/ledger.md format + rules + git hygiene
 │   ├── spec-todo-contract.md    ← what the todo body must carry → todo-flow patch
@@ -204,7 +208,7 @@ riel/
 | Long-horizon agent failures ([arXiv:2607.05775](https://arxiv.org/abs/2607.05775), [arXiv:2607.00692](https://arxiv.org/abs/2607.00692), [arXiv:2607.08964](https://arxiv.org/abs/2607.08964)) | Context-handling gap, no-recovery bottleneck, completion overestimation → ledger fields, recovery protocol, done-check | `riel-ledger` |
 | Re-reading the input ([arXiv:2309.06275](https://arxiv.org/abs/2309.06275)) | Re-reading improves reasoning across 14 datasets → the seam re-read | `riel-ledger` |
 | METR GPT-5 evaluation report | The recovery template: "Stop. Focus. Return to step by step" — fresh plan, re-enter at step 1 | `riel-ledger` |
-| Kwok et al., *LLM-as-a-Verifier* ([arXiv:2607.05391](https://arxiv.org/abs/2607.05391)) | Verification is the bottleneck, not generation (agents already solve; they can't tell which output is correct). 27% tie-rate from coarse scoring; fine granularity (1–20) + criteria decomposition + repeated evaluation each scale verification; two-stage workaround for closed models | `riel-ledger`, `riel-contract` |
+| Kwok et al., *LLM-as-a-Verifier* ([arXiv:2607.05391](https://arxiv.org/abs/2607.05391)) | Verification is the bottleneck, not generation (agents already solve; they can't tell which output is correct). 27% tie-rate from coarse scoring; fine granularity (1–20) + criteria decomposition + repeated evaluation each scale verification; two-stage workaround for closed models | `riel-ledger`, `riel-contract`, `riel-delegate` |
 
 Full distillation of the 24 verified sources lives in the local
 `references/` directory.
