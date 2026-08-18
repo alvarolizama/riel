@@ -8,6 +8,11 @@ model: it prevents capability from being lost.** The thesis comes from
 capability and delivering it reliably (unstable trajectory, drifting state,
 missing verification).
 
+*LLM-as-a-Verifier* extends the thesis: the loss is not just in **generating**
+the capability, but in **discriminating which output is correct** — agents
+already solve the task; they can't tell the correct solution from the wrong
+one.
+
 The name: the train already moves on its own; the rail just keeps it from
 derailing.
 
@@ -25,7 +30,7 @@ flowchart LR
   C["riel-contract\nmermaid DAG as contract\nverb-graph · verification funnel"] -.->|"task structure"| LLM
   LLM <-->|"re-read at every seam"| LEDGER["riel-ledger\n.riel/ledger.md\nGoal · Core · Verified\nOpen · Next"]
   LEDGER --> DC["done-check\n✓NN ↔ Goal, line by line"]
-  DC -->|"optional writeback"| REMOTE["remote\n## Verification\n## Pending"]
+  DC -->|"adapter writeback"| REMOTE["remote\ncheckboxes + status\n(adapter's job)"]
 ```
 
 Every component operates on a different control surface:
@@ -199,6 +204,7 @@ riel/
 | Long-horizon agent failures ([arXiv:2607.05775](https://arxiv.org/abs/2607.05775), [arXiv:2607.00692](https://arxiv.org/abs/2607.00692), [arXiv:2607.08964](https://arxiv.org/abs/2607.08964)) | Context-handling gap, no-recovery bottleneck, completion overestimation → ledger fields, recovery protocol, done-check | `riel-ledger` |
 | Re-reading the input ([arXiv:2309.06275](https://arxiv.org/abs/2309.06275)) | Re-reading improves reasoning across 14 datasets → the seam re-read | `riel-ledger` |
 | METR GPT-5 evaluation report | The recovery template: "Stop. Focus. Return to step by step" — fresh plan, re-enter at step 1 | `riel-ledger` |
+| Kwok et al., *LLM-as-a-Verifier* ([arXiv:2607.05391](https://arxiv.org/abs/2607.05391)) | Verification is the bottleneck, not generation (agents already solve; they can't tell which output is correct). 27% tie-rate from coarse scoring; fine granularity (1–20) + criteria decomposition + repeated evaluation each scale verification; two-stage workaround for closed models | `riel-ledger`, `riel-contract` |
 
 Full distillation of the 24 verified sources lives in the local
 `references/` directory.

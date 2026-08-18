@@ -19,9 +19,8 @@ compaction, an hours-long gap.
 
 **Local-first:** this skill operates entirely inside the task worktree.
 It does NOT depend on any remote task system. Remote sync
-(pulling the task in, pushing verification back) is an optional adapter
-layer — see "Optional remote sync" at the end. The full contracts live in
-`riel/specs/` (repo `Repos/alvarolizama/riel`).
+is an adapter's job, not this skill's — see "Remote systems" at the end. The
+full contracts live in `riel/specs/` (repo `Repos/alvarolizama/riel`).
 
 ## When to use
 
@@ -76,7 +75,7 @@ The ledger is local state, not a deliverable. When working inside a repo:
 - <name> — <defining fact>
 
 ## Verified
-- ✓01 <what holds> — verified by: <what established it>, covering <scope>
+- ✓01 <what holds> — verified by: <what established it>, covering <scope>[, confidence X/20]
 
 ## Open
 - ?01 <question> — settled by: <the cheapest test that would refute it>
@@ -93,7 +92,7 @@ The ledger is local state, not a deliverable. When working inside a repo:
 | Source | Optional; present when the task came from a remote todo |
 | Phase | Derived from the phases graph (riel-contract); pointer to the active mini-ledger |
 | Core | Max 2 live items; change only via explicit swap; each with its defining fact |
-| Verified | Numbered ✓NN, append-only; never deleted or renumbered |
+| Verified | Numbered ✓NN, append-only; never deleted or renumbered; critical checkpoints may carry `confidence X/20` (borderline < 12 = not a checkpoint) |
 | Open | Numbered ?NN; closed against a checkpoint; the number is never reused |
 | Next | Never empty; if blocked, the block IS the Next ("waiting on X from Álvaro") |
 
@@ -123,7 +122,7 @@ flowchart TD
   ADV --> W
   PH -->|"no phases left"| DC["done-check: every Goal\nline maps to a ✓NN"]
   DC -->|"missing"| W
-  DC -->|"all covered"| WB["Writeback (if Source):\nVerified + Pending to the remote,\nthen done"]
+  DC -->|"all covered"| WB["Adapter writeback (if Source):\nmark checkboxes + status done\n(adapter's job, not the ledger)"]
 ```
 
 ### Opening (loop mode only)
@@ -172,7 +171,7 @@ Checked whenever the ledger is re-read:
 1. A ✓NN was declared and never written to the ledger
 2. Something was called verified without stated coverage
 3. The Next changed without the real work changing (churn)
-4. Something with an existing ✓NN got re-verified
+4. Something with an existing ✓NN got re-verified *without variation* (churn)
 5. The Goal does not match what is being executed
 6. Open questions keep growing at every seam with nothing being settled
 
@@ -180,7 +179,12 @@ Checked whenever the ledger is re-read:
 
 When something is verified, append immediately — do not batch:
 
-`✓NN <what holds> — verified by: <command/test/review>, covering <scope>`
+`✓NN <what holds> — verified by: <command/test/review>, covering <scope>[, confidence X/20]`
+
+Re-verifying a **critical** checkpoint is allowed — but only with *variation*
+(re-sample: a different angle, order, or question), never the same check
+repeated. Churn re-runs the same question expecting a different answer;
+re-sampling reduces the false-positive risk on high-stakes results.
 
 ### Phase advancement (when the task has a phases graph)
 
@@ -191,28 +195,23 @@ belonging to future phases migrate with their numbers.
 
 ### Done-check (before declaring done)
 
-Read the Goal back **line by line**. Every line must map to a ✓NN with
-coverage. If any line is missing → not done. Open ?NN that cannot be
-closed go to a Pending list, explicitly — never silently dropped.
+**Decompose first, then verify.** A complex Goal is not one line — break it
+into its verifiable criteria (each independent claim about "done") before
+checking. Then read each criterion **line by line**: every criterion must
+map to a ✓NN with coverage. If any criterion is missing → not done. Open ?NN
+that cannot be closed go to a Pending list, explicitly — never silently
+dropped.
 
-## Optional remote sync (compatibility layer, not a dependency)
+## Remote systems (adapter responsibility, not this skill's)
 
-When `Source` is set, the ledger bridges to the remote task at two moments
-only — the remote is never the live ledger:
+This skill is local-only: `Goal` / `Core` / `Verified` / `Open` / `Next` live
+in `.riel/ledger.md` and are never pushed to a remote task system. `Source`
+only records where the task came from (e.g. `todo:<slug>`).
 
-- **Pull at start:** read the remote task fully → Goal from the title,
-  Phase from the first uncompleted phase, seed Verified from existing
-  verification.
-- **Push at each phase gate and at the end:** append the phase's ✓NN to the
-  remote verification section, mark its checkbox, write open ?NN to a
-  pending section, then set status done via the safe route.
-
-Adapter contracts (4 operations: pull / push-verify / push-phase /
-push-close) and system-specific safety rules live in
-`riel/specs/spec-adapters.md`. The per-system patches to
-`todo-flow` and `coder-flow` are derived separately from
-`spec-todo-contract.md` and `spec-pull-push.md` — they add compatibility,
-this skill does not require them.
+Connecting to a remote system — reading the task in, marking its checkboxes,
+setting status done — is the job of a per-system adapter (e.g. `coder-flow`
+for Dran), not of this skill. The adapter contract lives in
+`riel/specs/spec-adapters.md`.
 
 ## Pitfalls
 
@@ -245,7 +244,7 @@ this skill does not require them.
 - [ ] Every ?NN has a settled-by
 - [ ] Next never empty
 - [ ] Done-check passed: every Goal line maps to a ✓NN
-- [ ] Remote writeback done if Source was set (optional)
+- [ ] Adapter writeback done if Source was set (mark checkboxes + status, via the adapter)
 
 ## Cross-references
 

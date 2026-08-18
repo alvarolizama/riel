@@ -61,11 +61,17 @@ Applies to every task in `loop` mode (multi-file, multi-tool, multi-phase, or sp
 
 ## Valid ✓NN
 
-`✓NN <what holds> — verified by: <verifier>, covering <scope>`
+`✓NN <what holds> — verified by: <verifier>, covering <scope>[, confidence X/20]`
 
 - **Verifier:** what established it (command, test, review).
 - **Coverage:** what it covered (files, cases, platforms, ranges).
-- Without coverage it is not a checkpoint — it is a mood.
+- **Confidence (optional, critical checkpoints only):** a 1–20 score of how
+  strongly the verification holds. Fine granularity (vs. a binary pass/fail)
+  separates solid from borderline results — coarse scoring produces ~27%
+  ties that hide uncertainty (LLM-as-a-Verifier).
+- Without coverage it is not a checkpoint — it is a mood. With
+  `confidence < 12/20` it is a **borderline** — not a checkpoint: `Next`
+  becomes "strengthen the verification of ✓NN", not "advance".
 
 ## Valid ?NN
 
