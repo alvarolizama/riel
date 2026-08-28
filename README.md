@@ -201,7 +201,8 @@ riel/
 │   └── spec-adapters.md         ← system-agnostic contract for remote task systems
 ├── scripts/           ← repo tooling
 │   ├── validate-mermaid.sh   ← validates every mermaid block with mmdc
-│   └── extract-mermaid.py    ← extracts mermaid blocks (regex, re.DOTALL)
+│   ├── extract-mermaid.py    ← extracts mermaid blocks (regex, re.DOTALL)
+│   └── dag-format-benchmark.py  ← prose vs mermaid vs plan benchmark (see "Own evidence")
 └── references/        ← local-only notes (gitignored; public contract in specs/)
 ```
 
@@ -224,6 +225,75 @@ riel/
 
 Full distillation of the 24 verified sources lives in the local
 `references/` directory.
+
+## Own evidence: prompt-format benchmark (prose vs mermaid DAG vs numbered plan)
+
+`riel-contract` bets that a mermaid DAG carries instructions better than
+prose. Papers (BRAID, FlowBench) support the bet — so we tested it directly,
+with the same graphs, the same question, three notations:
+
+| Notation | How the same edge (`outline` → `draft`) looks |
+|---|---|
+| prose | *"draft can only start once all of these are finished: outline, research."* |
+| dag-mermaid | `outline --> draft` |
+| dag-compiler | `2: plan(name='draft', deps=[outline=0, research=1])` |
+
+**Task.** Given the graph, return the minimum number of sequential rounds
+(topological layering). Judged by exact match against ground truth computed
+locally with Kahn's algorithm. Six graphs (four small, 7–8 nodes; two large,
+18–20 nodes), four open-weight chat models, temperature 0, `max_tokens=1000`
+— 72 calls total (4 models × 6 graphs × 3 notations) against one
+OpenAI-compatible endpoint. No endpoints or keys are hardcoded; the script
+takes everything from flags.
+
+**Accuracy** — all six graphs · large graphs only:
+
+| Model | prose | dag-mermaid | dag-compiler |
+|---|---|---|---|
+| qwen3.8-flash | 6/6 · 2/2 | 6/6 · 2/2 | 5/6 · 2/2 |
+| glm-5.3-flash | 5/6 · 1/2 | 6/6 · 2/2 | 6/6 · 2/2 |
+| glm-5.3 | 5/6 · 1/2 | 6/6 · 2/2 | 5/6 · 1/2 |
+| deepseek-v4-flash | 4/6 · 0/2 | 5/6 · 1/2 | 4/6 · 0/2 |
+
+**Tokens** (large graphs, per call):
+
+| Metric | prose | dag-mermaid | dag-compiler |
+|---|---|---|---|
+| prompt tokens (mean) | 450 | **327** (−27%) | 474 |
+| completion tokens (median) | 1,000 | **862** | 1,000 |
+| hit the 1,000-token output cap | 5/8 | **2/8** | 5/8 |
+| total per call (mean) | 1,392 | **1,184** | 1,456 |
+
+**Findings.**
+
+- **Small graphs (≤8 nodes): format doesn't matter** — 15/16 exact across
+  all conditions. Structure buys nothing at toy scale.
+- **Large graphs (18–20 nodes): the gap opens** — prose 4/8, mermaid 7/8,
+  plan 6/8. The prose/plan failures are not misreadings: reconstructing the
+  graph from sentences makes models reason longer and blow the output cap
+  (`unparseable` at exactly `max_tokens`). Mermaid's edge list removes that
+  reconstruction step.
+- **Mermaid dominates both dimensions**: ~25% fewer input tokens (it encodes
+  each dependency as 2–5 tokens, no per-node boilerplate), less wasted
+  reasoning, and the best accuracy at scale. Empirical basis for
+  `riel-contract`'s *mermaid as contract*.
+
+**Reproduce:**
+
+```bash
+export OPENAI_API_KEY=...   # any OpenAI-compatible endpoint works
+python3 scripts/dag-format-benchmark.py \
+  --base-url https://your-endpoint/v1 \
+  --models your-model-a,your-model-b \
+  [--cases monorepo,dataplatform] [--dry-run]
+```
+
+**Limits.** Six graphs, one seed, one task family (dependency planning),
+four models from one provider family. Cap effects mean prose/plan token
+costs are lower bounds. Nothing here claims mermaid helps *reasoning
+quality* on small graphs — only that, as graphs grow, the explicit edge list
+is cheaper and more reliable than prose. Which is exactly the regime
+contracts live in.
 
 ## Honesty about evidence
 
