@@ -1,0 +1,92 @@
+case           cond           model                  ok  verdict                 ptok  ctok
+content        prose          glm-5.3-flash          Y   exact                    181   151 
+content        prose          glm-5.3                Y   exact                    181   173 
+content        prose          deepseek-v4-flash      Y   exact                    257   333 
+content        prose          qwen3.8-flash          Y   exact                    233   380 
+content        dag-mermaid    glm-5.3-flash          Y   exact                    134   191 
+content        dag-mermaid    glm-5.3                Y   exact                    134   239 
+content        dag-mermaid    deepseek-v4-flash      Y   exact                    209   292 
+content        dag-mermaid    qwen3.8-flash          Y   exact                    185   294 
+content        dag-compiler   glm-5.3-flash          Y   exact                    182   193 
+content        dag-compiler   glm-5.3                Y   exact                    182   176 
+content        dag-compiler   deepseek-v4-flash      Y   exact                    272   438 
+content        dag-compiler   qwen3.8-flash          Y   exact                    240   440 
+build          prose          glm-5.3-flash          Y   exact                    199   178 
+build          prose          glm-5.3                Y   exact                    199   213 
+build          prose          deepseek-v4-flash      Y   exact                    274   493 
+build          prose          qwen3.8-flash          Y   exact                    251   286 
+build          dag-mermaid    glm-5.3-flash          Y   exact                    143   188 
+build          dag-mermaid    glm-5.3                Y   exact                    143   156 
+build          dag-mermaid    deepseek-v4-flash      Y   exact                    218   481 
+build          dag-mermaid    qwen3.8-flash          Y   exact                    194   352 
+build          dag-compiler   glm-5.3-flash          Y   exact                    193   163 
+build          dag-compiler   glm-5.3                Y   exact                    193   220 
+build          dag-compiler   deepseek-v4-flash      Y   exact                    276   384 
+build          dag-compiler   qwen3.8-flash          Y   exact                    251   440 
+ml             prose          glm-5.3-flash          Y   exact                    211   177 
+ml             prose          glm-5.3                Y   exact                    211   160 
+ml             prose          deepseek-v4-flash      Y   exact                    284   310 
+ml             prose          qwen3.8-flash          Y   exact                    263   284 
+ml             dag-mermaid    glm-5.3-flash          Y   exact                    146   229 
+ml             dag-mermaid    glm-5.3                Y   exact                    146   196 
+ml             dag-mermaid    deepseek-v4-flash      Y   exact                    219   330 
+ml             dag-mermaid    qwen3.8-flash          Y   exact                    197   264 
+ml             dag-compiler   glm-5.3-flash          Y   exact                    206   182 
+ml             dag-compiler   glm-5.3                Y   exact                    206   237 
+ml             dag-compiler   deepseek-v4-flash      Y   exact                    290   372 
+ml             dag-compiler   qwen3.8-flash          Y   exact                    265   386 
+incident       prose          glm-5.3-flash          Y   exact                    215   185 
+incident       prose          glm-5.3                Y   exact                    215   151 
+incident       prose          deepseek-v4-flash      Y   exact                    288   349 
+incident       prose          qwen3.8-flash          Y   exact                    267   314 
+incident       dag-mermaid    glm-5.3-flash          Y   exact                    159   184 
+incident       dag-mermaid    glm-5.3                Y   exact                    159   116 
+incident       dag-mermaid    deepseek-v4-flash      Y   exact                    232   331 
+incident       dag-mermaid    qwen3.8-flash          Y   exact                    210   219 
+incident       dag-compiler   glm-5.3-flash          N   partial 6/7              215   261 
+incident       dag-compiler   glm-5.3                Y   exact                    215   145 
+incident       dag-compiler   deepseek-v4-flash      N   partial 6/7              297   410 
+incident       dag-compiler   qwen3.8-flash          Y   exact                    273   350 
+monorepo       prose          glm-5.3-flash          Y   exact                    393   422 
+monorepo       prose          glm-5.3                Y   exact                    393   521 
+monorepo       prose          deepseek-v4-flash      N   unparseable              466  1000 
+monorepo       prose          qwen3.8-flash          Y   exact                    445   959 
+monorepo       dag-mermaid    glm-5.3-flash          Y   exact                    263   391 
+monorepo       dag-mermaid    glm-5.3                Y   exact                    263   448 
+monorepo       dag-mermaid    deepseek-v4-flash      Y   exact                    336   976 
+monorepo       dag-mermaid    qwen3.8-flash          Y   exact                    314   958 
+monorepo       dag-compiler   glm-5.3-flash          Y   exact                    391   481 
+monorepo       dag-compiler   glm-5.3                Y   exact                    391   507 
+monorepo       dag-compiler   deepseek-v4-flash      N   unparseable              487  1000 
+monorepo       dag-compiler   qwen3.8-flash          N   ERROR                      0     0 HTTP Error 500: Internal Server Error
+dataplatform   prose          glm-5.3-flash          Y   exact                    441   777 
+dataplatform   prose          glm-5.3                Y   exact                    441   966 
+dataplatform   prose          deepseek-v4-flash      N   unparseable              526  1000 
+dataplatform   prose          qwen3.8-flash          Y   exact                    493  1081 
+dataplatform   dag-mermaid    glm-5.3-flash          N   unparseable              326  1000 
+dataplatform   dag-mermaid    glm-5.3                Y   exact                    326   946 
+dataplatform   dag-mermaid    deepseek-v4-flash      N   unparseable              412  1000 
+dataplatform   dag-mermaid    qwen3.8-flash          Y   exact                    377  1945 
+dataplatform   dag-compiler   glm-5.3-flash          Y   exact                    464   645 
+dataplatform   dag-compiler   glm-5.3                Y   exact                    464   685 
+dataplatform   dag-compiler   deepseek-v4-flash      N   unparseable              568  1000 
+dataplatform   dag-compiler   qwen3.8-flash          N   ERROR                      0     0 HTTP Error 500: Internal Server Error
+
+--- accuracy by condition x model ---
+dag-compiler   deepseek-v4-flash      3/6
+dag-compiler   glm-5.3                6/6
+dag-compiler   glm-5.3-flash          5/6
+dag-compiler   qwen3.8-flash          4/6
+dag-mermaid    deepseek-v4-flash      5/6
+dag-mermaid    glm-5.3                6/6
+dag-mermaid    glm-5.3-flash          5/6
+dag-mermaid    qwen3.8-flash          6/6
+prose          deepseek-v4-flash      4/6
+prose          glm-5.3                6/6
+prose          glm-5.3-flash          6/6
+prose          qwen3.8-flash          6/6
+
+--- tokens by condition (mean prompt / mean completion) ---
+prose          prompt=   305 completion=   453
+dag-mermaid    prompt=   227 completion=   489
+dag-compiler   prompt=   272 completion=   380
