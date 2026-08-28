@@ -1,7 +1,7 @@
 ---
 name: riel-protocol
 description: "Use when opening or maintaining a conversation with an LLM (DeepSeek or other) — functional grammar, persona, minimal-surface protocol. Never rewrites the user's request."
-version: 1.2.0
+version: 1.3.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -81,8 +81,19 @@ magic word. Three conditions:
    first action, not the full capability catalog. Heavier capabilities are
    introduced when the task asks for them.
 3. **Zero irrelevant injections** — do not drag in skill catalogs, digests, or
-   context the first action does not need. (Evidence: with the skill catalog
-   present the anchor did not reproduce, 0/9.)
+   context the first action does not need.
+
+**Priority when the conditions clash: 3 > 2 > 1.** Conditions 2 and 3 carry
+the measured anchoring effect; the persona rides along with the complete
+prompt and has never been ablated on its own (see Evidence limits).
+
+**When the harness makes them unreachable:** harnesses that inject a skill
+index or environment digest on every turn (by design — discovery needs it),
+or that fix the tool schema, can never see request #1 clean; do not claim
+anchoring there. The full recipe is reachable only where the opener controls
+the surface — as in delegation briefs (below). The grammar discipline and the
+ledger/contract machinery do not depend on the anchor reproducing; they apply
+in either case.
 
 ### When delegating (subagents)
 
@@ -103,6 +114,13 @@ In `delegate_task` briefs, apply the same conditions in `goal` + `context`:
 
 - **Strongly measured:** first-turn conditions **anchor the trajectory**
   (Minimal schema 5/5; with injections 0/9).
+- **Persona is the least-quantified of the three conditions:** the presets
+  keep the Minimal prompt complete, but the persona line was never ablated on
+  its own — 5/5 belongs to the tool schema, 0/9 to injections. It is an
+  assumed condition, not a measured cause. Closest the community got to
+  testing it: the `whoami` anchor variant (+1 call — the model states its own
+  persona before tools open) and the `guide:false` knob that keeps the persona
+  "byte-pure" against appended capability text.
 - **Hypothesis, not measured:** that the anchored trajectory improves
   *scores* — independent replication gives 95% CI [−2.6, +9.3]; one
   independent A/B (issue #10) found no measurable gain. Do not claim

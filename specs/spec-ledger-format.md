@@ -67,8 +67,9 @@ Applies to every task in `loop` mode (multi-file, multi-tool, multi-phase, or sp
 - **Coverage:** what it covered (files, cases, platforms, ranges).
 - **Confidence (optional, critical checkpoints only):** a 1–20 score of how
   strongly the verification holds. Fine granularity (vs. a binary pass/fail)
-  separates solid from borderline results — coarse scoring produces ~27%
-  ties that hide uncertainty (LLM-as-a-Verifier).
+  separates solid from borderline results — coarse discrete scoring produces a
+  26.7% tie rate on Terminal-Bench V2 (a continuous verifier: zero ties),
+  which hides uncertainty (LLM-as-a-Verifier).
 - Without coverage it is not a checkpoint — it is a mood. With
   `confidence < 12/20` it is a **borderline** — not a checkpoint: `Next`
   becomes "strengthen the verification of ✓NN", not "advance".

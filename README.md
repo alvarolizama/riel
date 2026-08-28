@@ -25,6 +25,23 @@ the capability, but in **discriminating which output is correct** — agents
 already solve the task; they can't tell the correct solution from the wrong
 one.
 
+**Corollary: Riel is the opposite of brute-force prompting.** The default way
+most people work with an LLM is trial and error: throw a vague prompt, see
+what comes back, re-prompt until something looks right, accept it because it
+compiled. No plan, no state between turns, no definition of done — the model
+is being sampled, not steered. Riel inverts each of those: a task is
+**planned** as an explicit DAG before any work happens (`riel-contract`),
+**held** in a ledger re-read at every seam (`riel-ledger`), **delegated**
+through self-contained briefs instead of hope (`riel-briefs`,
+`riel-delegate`), and only **accepted** when each Goal line maps to a `✓NN`
+with a named verifier and stated coverage. The agent stops when the work is
+verified, not when the human runs out of patience re-prompting.
+
+Spec-driven development is the same enemy's opposite — it too plans before
+coding. The difference is the lifetime of the plan: a spec is written, then
+trusted to be read. Riel's contract is re-read at every seam and closed
+against evidence, and dies when the task does.
+
 The name: the train already moves on its own; the rail just keeps it from
 derailing.
 
@@ -70,7 +87,7 @@ flowchart TD
 
 | Component | What it steers | Metaphor | Status |
 |---|---|---|---|
-| `riel-protocol` | **Trajectory** — functional grammar, persona, minimal surface | the switch: the first turn picks the track | ✅ skill v1.2 |
+| `riel-protocol` | **Trajectory** — functional grammar, persona, minimal surface | the switch: the first turn picks the track | ✅ skill v1.3 |
 | `riel-ledger` | **State** — Goal/Core/Verified/Open/Next, re-read at every seam; recovery via checkpoints; local-first, no remote dependency | the track level | ✅ skill v1.2 + specs |
 | `riel-contract` | **Structure** — mermaid as contract, verification funnel, BRAID/FlowBench evidence | the rails themselves | ✅ skill v3.0 |
 | `riel-briefs` | **Delegation briefs** — curated context, verb-graph, gates, anchored opening | the signage | ✅ skill v3.0 |
@@ -221,7 +238,7 @@ riel/
 | Long-horizon agent failures ([arXiv:2607.05775](https://arxiv.org/abs/2607.05775), [arXiv:2607.00692](https://arxiv.org/abs/2607.00692), [arXiv:2607.08964](https://arxiv.org/abs/2607.08964)) | Context-handling gap, no-recovery bottleneck, completion overestimation → ledger fields, recovery protocol, done-check | `riel-ledger` |
 | Re-reading the input ([arXiv:2309.06275](https://arxiv.org/abs/2309.06275)) | Re-reading improves reasoning across 14 datasets → the seam re-read | `riel-ledger` |
 | METR GPT-5 evaluation report | The recovery template: "Stop. Focus. Return to step by step" — fresh plan, re-enter at step 1 | `riel-ledger` |
-| Kwok et al., *LLM-as-a-Verifier* ([arXiv:2607.05391](https://arxiv.org/abs/2607.05391)) | Verification is the bottleneck, not generation (agents already solve; they can't tell which output is correct). 27% tie-rate from coarse scoring; fine granularity (1–20) + criteria decomposition + repeated evaluation each scale verification; two-stage workaround for closed models | `riel-ledger`, `riel-contract`, `riel-delegate` |
+| Kwok et al., *LLM-as-a-Verifier* ([arXiv:2607.05391](https://arxiv.org/abs/2607.05391)) | Verification is the bottleneck, not generation (agents already solve; they can't tell which output is correct) — best-of-N headroom needs a reliable selector to be realized. 26.7% tie-rate from coarse discrete scoring (verifier: zero ties); fine granularity (1–20) + criteria decomposition + repeated evaluation each scale verification; score tracks task progress; two-stage workaround for closed models | `riel-ledger`, `riel-contract`, `riel-delegate` |
 
 Full distillation of the 24 verified sources lives in the local
 `references/` directory.
@@ -294,12 +311,3 @@ costs are lower bounds. Nothing here claims mermaid helps *reasoning
 quality* on small graphs — only that, as graphs grow, the explicit edge list
 is cheaper and more reliable than prose. Which is exactly the regime
 contracts live in.
-
-## Honesty about evidence
-
-- **Measured:** first-turn conditions anchor the trajectory on DeepSeek
-  (Minimal schema 5/5; with injections 0/9).
-- **Hypothesis:** that the anchored trajectory improves scores — independent
-  replication with 95% CI [−2.6, +9.3]; one A/B found no gain. Riel does not
-  promise better results; task verification lives in the done-check of
-  `riel-ledger`.
