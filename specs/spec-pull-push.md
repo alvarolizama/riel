@@ -4,7 +4,7 @@ Status: draft v2 · Riel phase 2
 How the local ledger relates to a remote task system (via spec-adapters).
 **The ✓NN stays local.** The remote only ever receives checkboxes and status.
 Existing adapter deployments continue to work unchanged — they satisfy
-this contract (the *how* lives in the private adapter notes, not here).
+this contract.
 
 ## The split of responsibilities
 

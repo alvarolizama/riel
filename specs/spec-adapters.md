@@ -23,14 +23,6 @@ The local format (spec-ledger-format) and the pull/push cycle (spec-pull-push) a
 5. One workstream = one worktree = one ledger.
 6. The ledger file is local state: git hygiene from spec-ledger-format applies in every worktree.
 
-## Reference implementation
-
-A concrete adapter's operational detail — tool calls, safety notes,
-token-limit fallback, hash verification — lives in a **local, gitignored**
-note (`references/<adapter>-adapter-notes.md`), never in the public spec.
-The day a new remote gets connected, one adapter-notes file is added locally
-— contract and cycle untouched.
-
 ## Honest limit
 
 Total agnosticism does not exist — each remote has different semantics (body replacement vs fields vs blocks). That is encapsulated in the adapter's safety notes; the rest of the system never notices.
