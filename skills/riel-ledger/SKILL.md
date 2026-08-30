@@ -1,7 +1,7 @@
 ---
 name: riel-ledger
 description: "Use when running a loop-mode task — write the local Goal/Core/Verified/Open/Next ledger in the worktree, re-read at every seam, verify before done. No remote dependency."
-version: 1.4.0
+version: 1.5.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -146,6 +146,18 @@ context compaction, coming back hours later. At each seam: **re-read the
 ledger.** That is the whole mechanism — the file is not the mechanism, the
 re-read is.
 
+Not everything fades at the same rate, so refresh frequency is not uniform:
+
+| What refreshes | How often | Why |
+|---|---|---|
+| **The ledger** — Goal/Core/Verified/Open/Next | **Every seam** | It changes constantly and is the only thing carrying state forward |
+| **Failure invariants + mode gate** | **Every 3 seams, and after any red-line event** | Short, cheap, and they decay with distance, not with change |
+| **The active phase graph** (riel-contract) | **Only on phase change, or when the flow starts feeling mechanical** | Re-reading a graph you're inside of buys nothing |
+| **Other skills' rules** | **Never** | They load when the task routes to them |
+
+Refreshing everything every seam is waste; refreshing nothing is how a long
+task quietly stops being the task you were given.
+
 Stall detection: same Next for 3 seams → document why or change course.
 Goal misaligned with what is being executed → return to the Goal before
 acting.
@@ -161,6 +173,26 @@ When work degrades (cascading errors, doubt loops, corrupted output):
 4. Write a fresh explicit plan from that checkpoint.
 5. Re-enter at step 1 of the fresh plan — a new plan, not a continuation
    of the broken one.
+
+### Recovery after a long gap (compaction, session boundary)
+
+The ledger survives the gap; the context around it does not. When you come
+back and the middle of the task is gone, restore in this exact order before
+touching the work:
+
+1. **Re-read the ledger in full** — every ✓NN, not just the last one. You
+   are rebuilding what holds, not skimming where you stopped.
+2. **Re-read the failure invariants below** — they decay with distance,
+   not with change, and the gap is the longest distance you will take.
+3. **Re-check the mode gate** — is this still the pass you were on? A gap
+   often reveals the task was misclassified.
+4. **Restate the pass, and make `Next` the first action back.** The first
+   action after a gap is the riskiest seam of the whole task — bound it
+   before you act.
+
+Order matters: ledger first (what holds locally), invariants second (what
+to watch for), mode third (am I still doing the right size of thing), then
+and only then action.
 
 ### Failure invariants (not working if...)
 
