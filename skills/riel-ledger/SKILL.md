@@ -1,7 +1,7 @@
 ---
 name: riel-ledger
 description: "Use when running a loop-mode task — write the local Goal/Core/Verified/Open/Next ledger in the worktree, re-read at every seam, verify before done. No remote dependency."
-version: 1.5.0
+version: 1.6.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -103,6 +103,23 @@ test/page_test.exs`, 12 examples 0 failures". A command that returns clean
 binary output beats a self-assessment; the executor is the worst judge of
 its own work.
 
+## The three registers
+
+You write in three registers — the difference is who reads them.
+
+- **Inner** — dense, compressed, private. For thinking. Never read by
+  anyone else, never expanded. "Tests green, ?coverage on edge input ↓"
+- **Ledger** — short labelled lines, durable, re-read at seams. For
+  state. "✓01 Token signs — `mix test token_test.exs`, 4/4, covering
+  sign+verify+expiry"
+- **Outer** — clean, complete language. For humans and task-facing tools.
+  Deliverables, commits, brief packets, tool inputs.
+
+The switch to outer is **total** and happens at every seam, not once
+before delivery. Dense on the inside, decodable on demand, clean on
+the outside. If a dense symbol leaks into an outer deliverable, that
+is a register bug — fix it before the seam closes.
+
 ## The protocol
 
 ```mermaid
@@ -131,6 +148,10 @@ flowchart TD
 
 ### Opening (loop mode only)
 
+0. **Restate the Goal in one line, in your own words** — not a summary
+   for the user, a re-encoding for yourself. If you can't produce it
+   without looking, you don't understand the task yet; go back before
+   opening anything.
 1. State the Goal — one sentence, what "done" means. If the task came from
    a remote todo, set Source and pull Goal from its title.
 2. Set Core — max 2 live items with their defining facts.
@@ -194,6 +215,29 @@ Order matters: ledger first (what holds locally), invariants second (what
 to watch for), mode third (am I still doing the right size of thing), then
 and only then action.
 
+### Mid-task self-checks (signs it has landed)
+
+Ask these during the task, not afterwards. Each failed check maps to
+a failure invariant.
+
+- Can you name right now the 1-2 items in Core? If not, the hub is
+  overloaded.
+- Did the intermediate step arrive before the conclusion, or are you
+  decorating an answer that showed up first? If decorating: stop, go
+  back to the last ✓NN.
+- If someone sampled your last dense line right now, could you expand
+  it from the line, not from memory? If not, your compression is
+  corrupting state.
+- Did your last verification produce a ✓NN, or are you carrying state
+  that was never settled?
+- Are you about to derive something for the second time that should
+  already be in the ledger?
+- Is the mode (fast/full/loop) still the right one for what's in front
+  of you?
+
+A failed check is a finding, not a mood. Name it in ?NN, fix it,
+continue.
+
 ### Failure invariants (not working if...)
 
 Checked whenever the ledger is re-read:
@@ -204,6 +248,12 @@ Checked whenever the ledger is re-read:
 4. Something with an existing ✓NN got re-verified *without variation* (churn)
 5. The Goal does not match what is being executed
 6. Open questions keep growing at every seam with nothing being settled
+7. Every confidence tag this session has been the same value — if
+   confidence never varies, the scale is not discriminating
+8. A self-check ran and found nothing — again. A monitor that never
+   reports is not a clean system; it is an unplugged monitor
+9. You cannot re-state the Goal in one line, in your own words, without
+   looking at the ledger — the Goal has gone stale
 
 ### Recording verification
 
