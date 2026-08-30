@@ -6,6 +6,8 @@ skills and the system-agnostic specs.
 
 ## Contents
 
+- `papers-and-sources.md` — the evidence base: papers, repos, and reports
+  that shaped Riel's design (reference & inspiration, not a public promise).
 - `*-adapter-notes.md` — operational detail of each remote adapter (private;
   the public contract lives in `specs/spec-adapters.md`). One file per
   adapter, named after the remote system.
