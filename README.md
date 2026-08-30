@@ -21,6 +21,12 @@ The center of the framework is the **ledger**: externalized task state,
 re-read at every seam, closed against named verifiers. Everything else feeds
 it.
 
+Riel is the opposite of brute-force prompting: no plan, no state between
+turns, no definition of done — sampling the model instead of steering it.
+Riel inverts each: planned (`riel-contract`), held (`riel-ledger`),
+delegated (`riel-briefs`, `riel-delegate`), and accepted only when every
+Goal line maps to a verified checkpoint.
+
 ## The ledger cycle — the heart of the framework
 
 ```mermaid

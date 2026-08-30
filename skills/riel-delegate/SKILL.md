@@ -115,7 +115,7 @@ only what dispatching itself adds.
 - [ ] Scopes disjoint at file level; shared files are parent work
 - [ ] Every child gets a self-contained packet (riel-briefs)
 - [ ] Children never commit, never run the full suite
-- [ ] Parent verified: decomposed criteria + confidence per criterion (riel-ledger)
+- [ ] Parent verified: decomposed criteria + `confidence X/20` per criterion (riel-ledger)
 - [ ] Failures triaged A/B/C; B fixed by parent, not re-dispatched
 - [ ] Full gate re-run unpiped; commit per logical concern
 
