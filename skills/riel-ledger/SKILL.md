@@ -1,7 +1,7 @@
 ---
 name: riel-ledger
 description: "Use when running a loop-mode task — write the local Goal/Core/Verified/Open/Next ledger in the worktree, re-read at every seam, verify before done. No remote dependency."
-version: 1.2.0
+version: 1.3.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -15,12 +15,11 @@ metadata:
 The ledger is **externalized working memory** for tasks long enough to lose
 state. It does not solve anything — it lets the agent **restore the same
 task state** after every seam: a tool call, a file change, a context
-compaction, an hours-long gap.
+compaction, an hours-long gap. This is the heart of the Riel framework.
 
 **Local-first:** this skill operates entirely inside the task worktree.
-It does NOT depend on any remote task system. Remote sync
-is an adapter's job, not this skill's — see "Remote systems" at the end. The
-full contracts live in `riel/specs/` (repo `Repos/alvarolizama/riel`).
+It does NOT depend on any remote task system. Remote sync is an adapter's
+job — see "Remote systems" at the end.
 
 ## When to use
 
@@ -46,17 +45,11 @@ verified; hours passed and you cannot remember where you left off.
 The ledger is local state, not a deliverable. When working inside a repo:
 
 1. **Before committing, ensure `.riel/` is ignored in THAT repo** — add
-   `.riel/` to the worktree's `.gitignore` if it is not already there. Do
-   NOT assume the Riel repo's `.gitignore` covers other repos; each
-   worktree has its own.
+   `.riel/` to the worktree's `.gitignore` if it is not already there.
 2. **Never `git add .riel/` or `git add -A` without checking** — prefer
-   explicit adds (`git add <file>`) or `git add -p`. The ledger must not
-   leak into a feature commit.
+   explicit adds (`git add <file>`). The ledger must not leak into a
+   feature commit.
 3. **Before every commit, verify:** `git status` shows no `.riel/` entries.
-   If it does, fix the `.gitignore` before committing, never after.
-4. The `.riel/` directory is created by the agent, not by the project — a
-   reviewer seeing it in a commit is a hygiene failure, same as committing
-   a build artifact.
 
 ```markdown
 # Riel ledger
@@ -90,28 +83,34 @@ The ledger is local state, not a deliverable. When working inside a repo:
 |---|---|
 | Goal | One sentence; updated only if the goal changes |
 | Source | Optional; present when the task came from a remote todo |
-| Phase | Derived from the phases graph (riel-contract); pointer to the active mini-ledger |
+| Phase | Derived from the phases graph (riel-contract); pointer to the active phase |
 | Core | Max 2 live items; change only via explicit swap; each with its defining fact |
 | Verified | Numbered ✓NN, append-only; never deleted or renumbered; critical checkpoints may carry `confidence X/20` (borderline < 12 = not a checkpoint) |
 | Open | Numbered ?NN; closed against a checkpoint; the number is never reused |
-| Next | Never empty; if blocked, the block IS the Next ("waiting on X from Álvaro") |
+| Next | Never empty; if blocked, the block IS the Next ("waiting on X from the user") |
 
 A ✓NN without coverage is not a checkpoint — **it is a mood**. Every entry
 names the verifier AND what it covered.
+
+**The verifier is external to the executor's judgment whenever possible.**
+"verified by: the tests I ran" is weaker than "verified by: `mix test
+test/page_test.exs`, 12 examples 0 failures". A command that returns clean
+binary output beats a self-assessment; the executor is the worst judge of
+its own work.
 
 ## The protocol
 
 ```mermaid
 flowchart TD
-  START([loop-mode task]) --> OPEN["Open the ledger:\nGoal + Source + Core + Next\n(.riel/ledger.md)"]
+  START([loop-mode task]) --> OPEN["Open the ledger:\nGoal + Source + Core + Next\n.riel/ledger.md"]
   OPEN --> W[Work]
   W --> S{"seam: phase change,\ntool call, file,\nlong gap"}
-  S --> R["Re-read the ledger\n(the whole mechanism)"]
+  S --> R["Re-read the ledger\nthe whole mechanism"]
   R --> ST{"stalled? same Next\nfor 3 seams?"}
   ST -->|yes| F["Diagnose: document why,\nor change course"]
   F --> W
   ST -->|no| DEG{"degraded? cascading\nerrors, corrupted output"}
-  DEG -->|yes| REC["Recovery: last ✓NN =\ncheckpoint → fresh plan,\nre-enter at step 1"]
+  DEG -->|yes| REC["Recovery: last ✓NN =\ncheckpoint, fresh plan,\nre-enter at step 1"]
   REC --> W
   DEG -->|no| CK{"verified something?"}
   CK -->|yes| APP["Append ✓NN with\nverifier + coverage"]
@@ -122,7 +121,7 @@ flowchart TD
   ADV --> W
   PH -->|"no phases left"| DC["done-check: every Goal\nline maps to a ✓NN"]
   DC -->|"missing"| W
-  DC -->|"all covered"| WB["Adapter writeback (if Source):\nmark checkboxes + status done\n(adapter's job, not the ledger)"]
+  DC -->|"all covered"| WB["Adapter writeback if Source:\nmark checkboxes + status done"]
 ```
 
 ### Opening (loop mode only)
@@ -140,7 +139,7 @@ flowchart TD
 A seam is any boundary: a phase ending, a tool call, opening a file, a
 context compaction, coming back hours later. At each seam: **re-read the
 ledger.** That is the whole mechanism — the file is not the mechanism, the
-re-read is. Without any tooling it is 4 steps and 15 seconds.
+re-read is.
 
 Stall detection: same Next for 3 seams → document why or change course.
 Goal misaligned with what is being executed → return to the Goal before
@@ -148,11 +147,8 @@ acting.
 
 ### Recovery (when work degrades)
 
-Long-horizon failure mode (research): once an agent commits to a wrong
-intermediate state deep into a trajectory, it cannot detect it and roll
-back on its own. The ✓NN entries are numbered on purpose — they are
-addressable checkpoints. When work degrades (cascading errors, doubt
-loops, corrupted output):
+The ✓NN entries are numbered on purpose — they are addressable checkpoints.
+When work degrades (cascading errors, doubt loops, corrupted output):
 
 1. **Do NOT resume where it broke.**
 2. Re-read the ledger in full.
@@ -160,9 +156,6 @@ loops, corrupted output):
 4. Write a fresh explicit plan from that checkpoint.
 5. Re-enter at step 1 of the fresh plan — a new plan, not a continuation
    of the broken one.
-
-The recovery does not pick up where it left off; it writes a fresh plan
-and re-enters at step 1. That is the template.
 
 ### Failure invariants (not working if...)
 
@@ -182,9 +175,9 @@ When something is verified, append immediately — do not batch:
 `✓NN <what holds> — verified by: <command/test/review>, covering <scope>[, confidence X/20]`
 
 Re-verifying a **critical** checkpoint is allowed — but only with *variation*
-(re-sample: a different angle, order, or question), never the same check
-repeated. Churn re-runs the same question expecting a different answer;
-re-sampling reduces the false-positive risk on high-stakes results.
+(a different angle, order, or question), never the same check repeated.
+Churn re-runs the same question expecting a different answer; re-sampling
+reduces the false-positive risk on high-stakes results.
 
 ### Phase advancement (when the task has a phases graph)
 
@@ -198,36 +191,35 @@ belonging to future phases migrate with their numbers.
 **Decompose first, then verify.** A complex Goal is not one line — break it
 into its verifiable criteria (each independent claim about "done") before
 checking. Then read each criterion **line by line**: every criterion must
-map to a ✓NN with coverage. If any criterion is missing → not done. Open ?NN
-that cannot be closed go to a Pending list, explicitly — never silently
+map to a ✓NN with coverage. If any criterion is missing → not done. Open
+?NN that cannot be closed go to a Pending list, explicitly — never silently
 dropped.
 
 ## Remote systems (adapter responsibility, not this skill's)
 
-This skill is local-only: `Goal` / `Core` / `Verified` / `Open` / `Next` live
-in `.riel/ledger.md` and are never pushed to a remote task system. `Source`
-only records where the task came from (e.g. `todo:<slug>`).
+This skill is local-only: `Goal` / `Core` / `Verified` / `Open` / `Next`
+live in `.riel/ledger.md` and are never pushed to a remote task system.
+`Source` only records where the task came from (e.g. `todo:<slug>`).
 
-Connecting to a remote system — reading the task in, marking its checkboxes,
-setting status done — is the job of a per-system adapter (e.g. `coder-flow`
-for Dran), not of this skill. The adapter contract lives in
-`riel/specs/spec-adapters.md`.
+Connecting to a remote system — reading the task in, marking its
+checkboxes, setting status done — is the job of a per-system adapter. The
+adapter contract lives in `riel/specs/spec-adapters.md`.
 
 ## Pitfalls
 
-- **Ledger for a fast task** — pure overhead; the gate decides.
+- **Ledger for a fast task** — pure overhead; the mode gate decides.
 - **Batching verification** — append each ✓NN as it happens; batched
   memory is exactly what the ledger prevents.
-- **Verified without coverage** — a mood, not a result; the entry is
-  incomplete without what it covered.
-- **More than 2 live Core items** — workspace capacity is 1-2 ideas; park
-  the rest.
+- **Verified without coverage** — a mood, not a result.
+- **Self-assessed verification** — prefer a command with binary output
+  over the executor's own judgment.
+- **More than 2 live Core items** — park the rest.
 - **Empty Next** — the ledger stops being state; if blocked, the block is
   the Next.
 - **Sharing a ledger between parallel sessions** — one worktree per
   workstream.
-- **Committing the ledger** — `.riel/` is local state; add it to the
-  worktree's `.gitignore` and verify with `git status` before any commit.
+- **Committing the ledger** — `.riel/` is local state; verify with
+  `git status` before any commit.
 - **Doing done from memory** — the done-check re-reads the Goal line by
   line against the ✓NN list, always.
 
@@ -244,11 +236,11 @@ for Dran), not of this skill. The adapter contract lives in
 - [ ] Every ?NN has a settled-by
 - [ ] Next never empty
 - [ ] Done-check passed: every Goal line maps to a ✓NN
-- [ ] Adapter writeback done if Source was set (mark checkboxes + status, via the adapter)
+- [ ] Adapter writeback done if Source was set
 
 ## Cross-references
 
-- Local format and rules: `riel/specs/spec-ledger-format.md` (repo)
+- Local format and rules: `riel/specs/spec-ledger-format.md`
 - Pull/push protocol: `riel/specs/spec-pull-push.md`
 - Phase advancement: `riel/specs/spec-phase-advance.md`
 - System adapters: `riel/specs/spec-adapters.md`

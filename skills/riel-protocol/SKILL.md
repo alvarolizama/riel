@@ -1,21 +1,19 @@
 ---
 name: riel-protocol
-description: "Use when opening or maintaining a conversation with an LLM (DeepSeek or other) — functional grammar, persona, minimal-surface protocol. Never rewrites the user's request."
-version: 1.3.0
+description: "Use when opening or maintaining a conversation with an LLM — functional grammar, persona, minimal-surface protocol. Never rewrites the user's request."
+version: 1.4.0
 author: Álvaro Lizama
 license: MIT
 metadata:
   hermes:
-    tags: [riel, agent-communication, deepseek, framework]
+    tags: [riel, agent-communication, framework]
     related_skills: [riel-ledger, riel-contract, riel-briefs]
 ---
 
 # riel-protocol — Communication protocol (Riel, phase 1)
 
-**Riel** is a steering framework: the capability already exists in the model;
-Riel prevents it from being lost between having it and delivering it. This
-component steers **the trajectory**: how the agent opens and maintains a
-conversation with an LLM.
+This component steers **the trajectory**: how the agent opens and maintains
+a conversation with an LLM.
 
 **Protocol mode:** the user's request reaches the model **raw**. riel-protocol
 does NOT rephrase or rewrite requests — it changes how the agent **enters**
@@ -57,10 +55,7 @@ an action, a check, or a closure (that is the "functional echo"):
 
 Rules:
 
-1. **Open with `We need…` on DeepSeek:** community evidence (dsh-anchored-standard)
-   shows this form corresponds to the stable trajectory of the agent
-   post-training (Minimal condition). On other models it works as generic
-   control without anchoring expectations.
+1. **Open with `We need…`** — the shared objective.
 2. **Mandatory discharge:** a `we need` that does not turn into an
    action/check/closure within the next steps is noise — complete it or drop it.
 3. **What is NOT suppressed:** an occasional `Let me` or doubt is not a
@@ -71,8 +66,8 @@ Rules:
 
 ## Opening conditions (the first turn)
 
-What anchors on DeepSeek is the **complete state of the first turn**, not a
-magic word. Three conditions:
+What steers the trajectory is the **complete state of the first turn**,
+not a magic word. Three conditions:
 
 1. **Short, stable persona** — along the lines of *"You are a helpful
    software engineer assistant"*. Do not stack role layers on top during the
@@ -83,17 +78,14 @@ magic word. Three conditions:
 3. **Zero irrelevant injections** — do not drag in skill catalogs, digests, or
    context the first action does not need.
 
-**Priority when the conditions clash: 3 > 2 > 1.** Conditions 2 and 3 carry
-the measured anchoring effect; the persona rides along with the complete
-prompt and has never been ablated on its own (see Evidence limits).
+**Priority when the conditions clash: 3 > 2 > 1.**
 
 **When the harness makes them unreachable:** harnesses that inject a skill
 index or environment digest on every turn (by design — discovery needs it),
-or that fix the tool schema, can never see request #1 clean; do not claim
-anchoring there. The full recipe is reachable only where the opener controls
-the surface — as in delegation briefs (below). The grammar discipline and the
-ledger/contract machinery do not depend on the anchor reproducing; they apply
-in either case.
+or that fix the tool schema, can never see the first turn clean; the full
+recipe is reachable only where the opener controls the surface — as in
+delegation briefs (below). The grammar discipline and the ledger/contract
+machinery do not depend on the opening conditions; they apply in either case.
 
 ### When delegating (subagents)
 
@@ -110,36 +102,11 @@ In `delegate_task` briefs, apply the same conditions in `goal` + `context`:
 - If doubt loops appear: `I see` (diagnosis of why it is stuck) + `Let's`
   (a small action to get out)
 
-## Evidence limits (be honest)
+## Claim limits
 
-- **Strongly measured:** first-turn conditions **anchor the trajectory**
-  (Minimal schema 5/5; with injections 0/9).
-- **Persona is the least-quantified of the three conditions:** the presets
-  keep the Minimal prompt complete, but the persona line was never ablated on
-  its own — 5/5 belongs to the tool schema, 0/9 to injections. It is an
-  assumed condition, not a measured cause. Closest the community got to
-  testing it: the `whoami` anchor variant (+1 call — the model states its own
-  persona before tools open) and the `guide:false` knob that keeps the persona
-  "byte-pure" against appended capability text.
-- **Hypothesis, not measured:** that the anchored trajectory improves
-  *scores* — independent replication gives 95% CI [−2.6, +9.3]; one
-  independent A/B (issue #10) found no measurable gain. Do not claim
-  improvements; task verification lives in the done-check of `riel-ledger`.
-
-## Evidence (summary)
-
-- **The 3 anchoring levers** — DeepSeek community finding (dsh-anchored-standard):
-  Minimal tool schema anchored the "We need…" trajectory 5/5; standard schemas
-  fell to "Let me…" 11/11; a 1024-token first-request budget anchored 26/32;
-  with skill-catalog injections present the anchor did not reproduce 0/9.
-  Confirmed first-hand in the official DeepSeek Harness Minimal preset
-  (complete persona + zero runtime context + the two-tool pair).
-- **The workspace base** — Anthropic "Verbalizable Representations Form a
-  Global Workspace in Language Models" (Gurnee et al., 2026): capacity of
-  1-2 active ideas, broadcast hub, written externalization survives workspace
-  ablation. Replicated independently on an open-weights model (DeepMind).
-- Full distilled sources live outside this skill; the skill itself is
-  self-contained.
+These conditions order the opening and discipline the conversation. They are
+**not** a measured score improvement — do not claim gains from them. Task
+verification lives in the done-check of `riel-ledger`.
 
 ## Pitfalls
 
@@ -147,8 +114,8 @@ In `delegate_task` briefs, apply the same conditions in `goal` + `context`:
   translator; the message arrives raw.
 - **Forcing the grammar into every sentence** — functional echo is not about
   counting words; one well-discharged `we need` per task is enough.
-- **Claiming it improves results** — it anchors the trajectory; gains are
-  measured.
+- **Claiming it improves results** — it steers the trajectory; verification
+  lives in the ledger.
 
 ## Checklist
 
