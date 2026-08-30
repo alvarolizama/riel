@@ -1,7 +1,7 @@
 ---
 name: riel-delegate
 description: "Use when delegating to subagents — entry router for the delegation flow: plan phases, dispatch riel-briefs packets in waves, parent verifies returns. Orchestrates the other Riel skills."
-version: 1.1.0
+version: 1.2.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -68,6 +68,8 @@ only what dispatching itself adds.
 ## DISPATCH — the operational rules this skill owns
 
 - 2-3 children per wave; **max 2 concurrent on a shared provider** (429s).
+  "Shared" means same provider account / same API key / same rate pool as
+  the parent — not merely the same model family on different keys.
 - State disjoint file scopes literally; shared registry/index files are
   PARENT work, never a child's.
 - Pre-warm slow toolchains (deps compile) before dispatching.
@@ -90,6 +92,12 @@ only what dispatching itself adds.
 - **B — impl buggy** (stacktrace points into lib/): fix it yourself with
   `patch` — you own the whole repo.
 - **C — test/verification wrong**: fix the test yourself.
+
+**Fix-it-yourself vs re-dispatch, rule of thumb:** if the child's diff is
+>50% correct in structure and scope, finish it yourself — re-dispatching
+costs a fresh packet and a fresh reader. If <50%, the brief was wrong or
+the model missed the spec; write the correct version into a brief and
+re-dispatch, do not patch a half-broken tree.
 
 ## Pitfalls (the ones that cost the most)
 

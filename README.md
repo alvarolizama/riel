@@ -21,6 +21,8 @@ The center of the framework is the **ledger**: externalized task state,
 re-read at every seam, closed against named verifiers. Everything else feeds
 it.
 
+## What it replaces
+
 Riel is the opposite of brute-force prompting: no plan, no state between
 turns, no definition of done — sampling the model instead of steering it.
 Riel inverts each: planned (`riel-contract`), held (`riel-ledger`),
@@ -62,14 +64,18 @@ Three rules carry the whole mechanism:
 
 | Component | What it steers | Status |
 |---|---|---|
-| `riel-ledger` | **State** — Goal/Core/Verified/Open/Next, re-read at every seam, recovery via checkpoints | ✅ skill v1.3 |
-| `riel-contract` | **Structure** — mermaid as contract: closed verb vocabulary, verification funnel, machine-checkable | ✅ skill v3.2 |
-| `riel-protocol` | **Trajectory** — functional grammar, persona, minimal surface on the first turn | ✅ skill v1.4 |
-| `riel-briefs` | **Delegation briefs** — self-contained packets: curated context, verb-graph, executable gates | ✅ skill v3.1 |
-| `riel-delegate` | **Delegation router** — plan, dispatch waves, parent verifies returns | ✅ skill v1.1 |
+| `riel-ledger` | **State** — Goal/Core/Verified/Open/Next, re-read at every seam, recovery via checkpoints | ✅ skill v1.4 |
+| `riel-contract` | **Structure** — mermaid as contract: closed verb vocabulary, verification funnel, machine-checkable | ✅ skill v3.3 |
+| `riel-protocol` | **Trajectory** — functional grammar, persona, minimal surface on the first turn | ✅ skill v1.5 |
+| `riel-briefs` | **Delegation briefs** — self-contained packets: curated context, verb-graph, executable gates | ✅ skill v3.2 |
+| `riel-delegate` | **Delegation router** — plan, dispatch waves, parent verifies returns | ✅ skill v1.2 |
 
 Each component is independent and optional: a short task uses zero; a long
 loop may use all five. Use only the machinery the task earns.
+
+Skills reference each other by name, not version — the installed set is
+expected to come from the same commit. Install all five together; mixing
+versions across skills is unsupported.
 
 ## System prompt initialization
 

@@ -1,7 +1,7 @@
 ---
 name: riel-protocol
 description: "Use when opening or maintaining a conversation with an LLM — functional grammar, persona, minimal-surface protocol. Never rewrites the user's request."
-version: 1.4.0
+version: 1.5.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -47,11 +47,11 @@ All hand-offs stay inside the Riel framework.
 First-person assignment by function — every statement must **discharge** into
 an action, a check, or a closure (that is the "functional echo"):
 
-| Form | Function | Example |
+| Form | Function | Example (EN / ES) |
 |---|---|---|
-| `We need…` | Shared objective: agent + environment working toward something | "We need the login to validate both providers" |
-| `I` | Perception, local judgment, commitment | "I see the test fails on the mock; I will fix it" |
-| `Let's` | Immediate joint operation | "Let's verify the endpoint before continuing" |
+| `We need…` | Shared objective: agent + environment working toward something | "We need the login to validate both providers" / "Necesitamos que el login valide ambos proveedores" |
+| `I` | Perception, local judgment, commitment | "I see the test fails on the mock; I will fix it" / "Veo que el test falla en el mock; lo voy a arreglar" |
+| `Let's` | Immediate joint operation | "Let's verify the endpoint before continuing" / "Vamos a verificar el endpoint antes de seguir" |
 
 Rules:
 
@@ -82,10 +82,13 @@ not a magic word. Three conditions:
 
 **When the harness makes them unreachable:** harnesses that inject a skill
 index or environment digest on every turn (by design — discovery needs it),
-or that fix the tool schema, can never see the first turn clean; the full
-recipe is reachable only where the opener controls the surface — as in
-delegation briefs (below). The grammar discipline and the ledger/contract
-machinery do not depend on the opening conditions; they apply in either case.
+or that fix the tool schema, can never see the first turn clean. Drop the
+anchoring expectations — but keep the grammar discipline. `We need…` with
+mandatory discharge still works as functional echo: it orders your own
+statements even when it anchors nothing in the model. The full recipe is
+reachable only where the opener controls the surface — as in delegation
+briefs (below). The ledger/contract machinery never depends on the opening
+conditions.
 
 ### When delegating (subagents)
 

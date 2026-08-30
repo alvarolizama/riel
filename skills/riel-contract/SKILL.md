@@ -1,7 +1,7 @@
 ---
 name: riel-contract
 description: "Use when authoring mermaid verb-graph contracts for skills and todos — 3-layer pattern, closed verb vocabulary, verification funnel, machine-checkable."
-version: 3.2.0
+version: 3.3.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -120,7 +120,7 @@ Operations that feel like missing verbs already have a canonical form:
 | Operation | Form |
 |---|---|
 | Execute a script / build / install / git | `RUN` with the literal command |
-| Run tests | `S["RUN mix test …"]` followed by a `VERIFY{"tests green?"}` gate — running and deciding are two operations; the funnel needs both |
+| Run tests | `S["RUN <test command>"]` then G{"tests green?"} — two nodes: see Verification funnel |
 | Search the codebase | `READ` (the executor picks search_files/grep) |
 | Delete a file | `RUN rm <path>` |
 
@@ -195,6 +195,11 @@ Every execution flow **ends in VERIFY/Check node(s) before End**; every
 `no`/`fail` edge returns to the step that failed. The topology forces
 validation — the agent cannot skip it.
 
+**Running tests and deciding on them are two nodes.** A `RUN mix test`
+executes; a `VERIFY{"tests green?"}` decides. The funnel needs the
+decision, not the command — a single `RUN` node conflates them and the
+agent declares done from exit code alone.
+
 ```mermaid
 flowchart TD
   W["Work"] --> C1{"Check 1:\nscope clean?"}
@@ -223,6 +228,8 @@ each through `mmdc`. Requires mermaid-cli
 - **mmdc does not accept /dev/null as output.** Temp `.svg` file, delete.
 - **Mermaid does not replace prose.** If the diagram adds no flow/decision
   clarity, it does not go.
+- **A graph without decisions, branches, or parallel work is a numbered
+  list wearing a costume.** Prose carries sequences better than boxes do.
 - **Do not duplicate contracts.** If statuses/tables already live in
   another skill, reference, do not redefine.
 - **Syntax pitfalls:** `==`, `!=`, `<=`, `$`, `&` break the mermaid parser

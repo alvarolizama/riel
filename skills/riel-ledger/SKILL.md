@@ -1,7 +1,7 @@
 ---
 name: riel-ledger
 description: "Use when running a loop-mode task — write the local Goal/Core/Verified/Open/Next ledger in the worktree, re-read at every seam, verify before done. No remote dependency."
-version: 1.3.0
+version: 1.4.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -85,12 +85,17 @@ The ledger is local state, not a deliverable. When working inside a repo:
 | Source | Optional; present when the task came from a remote todo |
 | Phase | Derived from the phases graph (riel-contract); pointer to the active phase |
 | Core | Max 2 live items; change only via explicit swap; each with its defining fact |
-| Verified | Numbered ✓NN, append-only; never deleted or renumbered; critical checkpoints may carry `confidence X/20` (borderline < 12 = not a checkpoint) |
+| Verified | Numbered ✓NN, append-only; never deleted or renumbered; critical checkpoints may carry `confidence X/20` |
 | Open | Numbered ?NN; closed against a checkpoint; the number is never reused |
 | Next | Never empty; if blocked, the block IS the Next ("waiting on X from the user") |
 
 A ✓NN without coverage is not a checkpoint — **it is a mood**. Every entry
 names the verifier AND what it covered.
+
+**A critical checkpoint with confidence < 12/20 is not a checkpoint.**
+Re-verify with variation (different angle, order, or question) until it
+clears 12, or open a ?NN for what is keeping it low. Do not advance a
+phase on a borderline.
 
 **The verifier is external to the executor's judgment whenever possible.**
 "verified by: the tests I ran" is weaker than "verified by: `mix test
@@ -194,6 +199,36 @@ checking. Then read each criterion **line by line**: every criterion must
 map to a ✓NN with coverage. If any criterion is missing → not done. Open
 ?NN that cannot be closed go to a Pending list, explicitly — never silently
 dropped.
+
+## A ledger in the wild (annotated)
+
+```markdown
+# Riel ledger
+
+## Goal
+The password-reset flow emails a link and accepts the new password.
+
+## Phase
+F2: wire the mailer
+
+## Core
+- Mailer — sends via `Swoosh`, configured in `config/runtime.exs`
+- Token — signed with `Phoenix.Token`, 1h TTL
+
+## Verified
+- ✓01 Token signs and verifies — verified by: `mix test test/accounts/token_test.exs`, 4 examples 0 failures, covering sign+verify+expiry
+- ✓02 Mailer module compiles — verified by: `mix compile --warnings-as-errors`, covering `lib/app/mailer.ex` only
+
+## Open
+- ?01 Does the reset link survive quote chars in email? — settled by: property test on `URI.encode_www_form`
+
+## Next
+Wire Mailer.send_reset/2 into the controller action.
+```
+
+Notice what is NOT here: no narrative of what was tried, no dead ends, no
+plan. Those live in the conversation. The ledger is only what another
+session needs to pick up exactly here.
 
 ## Remote systems (adapter responsibility, not this skill's)
 

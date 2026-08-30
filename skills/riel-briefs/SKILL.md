@@ -1,7 +1,7 @@
 ---
 name: riel-briefs
 description: "Write self-contained agent briefs on the fly — curated context, verb-graph, gates, anchored opening. Dispatch packets for delegate_task."
-version: 3.1.0
+version: 3.2.0
 author: Álvaro Lizama
 license: MIT
 platforms: [macos, linux]
@@ -92,10 +92,12 @@ not touch, tangential context.
 
 ## Step 3: Classify the task
 
-The type determines the graph shape:
+The type changes the **shape of the graph**, not the rules. Every type
+uses the same closed verb vocabulary, edge guards, and verification
+funnel from riel-contract — what varies is the pipeline topology:
 
-| Type | Graph pattern | Typical gates |
-|------|---------------|---------------|
+| Type | Graph shape | Typical gates |
+|------|-------------|---------------|
 | **Code (new feature)** | Linear pipeline with TDD gates | compile, test, format |
 | **Code (bug fix)** | Debug → Hypothesis → Fix → Verify | repro, test, no regressions |
 | **Code (refactor)** | Read → Plan → Transform → Verify | compile, tests unchanged, diff review |
@@ -111,6 +113,8 @@ edge guards, and the verification funnel are all defined there, not here.
 - **Always include the graph in the prompt** — it IS the execution plan;
   the agent follows the textual flow even without rendering mermaid
 - On complex tasks (3+ phases), the graph prevents skipped steps
+- Use predictable IDs by node kind — `W1/W2` for waves, `S1/S2` for steps,
+  `G1` for gates (per riel-contract). The agent's parser keys on them.
 
 ## Step 5: Define verification gates
 
@@ -122,6 +126,15 @@ works" — exact command and expected output.
 **Command:** `exact command`
 **Expected:** [what success looks like]
 **On failure:** [what to do — fix, retry, or report]
+````
+
+A gate agnostic to any stack (example — adapt the command, keep the shape):
+
+````markdown
+### Gate: Service responds
+**Command:** `curl -sf http://localhost:8000/health | grep -q '"ok":true'`
+**Expected:** exit 0 (silent)
+**On failure:** read the server log before retrying; do not re-run blindly
 ````
 
 Every binary criterion of the spec becomes a gate:
@@ -166,7 +179,10 @@ Structure:
 ```mermaid
 flowchart TD
   S1["READ lib/foo.ex:10"] --> S2["EDIT foo.ex — add bar/1"]
-  S2 --> G1{"Gate: mix test"}
+  S2 --> S3["RUN mix test test/foo_test.exs"]
+  S3 --> G1{"tests green?"}
+  G1 -->|no| S2
+  G1 -->|yes| END([Done])
 ```
 
 ## Verification gates
