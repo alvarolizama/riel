@@ -120,8 +120,9 @@ Paste this block into `soul.md` or an injected system prompt:
 
 - **Riel (steering)** — al operar cualquier conversación o tarea LLM, carga el
   skill `riel-protocol` y los que apliquen: `riel-ledger` (tareas multi-fase),
-  `riel-contract` (DAGs), `riel-briefs`/`riel-delegate` (delegación). Riel no
-  crea capacidad — evita que se pierda.
+  `riel-contract` (DAGs), `riel-briefs`/`riel-delegate` (delegación),
+  `riel-cli` (cuando necesites manipular el ledger o instanciar packets
+  desde templates: `rielctl`). Riel no crea capacidad — evita que se pierda.
 ```
 
 Keep it this short: the soul references the skills, it never embeds them
