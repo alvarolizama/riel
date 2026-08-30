@@ -17,9 +17,10 @@ trajectory, drifting state, missing verification. That gap — having it vs.
 delivering it — is what Riel steers. It operates on the surfaces a harness
 exposes (first turn, task structure, between-turn state), never on weights.
 
-The center of the framework is the **ledger**: externalized task state,
-re-read at every seam, closed against named verifiers. Everything else feeds
-it.
+The center of the framework is the **ledger**: externalized task state —
+Goal, pre-registered Claims, Core (1-2 live items), Verified checkpoints,
+Open questions, Next action — re-read at every seam, closed against named
+verifiers. Everything else feeds it.
 
 ## What it replaces
 
@@ -33,20 +34,21 @@ Goal line maps to a verified checkpoint.
 
 ```mermaid
 flowchart TD
-  OPEN["Open .riel/ledger.md\nGoal + Core + Next"] --> W[Work]
+  OPEN["Open .riel/ledger.md\nGoal + Claims + Core + Next"] --> W[Work]
   W --> S{"seam: tool call,\nfile change, long gap"}
   S --> R["Re-read the ledger\nthe whole mechanism"]
   R --> V{"verified\nsomething?"}
-  V -->|yes| APP["Append ✓NN:\nverifier + coverage"]
+  V -->|yes| XC["Cross-check:\nwhat does this\nNOT cover?"]
+  XC --> APP["Append ✓NN:\nverifier + coverage"]
   APP --> W
   V -->|no| ST{"stalled or\ndegraded?"}
   ST -->|"same Next 3 seams"| FIX["Diagnose or\nchange course"]
-  ST -->|"cascading errors"| REC["Recovery: last ✓NN =\ncheckpoint, fresh plan"]
+  ST -->|"cascading errors"| REC["Recovery: last ✓NN =\ncheckpoint, fresh plan\nno failure narrative"]
   FIX --> W
   REC --> W
   ST -->|no| W
   W --> END{"all phases done"}
-  END --> DC["done-check: every Goal\nline maps to a ✓NN"]
+  END --> DC["done-check: every Goal\nand Claim maps to ✓NN"]
   DC -->|missing| W
   DC -->|all covered| DONE([Done])
 ```
@@ -60,15 +62,31 @@ Three rules carry the whole mechanism:
 3. **No done from memory.** The done-check re-reads the Goal line by line
    against the ✓NN list, always.
 
+Four load-bearing defenses against execution error:
+
+- **Pre-registered claims** — what will be true when done is declared
+  BEFORE the first action, with its verification method. Never editable
+  post-execution: a failed claim is refuted, not reinterpreted.
+- **Adversarial cross-check** — before any ✓NN, ask the opposite
+  question: *what does this test NOT cover?* A passed gate without a
+  cross-check is incomplete.
+- **Contaminated-context invariant** — a ✓NN that took 3+ failed
+  attempts leaves the context carrying the failed attempts. Models
+  self-condition on their own error history; consider restarting from
+  the last clean checkpoint instead of pushing forward.
+- **Structured JSON returns on delegation** — children report via
+  `output_schema`, not prose. `passed: true` with `exit_code: 1` is
+  caught mechanically, not caught by reading.
+
 ## Components
 
 | Component | What it steers | Status |
 |---|---|---|
-| `riel-ledger` | **State** — Goal/Core/Verified/Open/Next, re-read at every seam, recovery via checkpoints | ✅ skill v1.8 |
+| `riel-ledger` | **State** — Goal/Claims/Core/Verified/Open/Next, re-read at every seam, recovery via checkpoints | ✅ skill v1.8 |
 | `riel-contract` | **Structure** — mermaid as contract: closed verb vocabulary, verification funnel, machine-checkable | ✅ skill v3.3 |
 | `riel-protocol` | **Trajectory** — functional grammar, persona, minimal surface on the first turn | ✅ skill v1.5 |
 | `riel-briefs` | **Delegation briefs** — self-contained packets: curated context, verb-graph, pre-registered claims, executable gates | ✅ skill v3.3 |
-| `riel-delegate` | **Delegation router** — plan, dispatch waves, JSON-schemad returns, parent verifies | ✅ skill v1.3 |
+| `riel-delegate` | **Delegation router** — plan, dispatch waves, JSON-schema'd returns, parent verifies | ✅ skill v1.3 |
 
 Each component is independent and optional: a short task uses zero; a long
 loop may use all five. Use only the machinery the task earns.
@@ -76,6 +94,21 @@ loop may use all five. Use only the machinery the task earns.
 Skills reference each other by name, not version — the installed set is
 expected to come from the same commit. Install all five together; mixing
 versions across skills is unsupported.
+
+## Two paths, one framework
+
+```mermaid
+flowchart LR
+  TASK[Task] --> MODE{"How big?"}
+  MODE -->|"1 step\ncheckable"| FAST["fast\nnothing needed"]
+  MODE -->|"multi-step\none deliverable"| FULL["full\nledger + done-check"]
+  MODE -->|"multi-phase\nspanning sessions"| LOOP["loop\nfull ledger protocol"]
+  MODE -->|"delegating\nto subagents"| DELEG["delegate\nledger + briefs + JSON\noutput_schema"]
+```
+
+The solo path (fast/full/loop) keeps markdown + mermaid + gates + ledger.
+Delegation adds JSON contracts and `output_schema` — only where a second
+agent's report needs to be parsed, not read.
 
 ## System prompt initialization
 
@@ -115,13 +148,13 @@ Requires mermaid-cli (`npm install -g @mermaid-js/mermaid-cli`).
 ```
 riel/
 ├── README.md          ← this file
-├── assets/            ← framework header
+├── assets/            ← header image
 ├── skills/            ← installable skills (cp to ~/.hermes/skills/)
 │   ├── riel-ledger/     ← state: the heart of the framework
 │   ├── riel-contract/   ← structure: mermaid contract + verification funnel
 │   ├── riel-protocol/   ← trajectory: grammar, persona, minimal surface
-│   ├── riel-briefs/     ← delegation briefs
-│   └── riel-delegate/   ← delegation router
+│   ├── riel-briefs/     ← delegation briefs + pre-registered claims
+│   └── riel-delegate/   ← delegation router + JSON output_schema
 ├── specs/             ← design contracts
 │   ├── spec-ledger-format.md    ← .riel/ledger.md format + rules
 │   ├── spec-todo-contract.md    ← what the todo body must carry
