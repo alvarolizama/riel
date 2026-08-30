@@ -90,10 +90,10 @@ Four load-bearing defenses against execution error:
 | `riel-cli` | **Tooling** — `rielctl` writes the ledger mechanically, instantiates packet templates, validates packets | ✅ skill v1.0 |
 
 Each component is independent and optional: a short task uses zero; a long
-loop may use all five. Use only the machinery the task earns.
+loop may use all six. Use only the machinery the task earns.
 
 Skills reference each other by name, not version — the installed set is
-expected to come from the same commit. Install all five together; mixing
+expected to come from the same commit. Install all six together; mixing
 versions across skills is unsupported.
 
 ## Two paths, one framework
@@ -134,6 +134,33 @@ cp -R ~/Workspace/Repos/alvarolizama/riel/skills/* ~/.hermes/skills/
 ```
 
 Verify: the skill must appear in the session's skill index (`skills_list`).
+
+### Dependencies
+
+| Piece | Needed at | Requires |
+|---|---|---|
+| The 6 skills (markdown only) | runtime | nothing — they are read by the agent |
+| `rielctl` (`skills/riel-cli/scripts/rielctl`) | runtime (loop/delegate tasks) | **Python 3, stdlib only** |
+| Task templates (`skills/riel-briefs/templates/`) | runtime | nothing — `rielctl` reads them directly |
+| `scripts/validate-mermaid.sh` | development (validate graph files) | Node + `mmdc`: `npm install -g @mermaid-js/mermaid-cli` |
+| `tests/test_rielctl.py` | development (run the suite) | Python 3, stdlib only |
+
+Optional. `rielctl brief validate` will *also* run `mmdc` on each graph if
+it finds it on PATH; without it, structural checks still run, just without
+the parser-level mmdc check. Nothing in the runtime path requires mmdc.
+
+### Using `rielctl` after install
+
+Once `riel-cli` is under `~/.hermes/skills/`, any agent that loads the
+skill learns the path convention from its SKILL.md and can resolve the
+script on its own; humans typically don't call it directly. If you do:
+
+```bash
+python3 ~/.hermes/skills/riel-cli/scripts/rielctl note --goal "..." --next "..."
+```
+
+Run from the task's worktree root — `rielctl` reads/writes `.riel/` under
+the current directory.
 
 ## Validate mermaid blocks
 
