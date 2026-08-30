@@ -104,6 +104,10 @@ funnel from riel-contract — what varies is the pipeline topology:
 | **Research** | Search → Extract → Synthesize → Validate | cited sources, complete answer |
 | **Writing** | Outline → Draft → Review → Polish | structure, tone, accuracy |
 
+Each type has a ready-made packet skeleton at `templates/<type>.md` in
+this skill — start from that instead of writing the packet from scratch.
+The `packet.md` template is the empty base if none of the types fit.
+
 ## Step 4: Build the instruction graph
 
 The graph is the **agent's execution plan**. `flowchart TD` following
@@ -219,8 +223,7 @@ When dispatching, `goal` stays short and `context` carries the packet:
 ## Packet validation checklist
 
 A packet is *valid* when all of the following pass. `rielctl brief validate`
-(Fase 3) runs these mechanically; until it exists, run them by hand before
-dispatching.
+(from `riel-cli`) runs them mechanically; review by hand before dispatching.
 
 Structure:
 

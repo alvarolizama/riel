@@ -1,0 +1,571 @@
+#!/usr/bin/env python3
+"""rielctl — mechanical helper for the Riel framework.
+
+Writes .riel/ledger.md with the exact expected format, instantiates
+packet templates, and validates packets. Decides nothing semantic.
+
+Usage:
+    rielctl note    [--goal G] [--next N] [--core "name — fact"]
+                    [--core-slot N] [--claim C --verify-with CMD]
+                    [--check WHAT --by CMD --covering SCOPE [--confidence N]]
+                    [--open Q --settled-by TEST]
+                    [--close N --check WHAT --by CMD [--covering SCOPE]]
+    rielctl seam
+    rielctl resume
+    rielctl ship    FILE...
+    rielctl brief new [--type T] [--param k=v ...] [--list]
+    rielctl brief validate FILE
+"""
+import argparse
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+
+VERSION = "1.0.0"
+LEDGER_DIR = ".riel"
+LEDGER_PATH = os.path.join(LEDGER_DIR, "ledger.md")
+VERIFY_CMD = os.environ.get("RIEL_MMDC", "mmdc")
+
+DENSE_RE = re.compile(r"[✓?]\d+|↔|⇒|⊕|λ|Σ")
+
+
+# ---------------------------------------------------------------- ledger ----
+
+DEFAULT_TEMPLATE = """# Riel ledger
+
+## Goal
+{goal}
+
+{source_section}{phase_section}## Claims
+{claims}
+
+## Core
+{core}
+
+## Verified
+{verified}
+
+## Open
+{open}
+
+## Next
+{next}
+"""
+
+
+def read_ledger(path):
+    """Parse .riel/ledger.md into a dict of sections. Empty strings -> []."""
+    out = {
+        "goal": "", "source": "", "phase": "", "claims": [], "core": [],
+        "verified": [], "open": [], "next": "",
+    }
+    if not os.path.exists(path):
+        return out
+    try:
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError:
+        return out
+    cur = None
+    for line in text.splitlines():
+        if line.startswith("## Goal"):
+            cur = "goal"
+        elif line.startswith("## Source"):
+            cur = "source"
+        elif line.startswith("## Phase"):
+            cur = "phase"
+        elif line.startswith("## Claims"):
+            cur = "claims"
+        elif line.startswith("## Core"):
+            cur = "core"
+        elif line.startswith("## Verified"):
+            cur = "verified"
+        elif line.startswith("## Open"):
+            cur = "open"
+        elif line.startswith("## Next"):
+            cur = "next"
+        elif line.startswith("#") or line.startswith("## "):
+            cur = None
+        elif cur in ("goal", "source", "phase", "next"):
+            if line.strip():
+                if out[cur]:
+                    out[cur] += "\n"
+                out[cur] += line
+        elif cur in ("claims", "core", "verified", "open"):
+            if line.strip().startswith("- "):
+                out[cur].append(line.strip()[2:])
+    return out
+
+
+def write_ledger(path, st):
+    source_section = (
+        "## Source\n{}\n\n".format(st["source"]) if st["source"] else ""
+    )
+    phase_section = (
+        "## Phase\n{}\n\n".format(st["phase"]) if st["phase"] else ""
+    )
+    body = DEFAULT_TEMPLATE.format(
+        goal=st["goal"] or "<empty>",
+        source_section=source_section,
+        phase_section=phase_section,
+        claims="\n".join("- " + c for c in st["claims"]) or "<none>",
+        core="\n".join("- " + c for c in st["core"]) or "<none>",
+        verified="\n".join("- " + c for c in st["verified"]) or "<none>",
+        open="\n".join("- " + q for q in st["open"]) or "<none>",
+        next=st["next"] or "<empty>",
+    )
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(body)
+
+
+def entry_number(prefix, seq):
+    escaped = re.escape(prefix)
+    nums = [
+        int(m.group(1))
+        for entry in seq
+        for m in re.finditer(r"{}(\d+)".format(escaped), entry)
+    ]
+    return max(nums, default=0) + 1
+
+
+def cmd_note(args):
+    st = read_ledger(args.ledger)
+    fresh = not st["goal"] and not st["verified"] and not st["next"]
+
+    if args.goal is not None:
+        st["goal"] = args.goal
+    if args.next is not None:
+        st["next"] = args.next
+    if args.source is not None:
+        st["source"] = args.source
+    if args.phase is not None:
+        st["phase"] = args.phase
+
+    if args.claim is not None:
+        verifier = args.verify_with or "<unspecified>"
+        pid = "P{}".format(entry_number("P", st["claims"]))
+        st["claims"].append("{}: {} — verify with: {}".format(pid, args.claim, verifier))
+
+    if args.core is not None:
+        name, _, fact = args.core.partition(" — ")
+        if not fact:
+            print("core entry must look like 'name — defining fact'", file=sys.stderr)
+            return 2
+        slot = args.core_slot
+        if slot is not None:
+            if not 0 <= slot < len(st["core"]):
+                print("no such core slot: {}".format(slot), file=sys.stderr)
+                return 2
+            st["core"][slot] = args.core
+        else:
+            if len(st["core"]) >= 2:
+                print(
+                    "Core is full (2/2). Use --core-slot to swap one.",
+                    file=sys.stderr,
+                )
+                return 2
+            st["core"].append(args.core)
+
+    if args.check is not None:
+        if not args.by:
+            print("--check requires --by (the verifier)", file=sys.stderr)
+            return 2
+        nid = "✓{:02d}".format(entry_number("✓", st["verified"]))
+        covering = args.covering or "<unspecified>"
+        entry = "{} {} — verified by: {}, covering {}".format(
+            nid, args.check, args.by, covering
+        )
+        if args.confidence is not None:
+            entry += ", confidence {}/20".format(args.confidence)
+        st["verified"].append(entry)
+
+    if args.open is not None:
+        if not args.settled_by:
+            print("--open requires --settled-by", file=sys.stderr)
+            return 2
+        qid = "?{:02d}".format(entry_number("?", st["open"]))
+        st["open"].append(
+            "{} {} — settled by: {}".format(qid, args.open, args.settled_by)
+        )
+
+    if args.close is not None:
+        idx = None
+        needle = "?{:02d}".format(args.close)
+        for i, q in enumerate(st["open"]):
+            if q.startswith(needle):
+                idx = i
+                break
+        if idx is None:
+            print("no such open question: {}".format(needle), file=sys.stderr)
+            return 2
+        st["open"].pop(idx)
+
+    write_ledger(args.ledger, st)
+    print_ledger(st)
+    if fresh and args.goal is None and args.next is None:
+        # user opened with note but supplied nothing — remind how to open
+        print(
+            "\n(ledger was empty; use --goal G --next N to open it)",
+            file=sys.stderr,
+        )
+    return 0
+
+
+def print_ledger(st):
+    source_line = "Source: {}\n".format(st["source"]) if st["source"] else ""
+    phase_line = "Phase: {}\n".format(st["phase"]) if st["phase"] else ""
+    print(
+        "Mode: loop\n" + source_line + phase_line +
+        "Goal: {}\n".format(st["goal"] or "<empty>") +
+        "Claims ({}):\n".format(len(st["claims"])) +
+        "\n".join("  - " + c for c in st["claims"]) + ("\n" if st["claims"] else "") +
+        "Core ({}):\n".format(len(st["core"])) +
+        "\n".join("  - " + c for c in st["core"]) + ("\n" if st["core"] else "") +
+        "Verified ({}):\n".format(len(st["verified"])) +
+        "\n".join("  - " + c for c in st["verified"]) + ("\n" if st["verified"] else "") +
+        "Open ({}):\n".format(len(st["open"])) +
+        "\n".join("  - " + q for q in st["open"]) + ("\n" if st["open"] else "") +
+        "Next: {}".format(st["next"] or "<empty>")
+    )
+
+
+def cmd_seam(args):
+    st = read_ledger(args.ledger)
+    if not st["goal"]:
+        print("no ledger found at {}; run rielctl note --goal --next first".format(
+            args.ledger), file=sys.stderr)
+        return 1
+    print_ledger(st)
+    n_verified = len(st["verified"])
+    if n_verified == 0:
+        print("\n[!] No ✓NN yet — remember to append immediately when a gate passes.")
+    if len(st["core"]) > 2:
+        print("\n[!] Core has {} live items; re-park to at most 2.".format(len(st["core"])))
+    if st["next"] == "":
+        print("\n[!] Next is empty — the ledger stops being state. Fill it.")
+    return 0
+
+
+def cmd_resume(args):
+    st = read_ledger(args.ledger)
+    if not st["goal"]:
+        print("no ledger found at {}".format(args.ledger), file=sys.stderr)
+        return 1
+    print("=" * 60)
+    print("RIEL RESUME — restore state after gap/compaction, in order")
+    print("=" * 60)
+    print("\n[1/4] Ledger (every ✓NN matters, not just the last):\n")
+    print_ledger(st)
+    print(
+        "\n[2/4] Failure invariants — re-check before acting:\n"
+        "  1. ✓NN declared but never written\n"
+        "  2. called verified without coverage\n"
+        "  3. Next changed without work changing (churn)\n"
+        "  4. critical ✓NN re-verified without variation\n"
+        "  5. Goal ≠ what is being executed\n"
+        "  6. Open grows without anything settled\n"
+        "  7. confidence always the same value → broken scale\n"
+        "  8. monitor never reports → unplugged\n"
+        "  9. cannot restate Goal in your own words\n"
+        " 10. last ✓NN took 3+ failed attempts → context contaminated"
+    )
+    print(
+        "\n[3/4] Mode gate: is `loop` still correct? (fast/full/loop)\n"
+        "\n[4/4] Restate the mode (inner register or ledger line), then set\n"
+        "      `Next` = the first action back.",
+    )
+    return 0
+
+
+def cmd_ship(args):
+    rc = 0
+    for path in args.files:
+        try:
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+        except OSError as exc:
+            print("ship: cannot read {}: {}".format(path, exc), file=sys.stderr)
+            rc = 1
+            continue
+        problems = []
+        for lineno, line in enumerate(text.splitlines(), 1):
+            if DENSE_RE.search(line):
+                problems.append((lineno, line))
+        if problems:
+            rc = 1
+            print("{}: dense markers found in outer register:".format(path))
+            for lineno, line in problems[:20]:
+                print("  L{}: {}".format(lineno, line[:120]))
+        else:
+            print("{}: clean".format(path))
+    return rc
+
+
+# ---------------------------------------------------------------- brief ----
+
+SKILL_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Template search order (first match wins — most specific first):
+#  1. user-level override in the active Hermes profile
+#  2. project-level, versioned with the code
+#  3. built-in, shipped with riel-briefs
+DEFAULT_TEMPLATE_DIRS = [
+    os.path.expanduser("~/.hermes/skills/riel-briefs/templates"),
+    os.path.join(os.getcwd(), ".riel", "templates"),
+    os.path.normpath(os.path.join(SKILL_ROOT, "..", "riel-briefs", "templates")),
+]
+
+
+def find_template(typename, extra=None):
+    dirs = list(extra or []) + DEFAULT_TEMPLATE_DIRS
+    for d in dirs:
+        candidate = os.path.join(d, typename + ".md")
+        if os.path.exists(candidate):
+            return candidate
+    return None
+
+
+_PARAM_RE = re.compile(r"\{\{([a-zA-Z_][a-zA-Z0-9_]*)\}\}")
+
+
+def render_template(text, params, strict=False):
+    def repl(match):
+        name = match.group(1)
+        if name not in params:
+            if strict:
+                raise KeyError("missing --param {}=".format(name))
+            return match.group(0)  # leave placeholder for manual fill
+        return params[name]
+
+    return _PARAM_RE.sub(repl, text)
+
+
+def cmd_brief_new(args):
+    if args.list:
+        for d in DEFAULT_TEMPLATE_DIRS:
+            if os.path.isdir(d):
+                for name in sorted(os.listdir(d)):
+                    if name.endswith(".md"):
+                        print(name[:-3])
+        return 0
+    if args.type == "packet":
+        template_path = find_template("packet", args.template_dir)
+    else:
+        template_path = find_template(args.type, args.template_dir)
+    if not template_path:
+        print(
+            "no template for type {!r}; searched: {}".format(
+                args.type, ", ".join(args.template_dir or DEFAULT_TEMPLATE_DIRS)
+            ),
+            file=sys.stderr,
+        )
+        return 2
+    with open(template_path, encoding="utf-8") as fh:
+        text = fh.read()
+    params = dict(p.split("=", 1) for p in args.param)
+    try:
+        result = render_template(text, params, strict=args.strict)
+    except KeyError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    leftover = _PARAM_RE.findall(result)
+    if leftover:
+        print(
+            "note: {} placeholder(s) left — fill with patch/edit: {}".format(
+                len(set(leftover)), ", ".join(sorted(set(leftover))[:5])
+            ),
+            file=sys.stderr,
+        )
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as fh:
+            fh.write(result)
+        print(result)
+    else:
+        print(result, end="")
+    return 0
+
+
+def cmd_brief_validate(args):
+    with open(args.file, encoding="utf-8") as fh:
+        text = fh.read()
+    issues = []
+
+    # Structure: nine sections in order
+    headings = re.findall(r"^(#{1,2})\s+(.+)$", text, re.MULTILINE)
+    wanted_order = [
+        "Task:", "Objective", "Context", "Constraints",
+        "Pre-registered claims", "Execution graph",
+        "Verification gates", "Deliverable", "DO NOT",
+    ]
+    # headings gives (level, title) — the level-1 heading is "# Task",
+    # everything else is "## ..."
+    titles = [t.strip() for _, t in headings]
+    pos = []
+    last = -1
+    for w in wanted_order:
+        for i, t in enumerate(titles):
+            if t.startswith(w) or t == w.rstrip(":"):
+                pos.append(i)
+                last = max(last, i)
+                break
+        else:
+            issues.append("missing section: {!r}".format(w))
+    if pos != sorted(pos):
+        issues.append("sections out of order; expected packet.md order")
+
+    # Objective is one sentence starting with "We need"
+    mo = re.search(r"^## Objective\s*\n(.+?)(?=\n##\s)", text, re.S | re.M)
+    if mo:
+        first_line = mo.group(1).strip().splitlines()[0] if mo.group(1).strip() else ""
+        if "We need" not in first_line and "Necesitamos" not in first_line:
+            issues.append("Objective does not open with \"We need…\"")
+    elif text:
+        issues.append("no ## Objective section found")
+
+    # Pre-registered claims
+    mp = re.search(
+        r"^## Pre-registered claims\s*\n(.*?)(?=\n##\s)", text, re.S | re.M
+    )
+    if mp:
+        claims = re.findall(r"^-+\s+P\d+", mp.group(1), re.M)
+        if not claims:
+            issues.append("Pre-registered claims section is empty")
+    elif text:
+        issues.append("no ## Pre-registered claims section found")
+
+    # DO NOT section non-empty
+    md = re.search(r"^## DO NOT\s*\n(.*?)(?=\n##\s|\Z)", text, re.S | re.M)
+    if md:
+        body = md.group(1).strip()
+        items = [l for l in body.splitlines() if l.strip().startswith("-")]
+        if not items:
+            issues.append("DO NOT section has no items (scope enforcement missing)")
+
+    # Graph conventions
+    mermaid_blocks = re.findall(r"```mermaid\n(.*?)```", text, re.S)
+    if not mermaid_blocks:
+        issues.append("no mermaid execution graph found")
+    else:
+        all_nodes = re.findall(r'([A-Za-z_][A-Za-z0-9_]*)\[', mermaid_blocks[0])
+        ok_ids = {"S", "G", "W", "END", "START", "Q", "SELF", "DC", "APP", "REC", "FIX"}
+        bad_ids = [n for n in all_nodes if n.upper() not in ok_ids
+                   and not re.match(r"^(S|G|W)\d+", n)]
+        if bad_ids:
+            issues.append("non-predictable node ids: {}".format(sorted(set(bad_ids))))
+        # A graph with nodes but no edges at all is degenerate
+        if "-->" not in mermaid_blocks[0]:
+            issues.append("execution graph has no edges")
+        pops_run = re.findall(r'\[\"RUN ', mermaid_blocks[0])
+        pops_verify = re.findall(r'\{"[^\"]*"', mermaid_blocks[0])
+        if not pops_run:
+            issues.append("no RUN gate found in graph")
+        if not pops_verify:
+            issues.append("no VERIFY/Check decision found in graph (funnel missing)")
+        # Every decision node must have at least one labeled outgoing edge
+        decisions = re.findall(r"([A-Za-z_][A-Za-z0-9_]*)\{", mermaid_blocks[0])
+        for node in set(decisions):
+            if not re.search(
+                r"{}.*-->?\s*\|".format(re.escape(node)), mermaid_blocks[0]
+            ):
+                issues.append(
+                    "decision node {!r} has no labeled outgoing edge".format(node)
+                )
+
+    # if mmdc is available, try parsing each graph block
+    if shutil.which(VERIFY_CMD) and mermaid_blocks:
+        out_dir = tempfile.mkdtemp(prefix="rielctl-validate-")
+        try:
+            for idx, block in enumerate(mermaid_blocks):
+                src = os.path.join(out_dir, "block{}.mmd".format(idx))
+                out = os.path.join(out_dir, "block{}.svg".format(idx))
+                with open(src, "w", encoding="utf-8") as fh:
+                    fh.write(block)
+                res = subprocess.run(
+                    [VERIFY_CMD, "-i", src, "-o", out, "--quiet"],
+                    capture_output=True,
+                )
+                if res.returncode != 0:
+                    issues.append(
+                        "mermaid block {} fails mmdc:\n{}".format(
+                            idx, res.stderr.decode("utf-8", "replace")[:400]
+                        )
+                    )
+        finally:
+            shutil.rmtree(out_dir, ignore_errors=True)
+
+    if issues:
+        print("INVALID packet {}:".format(args.file))
+        for issue in issues:
+            print("  - " + issue)
+        return 1
+    print("valid: {}".format(args.file))
+    return 0
+
+
+# ------------------------------------------------------------------ main ----
+
+def main(argv=None):
+    p = argparse.ArgumentParser(prog="rielctl", description=__doc__)
+    p.add_argument("--version", action="version", version=VERSION)
+    p.add_argument(
+        "--ledger", default=LEDGER_PATH,
+        help="path to the ledger file (default: .riel/ledger.md)",
+    )
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    n = sub.add_parser("note", help="append/update ledger entries")
+    n.add_argument("--goal")
+    n.add_argument("--next")
+    n.add_argument("--source")
+    n.add_argument("--phase")
+    n.add_argument("--core")
+    n.add_argument("--core-slot", type=int)
+    n.add_argument("--claim")
+    n.add_argument("--verify-with")
+    n.add_argument("--check")
+    n.add_argument("--by")
+    n.add_argument("--covering")
+    n.add_argument("--confidence", type=int)
+    n.add_argument("--open")
+    n.add_argument("--settled-by")
+    n.add_argument("--close", type=int)
+    n.set_defaults(fn=cmd_note)
+
+    s = sub.add_parser("seam", help="re-print ledger + due reminders")
+    s.set_defaults(fn=cmd_seam)
+
+    r = sub.add_parser("resume", help="post-gap bootstrap")
+    r.set_defaults(fn=cmd_resume)
+
+    h = sub.add_parser("ship", help="check outgoing file for dense markers")
+    h.add_argument("files", nargs="+")
+    h.set_defaults(fn=cmd_ship)
+
+    b = sub.add_parser("brief", help="work with packets")
+    bsub = b.add_subparsers(dest="bcmd", required=True)
+
+    bn = bsub.add_parser("new", help="instantiate a template")
+    bn.add_argument("--type", default="packet",
+                    help="template type (default: blank packet)")
+    bn.add_argument("--param", action="append", default=[],
+                    help="template parameter key=value (repeatable)")
+    bn.add_argument("--template-dir", action="append", default=None)
+    bn.add_argument("--list", action="store_true")
+    bn.add_argument("--output", "-o")
+    bn.add_argument("--strict", action="store_true",
+                    help="fail if any {{placeholder}} remains unfilled")
+    bn.set_defaults(fn=cmd_brief_new)
+
+    bv = bsub.add_parser("validate", help="validate a packet file")
+    bv.add_argument("file")
+    bv.set_defaults(fn=cmd_brief_validate)
+
+    args = p.parse_args(argv)
+    return args.fn(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

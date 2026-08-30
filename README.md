@@ -85,8 +85,9 @@ Four load-bearing defenses against execution error:
 | `riel-ledger` | **State** — Goal/Claims/Core/Verified/Open/Next, re-read at every seam, recovery via checkpoints | ✅ skill v1.8 |
 | `riel-contract` | **Structure** — mermaid as contract: closed verb vocabulary, verification funnel, machine-checkable | ✅ skill v3.3 |
 | `riel-protocol` | **Trajectory** — functional grammar, persona, minimal surface on the first turn | ✅ skill v1.5 |
-| `riel-briefs` | **Delegation briefs** — self-contained packets: curated context, verb-graph, pre-registered claims, executable gates | ✅ skill v3.3 |
+| `riel-briefs` | **Delegation briefs** — self-contained packets: curated context, verb-graph, pre-registered claims, executable gates, templates | ✅ skill v3.4 |
 | `riel-delegate` | **Delegation router** — plan, dispatch waves, JSON-schema'd returns, parent verifies | ✅ skill v1.3 |
+| `riel-cli` | **Tooling** — `rielctl` writes the ledger mechanically, instantiates packet templates, validates packets | ✅ skill v1.0 |
 
 Each component is independent and optional: a short task uses zero; a long
 loop may use all five. Use only the machinery the task earns.
@@ -153,8 +154,9 @@ riel/
 │   ├── riel-ledger/     ← state: the heart of the framework
 │   ├── riel-contract/   ← structure: mermaid contract + verification funnel
 │   ├── riel-protocol/   ← trajectory: grammar, persona, minimal surface
-│   ├── riel-briefs/     ← delegation briefs + pre-registered claims
-│   └── riel-delegate/   ← delegation router + JSON output_schema
+│   ├── riel-briefs/     ← delegation briefs + pre-registered claims + templates/
+│   ├── riel-delegate/   ← delegation router + JSON output_schema
+│   └── riel-cli/        ← rielctl: mechanical ledger writer + packet tooling
 ├── specs/             ← design contracts
 │   ├── spec-ledger-format.md    ← .riel/ledger.md format + rules
 │   ├── spec-todo-contract.md    ← what the todo body must carry
@@ -164,8 +166,18 @@ riel/
 ├── scripts/           ← repo tooling
 │   ├── validate-mermaid.sh   ← validates every mermaid block with mmdc
 │   └── extract-mermaid.py    ← extracts mermaid blocks (regex, re.DOTALL)
+├── tests/             ← stdlib unittest regression suite (test_rielctl.py)
 └── references/        ← local-only notes
 ```
+
+## Tests
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+Stdlib-only, subprocess-driven. 26 tests cover `rielctl note/seam/resume/ship`
+and `brief new/validate` end-to-end.
 
 The name: the train already moves on its own; the rail just keeps it from
 derailing.
