@@ -1,7 +1,7 @@
 ---
 name: riel-ledger
 description: "Use when running a loop-mode task — write the local Goal/Core/Verified/Open/Next ledger in the worktree, re-read at every seam, verify before done. No remote dependency."
-version: 1.6.0
+version: 1.7.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -191,7 +191,12 @@ When work degrades (cascading errors, doubt loops, corrupted output):
 1. **Do NOT resume where it broke.**
 2. Re-read the ledger in full.
 3. Identify the last ✓NN — that is the return checkpoint.
-4. Write a fresh explicit plan from that checkpoint.
+4. Write a fresh explicit plan from that checkpoint — **without carrying
+   the narrative of the failure into the new plan.** Describe the target
+   state, not what went wrong. Models self-condition on their own error
+   history: a plan that mentions the prior failure raises the probability
+   of repeating it. The ledger keeps the failure context for the human;
+   the new plan starts clean.
 5. Re-enter at step 1 of the fresh plan — a new plan, not a continuation
    of the broken one.
 

@@ -1,7 +1,7 @@
 ---
 name: riel-delegate
 description: "Use when delegating to subagents — entry router for the delegation flow: plan phases, dispatch riel-briefs packets in waves, parent verifies returns. Orchestrates the other Riel skills."
-version: 1.2.0
+version: 1.3.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -75,6 +75,49 @@ only what dispatching itself adds.
 - Pre-warm slow toolchains (deps compile) before dispatching.
 - Children never commit and never run the full suite — targeted tests
   only; the full suite is the parent's between-waves gate.
+- **Always dispatch with `output_schema`.** The child's final response is
+  JSON validated against this schema — not prose. The parent parses fields;
+  it does not read narratives.
+
+```json
+{
+  "type": "object",
+  "required": ["status", "gates", "claims"],
+  "properties": {
+    "status": {"enum": ["done", "blocked", "failed"]},
+    "gates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["gate_id", "command", "exit_code", "passed", "coverage"],
+        "properties": {
+          "gate_id": {"type": "string"},
+          "command": {"type": "string"},
+          "exit_code": {"type": "integer"},
+          "passed": {"type": "boolean"},
+          "coverage": {"type": "string"}
+        }
+      }
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["claim_id", "verified", "evidence"],
+        "properties": {
+          "claim_id": {"type": "string"},
+          "verified": {"type": "boolean"},
+          "evidence": {"type": "string"}
+        }
+      }
+    }
+  }
+}
+```
+
+A job that returns `"passed": true` with `"exit_code": 1` is caught
+mechanically — no prose reading required. A job missing `claim_id`s from
+the pre-registered list is incomplete by construction.
 
 ## INTEGRATE — the rules this skill owns
 
@@ -99,6 +142,14 @@ costs a fresh packet and a fresh reader. If <50%, the brief was wrong or
 the model missed the spec; write the correct version into a brief and
 re-dispatch, do not patch a half-broken tree.
 
+**When re-dispatching, never describe the previous failure in the new
+brief.** State the current goal and the target state — not "the last agent
+broke X, now fix it." Models self-condition on their own error history
+(Sinha et al., 2026): a brief that mentions the prior failure raises the
+probability of the same failure. Describe where you want to arrive, not
+what went wrong. The ledger keeps the failure context privately; the brief
+starts clean.
+
 ## Pitfalls (the ones that cost the most)
 
 - **Trusting the child's "all tests pass".** Re-run everything yourself.
@@ -122,9 +173,12 @@ re-dispatch, do not patch a half-broken tree.
 - [ ] Phases are complete deliverables with definition of done (riel-contract)
 - [ ] Scopes disjoint at file level; shared files are parent work
 - [ ] Every child gets a self-contained packet (riel-briefs)
+- [ ] Packet includes pre-registered claims (P-ids) that cannot be edited post-execution
+- [ ] Dispatch uses output_schema — child returns JSON, not prose
 - [ ] Children never commit, never run the full suite
 - [ ] Parent verified: decomposed criteria + `confidence X/20` per criterion (riel-ledger)
 - [ ] Failures triaged A/B/C; B fixed by parent, not re-dispatched
+- [ ] Re-dispatch brief describes target state, never the previous failure
 - [ ] Full gate re-run unpiped; commit per logical concern
 
 ## Cross-references

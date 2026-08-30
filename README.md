@@ -64,11 +64,11 @@ Three rules carry the whole mechanism:
 
 | Component | What it steers | Status |
 |---|---|---|
-| `riel-ledger` | **State** — Goal/Core/Verified/Open/Next, re-read at every seam, recovery via checkpoints | ✅ skill v1.6 |
+| `riel-ledger` | **State** — Goal/Core/Verified/Open/Next, re-read at every seam, recovery via checkpoints | ✅ skill v1.7 |
 | `riel-contract` | **Structure** — mermaid as contract: closed verb vocabulary, verification funnel, machine-checkable | ✅ skill v3.3 |
 | `riel-protocol` | **Trajectory** — functional grammar, persona, minimal surface on the first turn | ✅ skill v1.5 |
-| `riel-briefs` | **Delegation briefs** — self-contained packets: curated context, verb-graph, executable gates | ✅ skill v3.2 |
-| `riel-delegate` | **Delegation router** — plan, dispatch waves, parent verifies returns | ✅ skill v1.2 |
+| `riel-briefs` | **Delegation briefs** — self-contained packets: curated context, verb-graph, pre-registered claims, executable gates | ✅ skill v3.3 |
+| `riel-delegate` | **Delegation router** — plan, dispatch waves, JSON-schemad returns, parent verifies | ✅ skill v1.3 |
 
 Each component is independent and optional: a short task uses zero; a long
 loop may use all five. Use only the machinery the task earns.

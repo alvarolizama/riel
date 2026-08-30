@@ -1,7 +1,7 @@
 ---
 name: riel-briefs
 description: "Write self-contained agent briefs on the fly — curated context, verb-graph, gates, anchored opening. Dispatch packets for delegate_task."
-version: 3.2.0
+version: 3.3.0
 author: Álvaro Lizama
 license: MIT
 platforms: [macos, linux]
@@ -145,6 +145,14 @@ Every binary criterion of the spec becomes a gate:
 | "Backward compatible" | Existing suite runs without failures |
 | "Docs updated" | Read the doc, confirm the section exists |
 
+### Gate result format (when dispatched with output_schema)
+
+When the parent dispatches with `output_schema` (riel-delegate), the child
+must return its gate results as JSON matching the schema — not prose. The
+child still runs the command; the schema constrains how it *reports*. A
+child that claims `"passed": true` with `"exit_code": 1` is caught
+mechanically, without the parent reading any prose.
+
 ## Step 6: Write the dispatch prompt
 
 Structure:
@@ -173,6 +181,21 @@ Structure:
 
 ## Constraints (hard rules)
 1. [Rule 1 — from the spec constraints]
+
+## Pre-registered claims
+
+Before executing anything, declare what will be true when done. Each claim
+gets an ID (P1, P2...) and a verification method. **Claims cannot be edited
+after first execution** — a failed claim is refuted, not reinterpreted.
+
+```markdown
+## Pre-registered claims
+- P1: The endpoint /reset accepts POST with valid email — verify with: `curl -X POST /reset -d '{"email":"a@b.c"}'` → 200
+- P2: The token expires after 1 hour — verify with: test_expiry.exs → pass
+- P3: Swoosh is configured in runtime.exs — verify with: `grep Swoosh config/runtime.exs` → match
+```
+
+The ledger's done-check maps every Goal line to a P-id, not to a narrative.
 
 ## Execution graph
 
