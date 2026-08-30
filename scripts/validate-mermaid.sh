@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Validate every mermaid block in the repo with mermaid-cli (mmdc).
 # Usage: scripts/validate-mermaid.sh [path ...]
-#   no args  → README.md + specs/*.md + skills/*/SKILL.md + system-prompt.md
+#   no args  → README.md + specs/*.md + skills/*/SKILL.md + skills/*/templates/*.md
 #   args     → the given files
 set -uo pipefail
 
@@ -18,7 +18,7 @@ if [ ${#files[@]} -eq 0 ]; then
   files=()
   while IFS= read -r f; do
     files+=("$f")
-  done < <(cd "$ROOT" && printf '%s\n' README.md system-prompt.md specs/*.md skills/*/SKILL.md)
+  done < <(cd "$ROOT" && printf '%s\n' README.md specs/*.md skills/*/SKILL.md skills/*/templates/*.md 2>/dev/null)
 fi
 
 TMP="$(mktemp -d)"

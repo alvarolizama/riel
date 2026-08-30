@@ -1,7 +1,7 @@
 ---
 name: riel-briefs
 description: "Write self-contained agent briefs on the fly — curated context, verb-graph, gates, anchored opening. Dispatch packets for delegate_task."
-version: 3.3.0
+version: 3.4.0
 author: Álvaro Lizama
 license: MIT
 platforms: [macos, linux]
@@ -155,68 +155,27 @@ mechanically, without the parent reading any prose.
 
 ## Step 6: Write the dispatch prompt
 
-Structure:
+The canonical packet lives at `templates/packet.md` in this skill — copy it
+and fill the `{{placeholders}}`. A complete worked example (password-reset)
+lives at `templates/example-password-reset.md`.
 
-````markdown
-# Task: [Descriptive name]
+The packet is a markdown document with these sections, in this order:
 
-## Objective
-[One sentence: what the agent produces — opens with "We need…"]
-
-## Context
-
-### Project
-- **Path:** [exact repo path]
-- **Stack:** [language, framework, key deps]
-- **Conventions:** [style, patterns to follow]
-
-### Existing code to read
-[Paths and what to look for in each]
-
-### Code to modify/create
-[Exact files, line ranges, what changes]
-
-### Reference snippets
-[Existing code the agent must follow or modify]
-
-## Constraints (hard rules)
-1. [Rule 1 — from the spec constraints]
-
-## Pre-registered claims
-
-Before executing anything, declare what will be true when done. Each claim
-gets an ID (P1, P2...) and a verification method. **Claims cannot be edited
-after first execution** — a failed claim is refuted, not reinterpreted.
-
-```markdown
-## Pre-registered claims
-- P1: The endpoint /reset accepts POST with valid email — verify with: `curl -X POST /reset -d '{"email":"a@b.c"}'` → 200
-- P2: The token expires after 1 hour — verify with: test_expiry.exs → pass
-- P3: Swoosh is configured in runtime.exs — verify with: `grep Swoosh config/runtime.exs` → match
-```
-
-The ledger's done-check maps every Goal line to a P-id, not to a narrative.
-
-## Execution graph
-
-```mermaid
-flowchart TD
-  S1["READ lib/foo.ex:10"] --> S2["EDIT foo.ex — add bar/1"]
-  S2 --> S3["RUN mix test test/foo_test.exs"]
-  S3 --> G1{"tests green?"}
-  G1 -->|no| S2
-  G1 -->|yes| END([Done])
-```
-
-## Verification gates
-[All gates from step 5]
-
-## Deliverable
-[Exactly what is produced — files created/modified, behavior]
-
-## DO NOT
-[Explicit anti-patterns — what the agent must avoid]
-````
+1. `# Task:` — the name.
+2. `## Objective` — one sentence, opens with "We need…".
+3. `## Context` — Project (path, stack, conventions), existing code to
+   read, code to modify/create, reference snippets.
+4. `## Constraints` — hard rules only (style guidance stays in Context,
+   exclusions stay in DO NOT).
+5. `## Pre-registered claims` — P-ids with verification method, declared
+   before executing anything. **Never editable after execution**: a
+   failed claim is refuted, never reinterpreted. The ledger's done-check
+   maps every Goal line to a P-id, not to a narrative.
+6. `## Execution graph` — the mermaid DAG from Step 4 (funnel topology:
+   RUN gates followed by VERIFY decision nodes before End).
+7. `## Verification gates` — every gate from Step 5.
+8. `## Deliverable` — exactly what is produced: files, behavior.
+9. `## DO NOT` — explicit anti-patterns, scope enforcement.
 
 ### Why "DO NOT" matters
 
@@ -257,8 +216,46 @@ When dispatching, `goal` stays short and `context` carries the packet:
 - **Dumping the full tool/skill catalog in the first turn.** Minimal
   surface first.
 
+## Packet validation checklist
+
+A packet is *valid* when all of the following pass. `rielctl brief validate`
+(Fase 3) runs these mechanically; until it exists, run them by hand before
+dispatching.
+
+Structure:
+
+- [ ] The nine sections are present, in the order of `templates/packet.md`
+- [ ] `# Task:` names the deliverable, not the journey
+- [ ] `## Objective` is one sentence opens with "We need…"
+- [ ] `## Context` fits the budget: 3-5 snippets, each < 30 lines
+- [ ] `## Pre-registered claims` has ≥1 claim, each with a verify-with that
+      refers to a command or explicit check
+- [ ] `## DO NOT` is present and non-empty
+
+Graph (validable con `mmdc` / `scripts/validate-mermaid.sh`):
+
+- [ ] The execution graph parses (`mmdc`)
+- [ ] Every execution node starts with a verb from the closed vocabulary
+      (READ/EDIT/CREATE/RUN/VERIFY/ASK) — riel-contract
+- [ ] Predictable IDs: `W1/W2` waves, `S1/S2` steps, `G1/G2` gates
+- [ ] Every decision has labeled edges (`|yes|`, `|no|`)
+- [ ] The flow ends in a VERIFY/Check node before `END`
+- [ ] Loops carry counters (`< 3 attempts`), never unbounded
+
+Content:
+
+- [ ] Every `path:line` in snippets and graph was verified with `read_file`
+      against the repo **at the current commit**
+- [ ] Every acceptance criterion of the spec has a gate
+- [ ] Every gate is a concrete command + Expected + On failure
+- [ ] No tool name appears in graph node labels (verbs only)
+- [ ] Claims cannot be satisfied by editing the packet (claims are
+      pre-registered; if speculation appears, split)
+
 ## Cross-references
 
+- Canonical packet file: `templates/packet.md`
+- Worked example: `templates/example-password-reset.md`
 - Verb-graph syntax conventions (canonical): `riel-contract`
 - Opening conditions and functional grammar: `riel-protocol`
 - Delegation end-to-end (plan + dispatch + parent verification): `riel-delegate`
