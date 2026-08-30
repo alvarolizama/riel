@@ -17,13 +17,3 @@ not as a public API. The framework works without reading them; they explain
 | Long-horizon agent failures ([arXiv:2607.05775](https://arxiv.org/abs/2607.05775), [arXiv:2607.00692](https://arxiv.org/abs/2607.00692), [arXiv:2607.08964](https://arxiv.org/abs/2607.08964)) | Context-handling gap, no-recovery bottleneck, completion overestimation → ledger fields, recovery protocol, done-check | `riel-ledger` |
 | Re-reading the input ([arXiv:2309.06275](https://arxiv.org/abs/2309.06275)) | Re-reading improves reasoning across 14 datasets → the seam re-read | `riel-ledger` |
 | METR GPT-5 evaluation report | The recovery template: "Stop. Focus. Return to step by step" — fresh plan, re-enter at step 1 | `riel-ledger` |
-
-## Honesty about evidence
-
-Riel's own benchmark (`dag-format-benchmark.py`, 72 calls) showed mermaid
-DAGs outperform prose plans on a narrow parsing task (+9.3 points, 95% CI
-[−2.6, +9.3]). That is a weak signal, not a guarantee. The framework's value
-is in the *verification gates*, not in any claimed accuracy gain.
-
-The full design logic — including the 24-source distillation — lives in
-personal notes, not here.
