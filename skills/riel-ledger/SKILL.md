@@ -1,7 +1,7 @@
 ---
 name: riel-ledger
 description: "Use when running a loop-mode task — write the local Goal/Core/Verified/Open/Next ledger in the worktree, re-read at every seam, verify before done. No remote dependency."
-version: 1.7.0
+version: 1.8.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -57,6 +57,10 @@ The ledger is local state, not a deliverable. When working inside a repo:
 ## Goal
 <one sentence: what "done" means>
 
+## Claims
+- P1: <what will be true when done> — verify with: <how>
+- P2: <what will be true when done> — verify with: <how>
+
 ## Source
 <optional: remote system + identifier — e.g. todo:<slug>>
 
@@ -82,6 +86,7 @@ The ledger is local state, not a deliverable. When working inside a repo:
 | Field | Rule |
 |---|---|
 | Goal | One sentence; updated only if the goal changes |
+| Claims | Pre-registered before first action; P-ids; **never edited after execution begins** — a failed claim is refuted, not reinterpreted |
 | Source | Optional; present when the task came from a remote todo |
 | Phase | Derived from the phases graph (riel-contract); pointer to the active phase |
 | Core | Max 2 live items; change only via explicit swap; each with its defining fact |
@@ -259,10 +264,21 @@ Checked whenever the ledger is re-read:
    reports is not a clean system; it is an unplugged monitor
 9. You cannot re-state the Goal in one line, in your own words, without
    looking at the ledger — the Goal has gone stale
+10. The last ✓NN required 3+ failed attempts before passing. The context
+    now carries the history of those failures; self-conditioning makes
+    subsequent errors more likely. Consider compacting or restarting
+    with a fresh plan from the last clean ✓NN rather than pushing forward
+    on a contaminated context
 
 ### Recording verification
 
 When something is verified, append immediately — do not batch:
+
+**Cross-check adversarial post-gate (mandatory):** before appending any
+✓NN, ask one question from the opposite direction: *"what does this test
+NOT cover?"* If the answer matters, it becomes a new ?NN. This is not
+re-running the same command (churn) — it is generating evidence *against*
+your own result, not just in favor.
 
 `✓NN <what holds> — verified by: <command/test/review>, covering <scope>[, confidence X/20]`
 
@@ -283,9 +299,11 @@ belonging to future phases migrate with their numbers.
 **Decompose first, then verify.** A complex Goal is not one line — break it
 into its verifiable criteria (each independent claim about "done") before
 checking. Then read each criterion **line by line**: every criterion must
-map to a ✓NN with coverage. If any criterion is missing → not done. Open
-?NN that cannot be closed go to a Pending list, explicitly — never silently
-dropped.
+map to a ✓NN with coverage, **and every pre-registered Claim must be either
+verified or explicitly refuted**. If any criterion is missing → not done.
+Open ?NN that cannot be closed go to a Pending list, explicitly — never
+silently dropped. A Claim left unverified at the end is a silent drop —
+that is an invariant failure, not a shortcut.
 
 ## A ledger in the wild (annotated)
 
