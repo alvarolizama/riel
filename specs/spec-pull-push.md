@@ -3,16 +3,17 @@
 Status: draft v2 · Riel phase 2
 How the local ledger relates to a remote task system (via spec-adapters).
 **The ✓NN stays local.** The remote only ever receives checkboxes and status.
-**Derived patch: `coder-flow`** (compatibility layer).
+Existing adapter deployments continue to work unchanged — they satisfy
+this contract (the *how* lives in the private adapter notes, not here).
 
 ## The split of responsibilities
 
 - **Local (riel-ledger):** `Goal` / `Core` / `Verified` (✓NN) / `Open` / `Next`
   live in `.riel/ledger.md` and are **never pushed to the remote**. They are
   working memory for the execution in flight.
-- **Remote (adapter, e.g. `coder-flow` for Dran):** the task's durable plan
-  (objective + fases + verification checklist) and its status. The adapter only
-  reads the task and writes two things: **checkbox marks** and **status done**.
+- **Remote (adapter, any task system):** the task's durable plan (objective +
+  phases + verification checklist) and its status. The adapter only reads the
+  task and writes two things: **checkbox marks** and **status done**.
 
 ## Full cycle
 

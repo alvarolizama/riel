@@ -5,4 +5,4 @@
 .DS_Store
 
 # Private operational notes (local only, never published)
-references/dran-adapter-notes.md
+references/*-adapter-notes.md

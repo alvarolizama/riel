@@ -26,7 +26,7 @@ The gate is TWO things at once:
 | Contract | riel-contract | "The phase's VERIFY node passed" |
 | Ledger | riel-ledger | "Append this phase's ✓NN to the LOCAL ledger" |
 
-Gate content (what coder-flow already does + coverage):
+Gate content (verifiers + coverage):
 
 - compile without warnings
 - scope tests green

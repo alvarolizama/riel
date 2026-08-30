@@ -4,7 +4,7 @@ Status: draft v1 · Riel phase 2
 
 ## Principle
 
-The local format (spec-ledger-format) and the pull/push cycle (spec-pull-push) are **system-agnostic**. Only 3 operations vary by remote. The day Hub or Notion gets connected, one column is added to the table plus a safety note — format and cycle are untouched.
+The local format (spec-ledger-format) and the pull/push cycle (spec-pull-push) are **system-agnostic**. Only 3 operations vary by remote.
 
 ## The contract (3 operations)
 
@@ -25,22 +25,11 @@ The local format (spec-ledger-format) and the pull/push cycle (spec-pull-push) a
 
 ## Reference implementation
 
-The first adapter targets a private second-brain server. Its operational
-detail — concrete tool calls, safety notes, token-limit fallback, hash
-verification — lives in a **local, gitignored** note
-(`references/<adapter>-notes.md`), not in this public spec. The public
-contract stays system-agnostic on purpose.
-
-## Hub and Notion — future mapping (interface only)
-
-| Operation | Hub (hub-tracker) | Notion |
-|---|---|---|
-| `pull` | get ticket | read page blocks |
-| `push-phase` | subtask status change | checkbox toggle |
-| `push-close` | close ticket | page status |
-
-When implemented: full column + each system's own safety notes (in the local
-notes file, same as the reference implementation).
+A concrete adapter's operational detail — tool calls, safety notes,
+token-limit fallback, hash verification — lives in a **local, gitignored**
+note (`references/<adapter>-adapter-notes.md`), never in the public spec.
+The day a new remote gets connected, one adapter-notes file is added locally
+— contract and cycle untouched.
 
 ## Honest limit
 
