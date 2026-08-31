@@ -27,29 +27,22 @@ task earns.
 
 ## Location
 
-The script lives inside this skill:
+`rielctl` is normally on PATH — the repo's `make install` symlinks it
+into `~/.local/bin`:
 
-```
-<skill-root>/scripts/rielctl
+```bash
+rielctl note --goal "..." --next "..."
 ```
 
-Resolve `<skill-root>` by finding this skill under ~/.hermes/skills/ or in
-the repo at `skills/riel-cli/`. Invoke it directly (it has a shebang):
+If `command -v rielctl` comes up empty, invoke the skill copy directly
+(it has a shebang):
 
 ```bash
 python3 <skill-root>/scripts/rielctl note --goal "..." --next "..."
 ```
 
-### Discovering the path
-
-If you're Riel-aware but don't know the absolute path of this skill, run
-once:
-
-```bash
-python3 -c "import os; print(next(os.path.join(r, 'riel-cli') for r, ds, _ in os.walk(os.path.expanduser('~/.hermes')) if 'riel-cli' in ds), end='')"
-```
-
-Or search the current repo: `find . -type d -name riel-cli`.
+and restore the symlink with `make install` from the riel repo
+checkout.
 
 ## Commands
 

@@ -152,16 +152,18 @@ the parser-level mmdc check. Nothing in the runtime path requires mmdc.
 
 ### Using `rielctl` after install
 
-Once `riel-cli` is under `~/.hermes/skills/`, any agent that loads the
-skill learns the path convention from its SKILL.md and can resolve the
-script on its own; humans typically don't call it directly. If you do:
+`make install` (from the repo checkout) symlinks `rielctl` into
+`~/.local/bin`, so any shell — human or agent, in any worktree — calls
+it without resolving the skill path:
 
 ```bash
-python3 ~/.hermes/skills/riel-cli/scripts/rielctl note --goal "..." --next "..."
+rielctl note --goal "..." --next "..."
 ```
 
 Run from the task's worktree root — `rielctl` reads/writes `.riel/` under
-the current directory.
+the current directory. If the command is not found, re-run `make install`
+or invoke the skill copy directly:
+`python3 <skills-root>/riel-cli/scripts/rielctl ...`.
 
 ## Validate mermaid blocks
 
