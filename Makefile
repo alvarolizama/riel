@@ -8,6 +8,9 @@
 # The symlink points at THIS checkout, so `git pull` is enough to keep
 # rielctl current — no re-install needed.
 
+# Destinations are overridable — the skills dir is machine/user-specific:
+#   make skills SKILLS_DIR=~/.hermes/skills
+#   make install BIN_DIR=/other/bin
 BIN_DIR ?= $(HOME)/.local/bin
 SKILLS_DIR ?= $(HOME)/Workspace/Skills
 

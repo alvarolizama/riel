@@ -130,11 +130,30 @@ Keep it this short: the soul references the skills, it never embeds them
 
 ## Installation
 
+From the repo checkout:
+
 ```bash
-cp -R ~/Workspace/Repos/alvarolizama/riel/skills/* ~/.hermes/skills/
+make install   # symlink rielctl into ~/.local/bin (PATH)
+make skills    # sync the 6 skills to the skills dir
 ```
 
+Both destinations are make variables and can be overridden per call —
+the deployed-skills directory is machine- and user-specific, so pass
+yours explicitly if you don't use the default:
+
+```bash
+make skills SKILLS_DIR=~/.hermes/skills        # per-user Hermes skills dir
+make skills SKILLS_DIR=/srv/shared/skills      # any shared location
+make install BIN_DIR=/some/other/bin           # non-default bin dir (must be on PATH)
+```
+
+Defaults: `SKILLS_DIR=$HOME/Workspace/Skills`, `BIN_DIR=$HOME/.local/bin`.
+Environment variables work too (`SKILLS_DIR=... make skills`); the
+command-line form wins.
+
 Verify: the skill must appear in the session's skill index (`skills_list`).
+Note the deployed copies are **copies**, not symlinks — re-run
+`make skills` after pulling new commits.
 
 ### Dependencies
 
