@@ -1,7 +1,7 @@
 ---
 name: riel-cli
-description: "Mechanical helper for Riel: writes the ledger with the exact format, instantiates packet templates, validates packets. The agent invokes it in RUN nodes instead of handwriting state files."
-version: 1.0.0
+description: "Mechanical helper for Riel: writes the ledger with the exact format, instantiates packet templates, validates packets, derives the Hermes session-todo mirror. The agent invokes it in RUN nodes instead of handwriting state files."
+version: 1.1.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -19,6 +19,7 @@ of the framework so the agent doesn't have to remember them:
 - Instantiating packet templates (`rielctl brief new`)
 - Verifying that a packet satisfies the structural constraints
   (`rielctl brief validate`)
+- Deriving the Hermes session-todo mirror from the ledger (`rielctl todo`)
 
 **When to use:** on any `loop`-mode task and on every delegated task, the
 agent invokes `rielctl` in `RUN` nodes instead of handwriting ledger files.
@@ -73,9 +74,22 @@ rielctl resume   # full post-gap bootstrap (ledger → invariants → mode → n
 rielctl ship FILE.md   # check FILE for dense-register leakage before delivery
 ```
 
+### Session todo (Hermes mirror, Spec 6)
+
+```bash
+rielctl todo    # JSON array for the todo tool, derived from the ledger
+```
+
+Reads the ledger and prints the session-todo items: Goal → root item,
+Phase → pending child, Next → the only `in_progress`, ?NN → `OPEN NN`
+pending, P# → `CLAIM:` pending, ✓NN → `DONE NN` completed. The todo is a
+projection — fix the ledger and regenerate the mirror; never hand-edit the
+todo into a divergent plan. Spec: `riel/specs/spec-todo-hermes.md`.
+
 Exit codes:
 
-- `note` / `seam` / `resume`: always 0 unless arguments are invalid.
+- `note` / `seam` / `resume` / `todo`: 0 unless arguments invalid or the
+  ledger is missing (1).
 - `ship`: exit 0 if the file is clean; exit 1 if it finds dense markers
   (the agent should fix before delivery).
 

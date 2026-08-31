@@ -12,11 +12,13 @@ Usage:
                     [--close N --check WHAT --by CMD [--covering SCOPE]]
     rielctl seam
     rielctl resume
+    rielctl todo
     rielctl ship    FILE...
     rielctl brief new [--type T] [--param k=v ...] [--list]
     rielctl brief validate FILE
 """
 import argparse
+import json
 import os
 import re
 import shutil
@@ -24,7 +26,7 @@ import subprocess
 import sys
 import tempfile
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 LEDGER_DIR = ".riel"
 LEDGER_PATH = os.path.join(LEDGER_DIR, "ledger.md")
 VERIFY_CMD = os.environ.get("RIEL_MMDC", "mmdc")
@@ -97,6 +99,10 @@ def read_ledger(path):
         elif cur in ("claims", "core", "verified", "open"):
             if line.strip().startswith("- "):
                 out[cur].append(line.strip()[2:])
+    # "<empty>" is a rendering placeholder, not data (write_ledger re-adds it)
+    for key in ("goal", "next"):
+        if out[key] == "<empty>":
+            out[key] = ""
     return out
 
 
@@ -278,6 +284,58 @@ def cmd_resume(args):
         "\n[4/4] Restate the mode (inner register or ledger line), then set\n"
         "      `Next` = the first action back.",
     )
+    return 0
+
+
+# ----------------------------------------------------------------- todo ----
+
+def outerize(text):
+    """Dense-register entry -> outer-register prefix (✓01 -> DONE 01)."""
+    return re.sub(
+        r"([✓?])(\d+)",
+        lambda m: ("DONE " if m.group(1) == "✓" else "OPEN ") + m.group(2),
+        text,
+    )
+
+
+def ledger_to_todo(st):
+    """Derive the session-todo mirror items from ledger state (Spec 6)."""
+    items = []
+
+    def add(iid, content, status, parent=None):
+        item = {"id": iid, "content": content, "status": status}
+        if parent:
+            item["parent"] = parent
+        items.append(item)
+
+    add("goal", "GOAL: {}".format(st["goal"] or "<empty>"), "pending")
+    if st["phase"]:
+        add("phase", "PHASE: {}".format(st["phase"]), "pending", "goal")
+    if st["next"]:
+        add("next", "NEXT: {}".format(st["next"]), "in_progress", "goal")
+    for n, q in enumerate(st["open"], 1):
+        add("open-{}".format(n), outerize(q), "pending", "goal")
+    for n, c in enumerate(st["claims"], 1):
+        add("claim-{}".format(n), "CLAIM: {}".format(c), "pending", "goal")
+    for n, v in enumerate(st["verified"], 1):
+        add("done-{}".format(n), outerize(v), "completed", "goal")
+    return items
+
+
+def cmd_todo(args):
+    st = read_ledger(args.ledger)
+    if not st["goal"] and not st["verified"] and not st["next"]:
+        print("no ledger found at {}; run rielctl note --goal --next first".format(
+            args.ledger), file=sys.stderr)
+        return 1
+    items = ledger_to_todo(st)
+    print(json.dumps(items, indent=2, ensure_ascii=False))
+    if not any(i["status"] == "in_progress" for i in items):
+        print(
+            "[!] Next is empty — the mirror has no in_progress item; "
+            "fix the ledger, not the todo.",
+            file=sys.stderr,
+        )
     return 0
 
 
@@ -539,6 +597,10 @@ def main(argv=None):
 
     r = sub.add_parser("resume", help="post-gap bootstrap")
     r.set_defaults(fn=cmd_resume)
+
+    t = sub.add_parser("todo",
+                       help="derive the Hermes session-todo mirror (JSON)")
+    t.set_defaults(fn=cmd_todo)
 
     h = sub.add_parser("ship", help="check outgoing file for dense markers")
     h.add_argument("files", nargs="+")

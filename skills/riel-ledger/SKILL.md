@@ -1,7 +1,7 @@
 ---
 name: riel-ledger
 description: "Use when running a loop-mode task — write the local Goal/Core/Verified/Open/Next ledger in the worktree, re-read at every seam, verify before done. No remote dependency."
-version: 1.8.0
+version: 1.9.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -282,6 +282,9 @@ your own result, not just in favor.
 
 `✓NN <what holds> — verified by: <command/test/review>, covering <scope>[, confidence X/20]`
 
+**Mirror:** regenerate the session todo right after (`rielctl todo`) — the
+new checkpoint shows as `DONE NN` in the UI without hand-editing the todo.
+
 Re-verifying a **critical** checkpoint is allowed — but only with *variation*
 (a different angle, order, or question), never the same check repeated.
 Churn re-runs the same question expecting a different answer; re-sampling
@@ -292,7 +295,9 @@ reduces the false-positive risk on high-stakes results.
 One phase = one mini-ledger. N phases = N sequential mini-ledgers; only the
 active one is live. When a phase gate passes: append its ✓NN, advance
 Phase, swap Core to the new phase's items, set the new Next. Open items
-belonging to future phases migrate with their numbers.
+belonging to future phases migrate with their numbers. Then regenerate the
+session-todo mirror (`rielctl todo`): the new Phase enters as pending, the
+new Next is the only `in_progress`.
 
 ### Done-check (before declaring done)
 
@@ -381,6 +386,7 @@ adapter contract lives in `riel/specs/spec-adapters.md`.
 ## Cross-references
 
 - Local format and rules: `riel/specs/spec-ledger-format.md`
+- Session-todo mirror (Spec 6, `rielctl todo`): `riel/specs/spec-todo-hermes.md`
 - Pull/push protocol: `riel/specs/spec-pull-push.md`
 - Phase advancement: `riel/specs/spec-phase-advance.md`
 - System adapters: `riel/specs/spec-adapters.md`

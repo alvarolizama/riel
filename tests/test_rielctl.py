@@ -6,6 +6,7 @@ subprocess so we exercise exactly what an agent would invoke.
 Run:
     python3 -m unittest discover -s tests -v
 """
+import json
 import os
 import shutil
 import subprocess
@@ -148,6 +149,45 @@ class NoteTests(TempDirTest):
         rc, _, err = run("note", "--close", "99")
         self.assertEqual(rc, 2)
         self.assertIn("no such open question", err)
+
+
+class TodoTests(TempDirTest):
+    def test_todo_without_ledger_errors(self):
+        rc, _, err = run("todo")
+        self.assertEqual(rc, 1)
+        self.assertIn("no ledger", err)
+
+    def test_todo_full_mirror(self):
+        run("note", "--goal", "ship login", "--phase", "F1",
+            "--next", "wire controller")
+        run("note", "--claim", "login works", "--verify-with", "mix test")
+        run("note", "--open", "link encodes?", "--settled-by", "property test")
+        run("note", "--check", "compiles", "--by", "mix compile",
+            "--covering", "lib")
+        rc, out, _ = run("todo")
+        self.assertEqual(rc, 0, out)
+        items = json.loads(out)
+        by_id = {i["id"]: i for i in items}
+        self.assertEqual(by_id["goal"]["status"], "pending")
+        self.assertIn("ship login", by_id["goal"]["content"])
+        self.assertEqual(by_id["phase"]["parent"], "goal")
+        self.assertEqual(by_id["next"]["status"], "in_progress")
+        self.assertEqual(by_id["open-1"]["status"], "pending")
+        self.assertTrue(by_id["open-1"]["content"].startswith("OPEN 01"))
+        self.assertEqual(by_id["claim-1"]["status"], "pending")
+        self.assertTrue(by_id["claim-1"]["content"].startswith("CLAIM:"))
+        self.assertEqual(by_id["done-1"]["status"], "completed")
+        self.assertTrue(by_id["done-1"]["content"].startswith("DONE 01"))
+        self.assertEqual(
+            sum(1 for i in items if i["status"] == "in_progress"), 1)
+
+    def test_todo_next_empty_warns(self):
+        run("note", "--goal", "g")
+        rc, out, err = run("todo")
+        self.assertEqual(rc, 0)
+        self.assertIn("no in_progress", err)
+        items = json.loads(out)
+        self.assertEqual([i["id"] for i in items], ["goal"])
 
 
 class SeamResumeShipTests(TempDirTest):

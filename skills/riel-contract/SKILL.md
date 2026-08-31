@@ -1,7 +1,7 @@
 ---
 name: riel-contract
-description: "Use when authoring mermaid verb-graph contracts for skills and todos — 3-layer pattern, closed verb vocabulary, verification funnel, machine-checkable."
-version: 3.3.0
+description: "Use when authoring mermaid verb-graph contracts for skills and todos — 3-layer pattern, closed verb vocabulary, verification funnel, ASK escalation, machine-checkable."
+version: 3.4.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -129,6 +129,25 @@ existing verb + argument, **needs its own argument schema** to be
 verifiable, and **recurs** in real contracts. Every new verb weakens the
 closed set that makes contracts grepeable.
 
+### ASK escalation rules
+
+`ASK` is the only verb that leaves the agent loop — every escalation
+interrupts the intent architect, so it is never free. An ASK node is
+well-formed only when the decision meets at least one trigger:
+
+1. **Irreversible** — cannot be undone by re-execution: sending messages,
+   publishing, deleting durable data, spending money, pushing to shared
+   refs, real-world actions.
+2. **Outside the claims** — the work would exceed or contradict the
+   pre-registered claims or the spec (a scope change).
+3. **Goal-changing** — the outcome would alter the Goal or the meaning of
+   a Claim.
+
+Everything else — reversible implementation choices, style, naming,
+alternative paths — is decided by the executor and recorded (a ✓NN with
+coverage, or a ledger line). An ASK is not a delegation of doubt: if the
+choice can be verified downstream by a gate, it is not an ASK.
+
 ## Syntax conventions (parseable by small models)
 
 ### Line breaks: `\n`, never `<br/>`
@@ -246,6 +265,8 @@ each through `mmdc`. Requires mermaid-cli
 - [ ] Line breaks with `\n`, zero `<br/>`
 - [ ] Execution DAGs carry NO `style`; routers/lifecycles do
 - [ ] Execution nodes start with a verb from the closed vocabulary
+- [ ] Every ASK node carries one of the three escalation triggers
+      (irreversible / outside the claims / Goal-changing)
 - [ ] Verification funnel before End; loops with counters
 - [ ] Mermaid parses: `scripts/validate-mermaid.sh`
 - [ ] The why-prose intact (mermaid adds, does not replace)
