@@ -1,5 +1,3 @@
-<div align="center">
-
 # 🛤️ Riel
 
 ### Steering Layer for Harness/LLM
@@ -8,9 +6,7 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-![Riel](assets/riel-header.png)
 
-</div>
 
 A model can have a capability and still fail to deliver it: unstable
 trajectory, drifting state, missing verification. That gap — having it vs.
@@ -229,5 +225,4 @@ python3 -m unittest discover -s tests -v
 Stdlib-only, subprocess-driven. 29 tests cover `rielctl note/seam/resume/todo/ship`
 and `brief new/validate` end-to-end.
 
-The name: the train already moves on its own; the rail just keeps it from
-derailing.
+
