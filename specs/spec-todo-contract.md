@@ -52,7 +52,7 @@ flowchart TD
 ## Derived patch to `todo-flow`
 
 - **New golden rule:** the closure contract (rule 3 above) — done only with a complete verification checklist.
-- **Base skeleton:** `## Objetivo` + `## Fases` + `## Verificación` (checklist with method + coverage).
-- **3 levels of fase detail:** prosa / DAG / código (scope + context + algorithm + instruction DAG).
+- **Base skeleton:** `## Objective` + `## Phases` + `## Verification` (checklist with method + coverage).
+- **3 levels of phase detail:** prose / DAG / code (scope + context + algorithm + instruction DAG).
 - **No accumulator sections** — the body holds the plan; ✓NN evidence is local (riel-ledger).
 - **Cross-reference:** the Riel specs (`riel/specs/`).

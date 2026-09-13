@@ -50,7 +50,7 @@ flowchart TD
 
 1. Append the phase's `✓NN` to the **local** ledger (riel-ledger) — verifier + coverage.
 2. Rebuild the full remote body (read-before-write).
-3. Mark the phase's checkbox in the remote `## Verificación` checklist.
+3. Mark the phase's checkbox in the remote `## Verification` checklist.
 4. Write in ONE single call.
 5. Advance Phase (spec-phase-advance).
 
@@ -60,7 +60,7 @@ The checkbox is the only durable trace on the remote; the ✓NN detail is local.
 ## Final PUSH
 
 1. **done-check (local):** every line of the Goal must map to a ✓NN with coverage; if any is missing → not done.
-2. Unclosed `?NN` → report to Álvaro (not written to the remote).
+2. Unclosed `?NN` → report to the user (not written to the remote).
 3. Status → done via the adapter's safe route (meta-merge, never content replacement).
 4. Delete `.riel/ledger.md` if desired — it is now disposable.
 
@@ -69,5 +69,5 @@ The checkbox is the only durable trace on the remote; the ✓NN detail is local.
 - Read-before-write on EVERY push.
 - Never split an update across multiple calls (the second wipes the first).
 - Status only through the system's meta-merge operation (spec-adapters).
-- Never blank-retry: if a push fails, retry with the diagnosis attached; counter <3 / ≥3 escalate to Álvaro.
+- Never blank-retry: if a push fails, retry with the diagnosis attached; counter <3 / ≥3 escalate to the user.
 - **Git hygiene:** the local ledger is never committed — see spec-ledger-format.

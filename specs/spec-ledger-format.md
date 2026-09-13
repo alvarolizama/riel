@@ -21,6 +21,11 @@ Applies to every task in `loop` mode (multi-file, multi-tool, multi-phase, or sp
 
 ## Exact format
 
+The order below matches `rielctl` exactly — `note` writes Goal, then the
+optional Source/Phase, then Claims, Core, Verified, Open, Next. Use
+`rielctl note` as the writer; do not hand-format the file into a different
+order.
+
 ```markdown
 # Riel ledger
 
@@ -32,6 +37,9 @@ Applies to every task in `loop` mode (multi-file, multi-tool, multi-phase, or sp
 
 ## Phase
 <active phase derived from the DAG — e.g. "F2: CREATE router_test.exs">
+
+## Claims
+- P1: <what will be true when done> — verify with: <how>
 
 ## Core
 - <name> — <defining fact>
@@ -54,10 +62,11 @@ Applies to every task in `loop` mode (multi-file, multi-tool, multi-phase, or sp
 | Goal | One sentence; updated only if the goal changes |
 | Source | Optional; present only when the task came from a remote todo |
 | Phase | Derived from the DAG (spec-phase-advance); pointer to the active mini-ledger |
+| Claims | Pre-registered before the first action; P-ids; never edited after execution begins — a failed claim is refuted, not reinterpreted |
 | Core | Max 2 live items; change only via explicit swap; each with its defining fact |
 | Verified | Numbered ✓NN, append-only; never deleted or renumbered |
 | Open | Numbered ?NN; closed against a checkpoint; the number is never reused |
-| Next | Never empty; if blocked, the block IS the Next ("waiting on X from Álvaro") |
+| Next | Never empty; if blocked, the block IS the Next ("waiting on X from the user") |
 
 ## Valid ✓NN
 

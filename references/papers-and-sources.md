@@ -17,3 +17,12 @@ not as a public API. The framework works without reading them; they explain
 | Long-horizon agent failures ([arXiv:2607.05775](https://arxiv.org/abs/2607.05775), [arXiv:2607.00692](https://arxiv.org/abs/2607.00692), [arXiv:2607.08964](https://arxiv.org/abs/2607.08964)) | Context-handling gap, no-recovery bottleneck, completion overestimation → ledger fields, recovery protocol, done-check | `riel-ledger` |
 | Re-reading the input ([arXiv:2309.06275](https://arxiv.org/abs/2309.06275)) | Re-reading improves reasoning across 14 datasets → the seam re-read | `riel-ledger` |
 | METR GPT-5 evaluation report | The recovery template: "Stop. Focus. Return to step by step" — fresh plan, re-enter at step 1 | `riel-ledger` |
+
+## Verification status
+
+Independently checked (2026-09): BRAID (arXiv:2512.15959), Lost in the
+Middle (arXiv:2307.03172), FlowBench, and the `dsh-anchored-standard`
+project page. The remaining arXiv ids are cited as-is from the sources
+themselves. The `dsh-anchored-standard` project was frozen on 2026-09-10
+and its target model (V4 Pro) retired on 2026-09-14 — the anchoring levers
+are model-specific and dated (see `riel-protocol`, "Evidence status").
