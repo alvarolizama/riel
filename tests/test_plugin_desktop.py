@@ -744,6 +744,13 @@ class ChipTest(unittest.TestCase):
         self.assertIn("overflow-y-auto", source,
                       "the ledger body must scroll when it exceeds the popover")
 
+    def test_detail_lines_wrap_instead_of_truncating(self):
+        """A ✓ line carries the whole checkpoint — it must wrap, not clip."""
+        source = (DESKTOP / "plugin.js").read_text(encoding="utf-8")
+        detail = source.split("function DetailSection")[1].split("\nfunction ")[0]
+        self.assertIn("break-words", detail, "detail lines do not wrap")
+        self.assertIn("min-w-0", detail, "the text span cannot shrink to wrap")
+
     def test_session_info_cwd_is_authoritative_per_session(self):
         """The worktree comes from session.info, keyed per session.
 

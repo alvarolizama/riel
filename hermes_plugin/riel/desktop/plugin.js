@@ -56,12 +56,14 @@ function DetailSection({ heading, items, mark, markClass }) {
       }),
       ...items.map((text, i) =>
         jsxs('div', {
-          className: 'flex items-baseline gap-1.5 leading-snug',
+          // break-words: a ✓ line carries the whole checkpoint (claim + evidence)
+          // and must WRAP, not truncate with an ellipsis.
+          className: 'flex items-baseline gap-1.5 leading-snug break-words',
           children: [
             mark
               ? jsx('span', { className: 'shrink-0 ' + (markClass || ''), children: mark })
               : null,
-            jsx('span', { className: 'text-(--ui-text-secondary)', children: text })
+            jsx('span', { className: 'min-w-0 flex-1 text-(--ui-text-secondary)', children: text })
           ]
         }, i)
       )
