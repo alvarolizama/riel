@@ -22,6 +22,22 @@ Goal, pre-registered Claims, Core (1-2 live items), Verified checkpoints,
 Open questions, Next action — re-read at every seam, closed against named
 verifiers. Everything else feeds it.
 
+## Quick start
+
+```bash
+make install   # symlink rielctl into ~/.local/bin (on PATH)
+make skills    # deploy the 6 skills to SKILLS_DIR (~/Workspace/Skills)
+```
+
+Then, from any task worktree:
+
+```bash
+rielctl note --goal "what done means" --next "first action"
+```
+
+`make help` lists every target. Only the mermaid checks need Node; nothing
+in the runtime path does.
+
 ## What it replaces
 
 Riel is the opposite of brute-force prompting: no plan, no state between
@@ -82,12 +98,12 @@ Four load-bearing defenses against execution error:
 
 | Component | What it steers | Status |
 |---|---|---|
-| `riel-ledger` | **State** — Goal/Claims/Core/Verified/Open/Next, re-read at every seam, recovery via checkpoints, mirrors to the session todo | ✅ skill v1.9 |
-| `riel-contract` | **Structure** — mermaid as contract: closed verb vocabulary, verification funnel, ASK escalation, machine-checkable | ✅ skill v3.4 |
-| `riel-protocol` | **Trajectory** — functional grammar, persona, minimal surface on the first turn | ✅ skill v1.5 |
-| `riel-briefs` | **Delegation briefs** — self-contained packets: curated context, verb-graph, pre-registered claims, executable gates, templates | ✅ skill v3.4 |
+| `riel-ledger` | **State** — Goal/Claims/Core/Verified/Open/Next, re-read at every seam, recovery via checkpoints, mirrors to the session todo | ✅ skill v1.10 |
+| `riel-contract` | **Structure** — mermaid as contract: closed verb vocabulary, verification funnel, graph digest, machine-checkable | ✅ skill v3.6 |
+| `riel-protocol` | **Trajectory** — functional grammar, persona, minimal surface on the first turn | ✅ skill v1.7 |
+| `riel-briefs` | **Delegation briefs** — self-contained packets: curated context, verb-graph, pre-registered claims, executable gates, templates | ✅ skill v3.5 |
 | `riel-delegate` | **Delegation router** — plan, dispatch waves, JSON-schema'd returns, parent verifies | ✅ skill v1.3 |
-| `riel-cli` | **Tooling** — `rielctl` writes the ledger mechanically, instantiates packet templates, validates packets, derives the session-todo mirror | ✅ skill v1.1 |
+| `riel-cli` | **Tooling** — `rielctl` writes the ledger mechanically, instantiates/validates packets, expands the graph digest, derives the session-todo mirror | ✅ skill v1.3 |
 
 Each component is independent and optional: a short task uses zero; a long
 loop may use all six. Use only the machinery the task earns.
@@ -116,17 +132,18 @@ agent's report needs to be parsed, not read.
 Paste this block into `soul.md` or an injected system prompt:
 
 ```
-## Frameworks — líneas activadoras
+## Frameworks — activation lines
 
-- **Riel (steering)** — al operar cualquier conversación o tarea LLM, carga el
-  skill `riel-protocol` y los que apliquen: `riel-ledger` (tareas multi-fase),
-  `riel-contract` (DAGs), `riel-briefs`/`riel-delegate` (delegación),
-  `riel-cli` (cuando necesites manipular el ledger o instanciar packets
-  desde templates: `rielctl`). Riel no crea capacidad — evita que se pierda.
+- **Riel (steering)** — when operating any LLM conversation or task, load the
+  `riel-protocol` skill and whichever apply: `riel-ledger` (multi-phase tasks),
+  `riel-contract` (DAGs), `riel-briefs`/`riel-delegate` (delegation),
+  `riel-cli` (ledger, packets and digest via `rielctl`). Riel does not create
+  capability — it prevents it from being lost.
 ```
 
 Keep it this short: the soul references the skills, it never embeds them
-(embedding desyncs and costs tokens every turn).
+(embedding desyncs and costs tokens every turn). The same block lives at
+`system-prompt.md`.
 
 ## Installation
 
@@ -169,29 +186,50 @@ Optional. `rielctl brief validate` will *also* run `mmdc` on each graph if
 it finds it on PATH; without it, structural checks still run, just without
 the parser-level mmdc check. Nothing in the runtime path requires mmdc.
 
-### Using `rielctl` after install
+### Using `rielctl`
 
 `make install` (from the repo checkout) symlinks `rielctl` into
 `~/.local/bin`, so any shell — human or agent, in any worktree — calls
-it without resolving the skill path:
+it without resolving the skill path. Run from the task's worktree root
+(`rielctl` reads/writes `.riel/` under the current directory):
+
+| Command | Does |
+|---|---|
+| `rielctl note …` | write/update `.riel/ledger.md` — goal, claims, core, checks, open, next |
+| `rielctl seam` | re-print the ledger + which invariants are due |
+| `rielctl resume` | post-gap bootstrap (ledger → invariants → mode → next) |
+| `rielctl todo` | session-todo mirror (JSON) derived from the ledger |
+| `rielctl ship FILE` | dense-register check before delivery |
+| `rielctl brief new` / `validate` | instantiate / structurally check a packet |
+| `rielctl brief digest` · `rielctl digest` | explicit text digest of a graph |
+| `rielctl --version` · `--help` | version / usage |
+
+If the command is not found, re-run `make install` or invoke the skill copy
+directly: `python3 <skills-root>/riel-cli/scripts/rielctl ...`.
+
+## Make targets
+
+| Target | Does |
+|---|---|
+| `help` | list targets (default when you run bare `make`) |
+| `install` | symlink `rielctl` into `$(BIN_DIR)` (`~/.local/bin`) |
+| `skills` | sync the 6 skills to `$(SKILLS_DIR)` (deploy copies, not symlinks) |
+| `test` | regression suite (unittest discovery) |
+| `validate` | parse every mermaid block with `mmdc` |
+| `digest` | print the explicit graph digest for README + specs + skills |
+| `lint` | byte-compile the Python tooling; `shellcheck` if present |
+| `uninstall` | remove the `rielctl` symlink (deployed skills stay) |
+
+## Validate & digest
 
 ```bash
-rielctl note --goal "..." --next "..."
-```
-
-Run from the task's worktree root — `rielctl` reads/writes `.riel/` under
-the current directory. If the command is not found, re-run `make install`
-or invoke the skill copy directly:
-`python3 <skills-root>/riel-cli/scripts/rielctl ...`.
-
-## Validate mermaid blocks
-
-```bash
-scripts/validate-mermaid.sh            # README + specs + skills
+make validate                          # every mermaid block, via mmdc
 scripts/validate-mermaid.sh README.md  # a single file
+make digest                            # explicit text digest of every graph
 ```
 
-Requires mermaid-cli (`npm install -g @mermaid-js/mermaid-cli`).
+`validate` requires mermaid-cli (`npm install -g @mermaid-js/mermaid-cli`).
+`digest` is stdlib-only.
 
 ## Structure
 
@@ -199,13 +237,13 @@ Requires mermaid-cli (`npm install -g @mermaid-js/mermaid-cli`).
 riel/
 ├── README.md          ← this file
 ├── assets/            ← header image
-├── skills/            ← installable skills (cp to ~/.hermes/skills/)
+├── skills/            ← installable skills (deploy copies to $SKILLS_DIR)
 │   ├── riel-ledger/     ← state: the heart of the framework
-│   ├── riel-contract/   ← structure: mermaid contract + verification funnel
+│   ├── riel-contract/   ← structure: mermaid contract + funnel + digest
 │   ├── riel-protocol/   ← trajectory: grammar, persona, minimal surface
 │   ├── riel-briefs/     ← delegation briefs + pre-registered claims + templates/
 │   ├── riel-delegate/   ← delegation router + JSON output_schema
-│   └── riel-cli/        ← rielctl: mechanical ledger writer + packet tooling
+│   └── riel-cli/        ← rielctl: ledger writer, packet + digest tooling
 ├── specs/             ← design contracts
 │   ├── spec-ledger-format.md    ← .riel/ledger.md format + rules
 │   ├── spec-todo-contract.md    ← what the todo body must carry
@@ -217,16 +255,14 @@ riel/
 │   ├── validate-mermaid.sh   ← validates every mermaid block with mmdc
 │   └── extract-mermaid.py    ← extracts mermaid blocks (regex, re.DOTALL)
 ├── tests/             ← stdlib unittest regression suite (test_rielctl.py)
-└── references/        ← local-only notes
+└── references/        ← evidence & design notes (public)
 ```
 
 ## Tests
 
 ```bash
-python3 -m unittest discover -s tests -v
+make test     # or: python3 -m unittest discover -s tests -v
 ```
 
-Stdlib-only, subprocess-driven. 29 tests cover `rielctl note/seam/resume/todo/ship`
-and `brief new/validate` end-to-end.
-
-
+Stdlib-only, subprocess-driven. 49 tests cover `rielctl note/seam/resume/todo/ship`,
+`brief new/validate/digest`, the graph checks, and `extract-mermaid.py` end-to-end.

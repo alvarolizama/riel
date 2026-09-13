@@ -6,13 +6,13 @@ short: it is injected every turn, and the detail lives in the skills.
 ## Copy from here
 
 ```
-## Frameworks — líneas activadoras
+## Frameworks — activation lines
 
-- **Riel (steering)** — al operar cualquier conversación o tarea LLM, carga el
-  skill `riel-protocol` y los que apliquen: `riel-ledger` (tareas multi-fase),
-  `riel-contract` (DAGs), `riel-briefs`/`riel-delegate` (delegación),
-  `riel-cli` (cuando necesites manipular el ledger o instanciar packets
-  desde templates: `rielctl`). Riel no crea capacidad — evita que se pierda.
+- **Riel (steering)** — when operating any LLM conversation or task, load the
+  `riel-protocol` skill and whichever apply: `riel-ledger` (multi-phase tasks),
+  `riel-contract` (DAGs), `riel-briefs`/`riel-delegate` (delegation),
+  `riel-cli` (ledger, packets and digest via `rielctl`). Riel does not create
+  capability — it prevents it from being lost.
 ```
 
 ## Why this shape
