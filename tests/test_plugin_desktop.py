@@ -141,11 +141,20 @@ const ledger = JSON.parse(process.env.RIEL_TEST_LEDGER || 'null')
 const tool = JSON.parse(process.env.RIEL_TEST_TOOL || 'null')
 let restCalls = 0
 const contributions = []
+// Path-aware rest stub: /contract answers only when the harness was told a
+// contract exists (RIEL_TEST_CONTRACT=1); /ledger always answers the fixture.
+const restStub = async (path) => {
+  restCalls += 1
+  if (path.startsWith('/contract')) {
+    return process.env.RIEL_TEST_CONTRACT === '1'
+      ? { present: true, markdown: '# Task: x' }
+      : { present: false }
+  }
+  return ledger
+}
+
 const ctx = {
-  rest: async () => {
-    restCalls += 1
-    return ledger
-  },
+  rest: restStub,
   register: (contribution) => contributions.push(contribution)
 }
 
@@ -164,12 +173,40 @@ const render = () => {
   globalThis.__RIEL_INDEX__ = 0
   globalThis.__RIEL_EFFECT_INDEX__ = 0
   const element = chip.render()
-  const tree = element.type(element.props)
-  // The chip renders as a span: [button, dialog] — click the button, not the span.
-  const button = Array.isArray(tree.props.children)
-    ? tree.props.children.find((child) => child && child.type === 'button')
-    : tree
-  return { tree, button: button || tree }
+  const tree = instantiate(element)
+  return { tree, button: findLedgerButton(tree) || tree }
+}
+
+// Minimal React: function components arrive UNINVOKED — call them (depth-capped)
+// so the assertion walks real DOM-ish nodes, the same way React would.
+const instantiate = (node, depth = 0) => {
+  if (depth > 6 || !node || typeof node !== 'object') return node
+  if (typeof node.type === 'function') {
+    return instantiate(node.type(node.props), depth + 1)
+  }
+  const children = node.props && node.props.children
+  if (Array.isArray(children)) {
+    return { ...node, props: { ...node.props, children: children.map((c) => instantiate(c, depth + 1)) } }
+  }
+  if (children && typeof children === 'object' && typeof children.type === 'function') {
+    return { ...node, props: { ...node.props, children: instantiate(children, depth + 1) } }
+  }
+  return node
+}
+
+// The chips render as nested spans: [ [ledger-button], [contract-button, dialog] ].
+// Walk the tree for the FIRST button — the ledger chip owns the toast/click contract.
+const findLedgerButton = (node) => {
+  if (!node || typeof node !== 'object') return null
+  if (node.type === 'button') return node
+  const children = node.props && node.props.children
+  if (Array.isArray(children)) {
+    for (const child of children) {
+      const found = findLedgerButton(child)
+      if (found) return found
+    }
+  }
+  return null
 }
 
 const first = render()
@@ -204,17 +241,66 @@ if (process.env.RIEL_TEST_SWITCH === '1') {
 const current = switched || afterComplete || withActivity
 current.button.props.onClick()
 
+// The label is now nested spans — flatten to text for the assertions.
+const textOf = (node) => {
+  if (node === null || node === undefined || typeof node === 'boolean') return ''
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(textOf).join(' ')
+  if (node && typeof node === 'object' && node.props) return textOf(node.props.children)
+  return ''
+}
+const labelOf = (r) => textOf(r.button.props.children).replace(/\s+/g, ' ').trim()
+// Class of the ✓ counter inside the label (color only on the marks).
+const checkClassOf = (r) => {
+  const walk = (node) => {
+    if (!node || typeof node !== 'object' || !node.props) return null
+    const cn = node.props.className || ''
+    if (String(cn).includes('text-primary') && !String(cn).includes('pulse')) return cn
+    for (const child of [].concat(node.props.children || [])) {
+      const found = walk(child)
+      if (found) return found
+    }
+    return null
+  }
+  return walk(r.button)
+}
+// Is there a Contrato chip next to the ledger one?
+const contractVisible = (() => {
+  const walk = (node) => {
+    if (!node || typeof node !== 'object' || !node.props) return false
+    if (textOf(node).includes('Contrato')) return true
+    for (const child of [].concat(node.props.children || [])) if (walk(child)) return true
+    return false
+  }
+  return walk(current.tree)
+})()
+
 console.log(JSON.stringify({
   id: plugin.id,
   name: plugin.name,
   defaultEnabled: plugin.defaultEnabled,
   areas: contributions.map((c) => c.area),
   order: chip.order,
-  first_label: firstAfterFetch.button.props.children,
-  activity_label: withActivity.button.props.children,
+  first_label: labelOf(firstAfterFetch),
+  activity_label: labelOf(withActivity),
   activity_title: withActivity.button.props.title,
   activity_class: withActivity.button.props.className,
-  final_label: current.button.props.children,
+  activity_running_class: (function () {
+    const walk = (node) => {
+      if (!node || typeof node !== 'object' || !node.props) return null
+      const cn = String(node.props.className || '')
+      if (cn.includes('pulse')) return cn
+      for (const child of [].concat(node.props.children || [])) {
+        const found = walk(child)
+        if (found) return found
+      }
+      return null
+    }
+    return walk(withActivity.button)
+  })(),
+  check_class: checkClassOf(current),
+  contract_visible: contractVisible,
+  final_label: labelOf(current),
   final_title: current.button.props.title,
   rest_calls: restCalls,
   tapped: globalThis.__RIEL_TAPPED__ === true,
@@ -480,35 +566,45 @@ class ChipTest(unittest.TestCase):
         self.assertEqual(result["areas"], ["statusBar.right"])
         self.assertFalse(result["defaultEnabled"], "the desktop half ships opt-in")
 
-    def test_idle_chip_shows_counters_and_next_action(self):
+    def test_idle_chip_shows_counters(self):
         result = self.run_chip(ledger=self.LEDGER)
-        self.assertEqual(result["final_label"], "riel 3✓ 1? · wire the statusbar")
+        self.assertEqual(result["final_label"], "Riel ✓3 ?1")
         self.assertIn("--ui-text-tertiary", result["activity_class"])
+        self.assertIn("text-primary", result["check_class"], "the ✓ carries the color, not the label")
 
     def test_chip_without_a_ledger_says_so(self):
         result = self.run_chip()
-        self.assertEqual(result["final_label"], "riel · sin ledger")
-        self.assertIn("--ui-text-quaternary", result["activity_class"])
+        self.assertEqual(result["final_label"], "Riel")
+        self.assertIn("--ui-text-tertiary", result["activity_class"])
 
-    def test_long_next_is_truncated_not_dumped(self):
+    def test_no_contract_no_contract_chip(self):
+        """The Contrato chip only exists when the backend says there is one."""
+        result = self.run_chip(ledger=self.LEDGER)
+        self.assertFalse(result["contract_visible"])
+
+    def test_contract_chip_appears_when_there_is_one(self):
+        result = self.run_chip(ledger=self.LEDGER, extra_env={"RIEL_TEST_CONTRACT": "1"})
+        self.assertTrue(result["contract_visible"])
+
+    def test_long_next_is_not_dumped_into_the_bar(self):
+        """The next action lives in the tooltip now — the bar stays short."""
         ledger = dict(self.LEDGER, next="x" * 200)
         result = self.run_chip(ledger=ledger)
-        self.assertIn("…", result["final_label"])
-        self.assertLessEqual(len(result["final_label"]), 60)
+        self.assertEqual(result["final_label"], "Riel ✓3 ?1")
+        self.assertIn("x" * 60, result["final_title"])
 
-    def test_running_turn_names_the_tool(self):
+    def test_running_turn_pulses(self):
         result = self.run_chip(ledger=self.LEDGER, busy=True, tool="terminal")
-        self.assertEqual(result["activity_label"], "riel ● terminal · 3✓ 1?")
-        self.assertIn("--ui-accent", result["activity_class"])
-        self.assertIn("turno en curso", result["activity_title"])
+        self.assertIn("●", result["activity_label"])
+        self.assertIn("animate-pulse", result["activity_running_class"], "the running dot pulses")
+        self.assertIn("Turno en curso: terminal", result["activity_title"])
 
     def test_tool_completion_refetches_the_ledger(self):
-        result = self.run_chip(ledger=self.LEDGER, busy=True, tool="terminal", complete=True)
+        result = self.run_chip(ledger=self.LEDGER, tool="terminal", complete=True)
         self.assertGreaterEqual(
             result["rest_calls"], 2, "a finished tool must trigger an immediate ledger re-read"
         )
-        self.assertEqual(result["final_label"], "riel ● terminal ✓ · 3✓ 1?")
-        self.assertIn("último tool: terminal (1.4s)", result["final_title"])
+        self.assertIn("Último tool: terminal (1.4s)", result["final_title"])
 
     def test_tooltip_carries_goal_and_next(self):
         result = self.run_chip(ledger=self.LEDGER)
@@ -517,31 +613,36 @@ class ChipTest(unittest.TestCase):
 
     def test_idle_without_ledger_still_shows_the_last_tool(self):
         result = self.run_chip(tool="terminal", complete=True)
-        self.assertEqual(result["final_label"], "riel · último: terminal")
+        self.assertEqual(result["final_label"], "Riel")
+        self.assertIn("Último tool: terminal", result["final_title"])
 
-    def test_click_opens_the_contract_dialog(self):
-        """The click now opens the contract dialog instead of toasting."""
+    def test_ledger_click_reports_goal_and_tool(self):
+        """The LEDGER chip's click is the toast; the contract has its own chip."""
         result = self.run_chip(ledger=self.LEDGER, tool="terminal", complete=True)
-        self.assertFalse(result["tapped"], "the click belongs to the dialog now")
-        self.assertIsNone(result["notified"])
+        self.assertTrue(result["tapped"])
+        self.assertIn("ship the chip", result["notified"]["message"])
+        self.assertIn("terminal", result["notified"]["message"])
 
     def test_background_session_tools_do_not_move_the_chip(self):
-        """A tool in ANOTHER tile must not reach the focused chip's label."""
-        result = self.run_chip(ledger=self.LEDGER, busy=True, tool="terminal")
+        """A tool in ANOTHER tile must not reach the focused chip's tooltip.
+
+        The pulsing dot may stay (busy is the focused session's own state) —
+        what must NOT appear is the background tool's NAME.
+        """
+        mine = self.run_chip(ledger=self.LEDGER, busy=True, tool="terminal")
+        self.assertIn("Turno en curso: terminal", mine["activity_title"])
         # the harness emits events with session_id 's1'; focus another session
-        # and the same event is ignored — asserted by re-running with a
-        # different focus and no activity label change.
+        # and the same event is ignored: no tool name in the tooltip.
         other = self.run_chip(ledger=self.LEDGER, busy=True, tool="terminal",
                               extra_env={"RIEL_TEST_FOCUS": "s2"})
-        self.assertEqual(other["activity_label"], "riel ● pensando · 3✓ 1?",
+        self.assertNotIn("terminal", other["activity_title"],
                          "a background tile's tool leaked into the focused chip")
 
     def test_focus_switch_clears_the_stale_ledger(self):
-        """No leftover contract from the previous conversation after a switch."""
+        """No leftover ledger from the previous conversation after a switch."""
         result = self.run_chip(ledger=self.LEDGER, extra_env={"RIEL_TEST_SWITCH": "1"})
-        self.assertFalse(result["final_label"].startswith("riel 3✓"),
+        self.assertFalse(result["final_label"].startswith("Riel ✓"),
                          "the previous session's ledger survived the focus switch")
-        self.assertEqual(result["final_label"], "riel · sin ledger")
 
 
 if __name__ == "__main__":

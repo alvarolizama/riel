@@ -1,13 +1,19 @@
-// Riel — desktop half: a statusbar chip with the live ledger of the current
-// worktree AND what the agent is doing right now. Clicking it opens the
-// task's contract.md, rendered as Markdown (Streamdown draws the sections and
-// the mermaid graph — the same pipeline core chat surfaces use).
+// Riel — desktop half: two statusbar chips for the focused session's worktree.
 //
-// Session-awareness: the chip follows the FOCUSED chat. `host.state.cwd` is a
+//   Riel ✓4 ?2        — the ledger: verified checkpoints (✓, primary color) and
+//                       open questions (?, amber). Click: toast with Goal/Next.
+//   Contrato          — only when .riel/contract.md exists. Click: modal with
+//                       the contract rendered as Markdown (Streamdown draws the
+//                       sections and the mermaid graph, the chat pipeline).
+//
+// Style: native statusbar vocabulary — Capitalized label in
+// text-(--ui-text-tertiary) at 0.6875rem, color ONLY on the ✓/? marks
+// (primary / amber-600, the two accents the bar itself uses).
+//
+// Session-awareness: both chips follow the FOCUSED chat. `host.state.cwd` is a
 // workspace-global that can still hold the previous conversation's folder right
-// after a switch (session.ts: "…the PREVIOUS conversation's folder"), and
-// background sessions can move it. So every read is gated on
-// `focusedSessionId`, activity events are filtered by `session_id`, and a
+// after a switch, and background sessions can move it. So every read is gated
+// on `focusedSessionId`, activity events are filtered by `session_id`, and a
 // focus switch clears the stale state before refetching.
 //
 // Opt-in: `defaultEnabled: false` ships it inventory-only in Capabilities →
@@ -16,48 +22,79 @@
 import { host, haptic, useValue } from '@hermes/plugin-sdk'
 import { Streamdown } from '@hermes/plugin-sdk'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@hermes/plugin-sdk'
-import { jsx } from 'react/jsx-runtime'
+import { jsx, jsxs } from 'react/jsx-runtime'
 import { useEffect, useState } from 'react'
 
 const POLL_MS = 5000
-const NEXT_MAX_CHARS = 34
+const NEXT_MAX_CHARS = 40
 const TOOL_MAX_CHARS = 18
-const CHIP_CLASS = 'px-1.5 text-[0.6875rem] tabular-nums'
+const CHIP_CLASS = 'px-1.5 text-[0.6875rem] text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) transition-colors'
+const CHECK_CLASS = 'text-primary'
+const OPEN_CLASS = 'text-amber-600'
+const RUNNING_CLASS = 'text-primary animate-pulse'
 
 function truncate(text, max) {
   const clean = String(text || '').replace(/\s+/g, ' ').trim()
   return clean.length > max ? clean.slice(0, max - 1) + '…' : clean
 }
 
-/** The chip's one-line label: activity wins while a turn is running. */
-function chipLabel(ledger, busy, tool) {
-  const counters = ledger ? `${ledger.verified}✓ ${ledger.open}?` : ''
-  if (busy) {
-    const doing = tool ? (tool.running ? tool.name : `${tool.name} ✓`) : 'pensando'
-    return `riel ● ${truncate(doing, TOOL_MAX_CHARS)}${counters ? ' · ' + counters : ''}`
+/* ------------------------------------------------------------------ ledger */
+
+function LedgerChip({ ctx, ledger, busy, tool }) {
+  const onClick = () => {
+    haptic('tap')
+    const parts = []
+    parts.push(ledger ? `${truncate(ledger.goal, 120)} → ${truncate(ledger.next, 120)}` : 'Sin ledger en este worktree')
+    if (tool) parts.push(`${tool.name}${tool.error ? ' (error: ' + truncate(tool.error, 60) + ')' : ''}`)
+    host.notify({ kind: ledger ? 'info' : 'warning', message: parts.join(' · ') })
   }
-  if (ledger) return `riel ${counters} · ${truncate(ledger.next || ledger.goal, NEXT_MAX_CHARS)}`
-  return tool ? `riel · último: ${truncate(tool.name, TOOL_MAX_CHARS)}` : 'riel · sin ledger'
+
+  const title = () => {
+    const lines = []
+    if (ledger) {
+      lines.push(ledger.goal || '(sin goal)', `→ ${ledger.next || '(sin next)'}`)
+      const stale = ledger.stale_secs == null ? '' : ` · hace ${Math.round(ledger.stale_secs / 60)} min`
+      lines.push(`${ledger.verified} verificados · ${ledger.open} abiertas · ${ledger.claims} claims${stale}`)
+    } else {
+      lines.push('Este worktree no tiene .riel/ledger.md')
+    }
+    if (busy) lines.push('Turno en curso' + (tool ? `: ${tool.name}` : ''))
+    else if (tool) {
+      const took = tool.duration_s == null ? '' : ` (${tool.duration_s}s)`
+      lines.push(`Último tool: ${tool.name}${took}${tool.error ? ' — ' + truncate(tool.error, 80) : ''}`)
+    }
+    return lines.join('\n')
+  }
+
+  return jsx('button', {
+    type: 'button',
+    title: title(),
+    className: CHIP_CLASS,
+    onClick,
+    children: jsxs('span', {
+      className: 'inline-flex items-center gap-1',
+      children: [
+        jsx('span', { children: 'Riel' }),
+        busy
+          ? jsx('span', { className: RUNNING_CLASS, children: '●' })
+          : null,
+        ledger
+          ? jsxs('span', {
+              className: 'inline-flex items-center gap-1 tabular-nums',
+              children: [
+                jsx('span', { className: CHECK_CLASS, children: `✓${ledger.verified}` }),
+                ledger.open > 0
+                  ? jsx('span', { className: OPEN_CLASS, children: `?${ledger.open}` })
+                  : null
+              ]
+            })
+          : null
+      ]
+    })
+  })
 }
 
-/** Tooltip: the ledger headlines, then the activity detail. */
-function chipTitle(ledger, busy, tool) {
-  const lines = []
-  if (ledger) {
-    lines.push(ledger.goal || '(sin goal)', `→ ${ledger.next || '(sin next)'}`)
-    const stale = ledger.stale_secs == null ? '' : ` · hace ${Math.round(ledger.stale_secs / 60)} min`
-    lines.push(`${ledger.verified}✓ ${ledger.open}? ${ledger.claims}P${stale}`)
-  } else {
-    lines.push('Este worktree no tiene .riel/ledger.md')
-  }
-  if (busy) lines.push('turno en curso')
-  if (tool) {
-    const took = tool.running ? '' : tool.duration_s == null ? '' : ` (${tool.duration_s}s)`
-    lines.push(`último tool: ${tool.name}${took}${tool.error ? ' — error: ' + truncate(tool.error, 80) : ''}`)
-  }
-  lines.push('clic: ver el contrato')
-  return lines.join('\n')
-}
+/* --------------------------------------------------------------- contrato */
 
 function ContractDialog({ open, onOpenChange, ctx, cwd, sessionId }) {
   const [contract, setContract] = useState(null)
@@ -87,12 +124,12 @@ function ContractDialog({ open, onOpenChange, ctx, cwd, sessionId }) {
   }, [open, cwd, sessionId, ctx])
 
   const body = () => {
-    if (loading) return jsx('div', { className: 'py-8 text-center text-sm text-(--ui-text-tertiary)', children: 'cargando contrato…' })
+    if (loading) return jsx('div', { className: 'py-8 text-center text-sm text-(--ui-text-tertiary)', children: 'Cargando contrato…' })
     if (!contract) return null
     if (!contract.present) {
       return jsx('div', {
         className: 'py-8 text-center text-sm text-(--ui-text-tertiary)',
-        children: contract.error || 'sin contrato en este worktree'
+        children: contract.error || 'Sin contrato en este worktree'
       })
     }
     return jsx('div', {
@@ -110,7 +147,7 @@ function ContractDialog({ open, onOpenChange, ctx, cwd, sessionId }) {
         jsx(DialogHeader, {
           key: 'head',
           children: [
-            jsx(DialogTitle, { key: 't', children: 'Contrato Riel' }),
+            jsx(DialogTitle, { key: 't', children: 'Contrato' }),
             jsx(DialogDescription, {
               key: 'd',
               className: 'truncate text-(--ui-text-tertiary)',
@@ -124,19 +161,69 @@ function ContractDialog({ open, onOpenChange, ctx, cwd, sessionId }) {
   })
 }
 
-function RielChip({ ctx }) {
+function ContractChip({ ctx, cwd, sessionId }) {
+  const [hasContract, setHasContract] = useState(null)
+  const [open, setOpen] = useState(false)
+
+  // Probe for the contract once per worktree/session: the chip only exists
+  // when there is something to show.
+  useEffect(() => {
+    let alive = true
+    setHasContract(null)
+    if (!cwd) {
+      setHasContract(false)
+      return
+    }
+    const probe = async () => {
+      try {
+        const data = await ctx.rest('/contract?worktree=' + encodeURIComponent(cwd))
+        if (alive) setHasContract(Boolean(data && data.present))
+      } catch {
+        if (alive) setHasContract(false)
+      }
+    }
+    probe()
+    return () => {
+      alive = false
+    }
+  }, [cwd, sessionId, ctx])
+
+  if (!hasContract) return null
+
+  return jsxs('span', {
+    className: 'inline-flex items-center',
+    children: [
+      jsx('button', {
+        key: 'btn',
+        type: 'button',
+        title: 'Ver el contrato de esta tarea (secciones + grafo)',
+        className: CHIP_CLASS,
+        onClick: () => setOpen(true),
+        children: 'Contrato'
+      }),
+      jsx(ContractDialog, {
+        key: 'dialog',
+        open,
+        onOpenChange: setOpen,
+        ctx,
+        cwd,
+        sessionId
+      })
+    ]
+  })
+}
+
+/* ------------------------------------------------------------------- host */
+
+function RielChips({ ctx }) {
   const cwd = useValue(host.state.cwd)
   const busy = useValue(host.state.busy)
   const focusedId = useValue(host.state.focusedSessionId)
   const [status, setStatus] = useState(null)
   const [tool, setTool] = useState(null)
   const [revision, setRevision] = useState(0)
-  const [dialogOpen, setDialogOpen] = useState(false)
 
-  // Activity: the app's gateway event tap, FILTERED to the focused session —
-  // tools in background tiles must not move this chip. Handlers read the atom
-  // imperatively (never from render closures). Events without a session_id are
-  // kept: some surfaces still emit them unscoped.
+  // Activity: the app's gateway event tap, FILTERED to the focused session.
   useEffect(() => {
     const belongs = event => {
       const sid = event && event.session_id
@@ -164,9 +251,7 @@ function RielChip({ ctx }) {
     }
   }, [])
 
-  // Ledger state, keyed to the focused session: a focus switch clears the
-  // stale chip immediately (the previous conversation's folder may still be in
-  // `cwd`) and refetches once the atom catches up.
+  // Focus switch: clear the stale state before refetching.
   useEffect(() => {
     setTool(null)
     setStatus(null)
@@ -195,33 +280,12 @@ function RielChip({ ctx }) {
   }, [cwd, focusedId, revision, ctx])
 
   const ledger = status && status.present ? status : null
-  const onClick = () => setDialogOpen(true)
 
-  const className = busy
-    ? `${CHIP_CLASS} text-(--ui-accent)`
-    : ledger
-      ? `${CHIP_CLASS} text-(--ui-text-tertiary)`
-      : `${CHIP_CLASS} text-(--ui-text-quaternary)`
-
-  return jsx('span', {
+  return jsxs('span', {
     className: 'inline-flex items-center',
     children: [
-      jsx('button', {
-        key: 'chip',
-        type: 'button',
-        title: chipTitle(ledger, busy, tool),
-        className,
-        onClick,
-        children: chipLabel(ledger, busy, tool)
-      }),
-      jsx(ContractDialog, {
-        key: 'dialog',
-        open: dialogOpen,
-        onOpenChange: setDialogOpen,
-        ctx,
-        cwd,
-        sessionId: focusedId
-      })
+      jsx(LedgerChip, { key: 'ledger', ledger, busy, tool }),
+      jsx(ContractChip, { key: 'contract', ctx, cwd, sessionId: focusedId })
     ]
   })
 }
@@ -235,7 +299,7 @@ export default {
       id: 'ledger-chip',
       area: 'statusBar.right',
       order: 120,
-      render: () => jsx(RielChip, { ctx })
+      render: () => jsx(RielChips, { ctx })
     })
   }
 }
