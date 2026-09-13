@@ -1,7 +1,7 @@
 ---
 name: riel-cli
 description: "Use when Riel needs its mechanical helper — writes the ledger with the exact format, instantiates and validates packets, expands a graph digest, derives the session-todo mirror. The agent invokes it in RUN nodes instead of handwriting state files."
-version: 1.3.0
+version: 1.4.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -21,6 +21,9 @@ of the framework so the agent doesn't have to remember them:
   (`rielctl brief validate`) — including the closed verb vocabulary
 - Expanding the execution graph into explicit text (`rielctl brief digest`)
 - Deriving the Hermes session-todo mirror from the ledger (`rielctl todo`)
+- Emitting a contract's context keywords as JSON (`rielctl context`) so the
+  memory search has one authoritative index to read instead of re-parsing
+  the contract
 
 **When to use:** on any `loop`-mode task and on every delegated task, the
 agent invokes `rielctl` in `RUN` nodes instead of handwriting ledger files.
@@ -78,6 +81,17 @@ rielctl resume   # full post-gap bootstrap (ledger → invariants → mode → n
 rielctl ship FILE.md   # check FILE for dense-register leakage before delivery
 rielctl digest FILE.md # explicit text digest of any file's mermaid graph
 ```
+
+### Context keywords (Spec 2)
+
+```bash
+rielctl context [--contract PATH] [-o OUT]
+```
+
+Prints `{"contract": …, "keywords": [{"term": …, "source": …}]}` — the index the
+memory search reads (one term per line under `### Context keywords`; `→ dran`
+is an optional source hint). Empty list when the contract has none; exit 1 only
+when the contract is missing.
 
 ### Session todo (Hermes mirror, Spec 6)
 

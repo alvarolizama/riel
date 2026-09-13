@@ -1,7 +1,7 @@
 ---
 name: riel-briefs
 description: "Use when writing self-contained agent briefs on the fly — curated context, verb-graph, gates, anchored opening. Dispatch packets for delegate_task."
-version: 3.5.0
+version: 3.6.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -204,7 +204,11 @@ The packet is a markdown document with these sections, in this order:
 1. `# Task:` — the name.
 2. `## Objective` — one sentence, opens with "We need…".
 3. `## Context` — Project (path, stack, conventions), existing code to
-   read, code to modify/create, reference snippets.
+   read, code to modify/create, reference snippets, **and the
+   `### Context keywords` subsection**: the contract's index into memory
+   (one term per line, an optional `→ dran|memory|code` hint). It is not
+   prose for the reader — it is what the context fetch searches, at open
+   and at every phase advance, to fill `Core`.
 4. `## Constraints` — hard rules only (style guidance stays in Context,
    exclusions stay in DO NOT).
 5. `## Pre-registered claims` — P-ids with verification method, declared

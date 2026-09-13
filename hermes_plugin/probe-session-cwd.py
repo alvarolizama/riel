@@ -13,7 +13,9 @@ What it proves, against a real Hermes install:
   4. bad input returns error JSON instead of raising;
   5. the `pre_verify` gate fires through Hermes' own hook dispatch
      (`get_pre_verify_continue_message`) and closes once a ✓ with evidence is
-     in the ledger.
+     in the ledger;
+  6. `riel_context` returns the contract's keyword index and stops there — the
+     search belongs to the agent, whose memory backends a plugin cannot reach.
 
 Usage (run from a directory that is NOT either worktree):
 
@@ -48,6 +50,17 @@ def _seed(worktree: str, *argv) -> None:
         capture_output=True,
         text=True,
         check=True,
+    )
+
+
+def _seed_contract(worktree: str, keywords: str) -> None:
+    """Write a minimal contract with a Context keywords block."""
+    path = Path(worktree) / ".riel" / "contract.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "# Task: probe\n\n## Objective\nWe need to probe\n\n## Context\n\n"
+        "### Context keywords\n" + keywords + "\n## DO NOT\n- x\n",
+        encoding="utf-8",
     )
 
 
@@ -150,8 +163,19 @@ def main() -> int:
         assert get_pre_verify_continue_message(attempt=0, **payload) is None
         print("gate       -> cierra el turno cuando hay un ✓ con evidencia")
 
+        # --- riel_context through the real registry -------------------------
+        # It hands over the index and stops there: memory lives in the agent's
+        # memory manager, not in the registry, so the plugin cannot search.
+        _seed_contract(gate_tree, "- login flow → dran\n- phoenix streams\n")
+        ctx_out = _dispatch(registry, "riel_context", {"worktree": gate_tree}, "probe-a")
+        print(f"context    -> origin={ctx_out.get('origin')} "
+              f"keywords={[k['term'] for k in ctx_out.get('keywords', [])]}")
+        assert [k["term"] for k in ctx_out["keywords"]] == ["login flow", "phoenix streams"], ctx_out
+        assert "hits" not in ctx_out and "next" in ctx_out, ctx_out
+        print("context    -> solo entrega el índice (la búsqueda es del agente)")
+
         print("\nOK: discovery, registry dispatch, session cwd resolution, per-session")
-        print("    isolation and the pre_verify gate verified")
+        print("    isolation, the pre_verify gate and riel_context verified")
         return 0
     finally:
         os.chdir(cwd_before)

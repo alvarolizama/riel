@@ -22,6 +22,14 @@
 {{3-5 snippets, each <30 lines — the actual code to imitate or edit,
   verified with read_file against the repo at {{commit-or-date}}}}
 
+### Context keywords
+<!-- El índice del contrato hacia la memoria: una keyword por línea, con hint
+     de fuente opcional tras una flecha (dran | memory | code). Se buscan al
+     abrir sesión y al avanzar de fase, para completar `## Core` — no son prosa,
+     las lee el buscador (agente o tool del plugin). -->
+- {{term}} → {{dran}}
+- {{term}}
+
 ## Constraints (hard rules)
 1. {{rule from the spec}}
 <!-- Hard rules only. Style guidance goes in Context, exclusions in DO NOT. -->

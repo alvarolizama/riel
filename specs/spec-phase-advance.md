@@ -38,7 +38,8 @@ Gate content (verifiers + coverage):
 
 1. Gate passes → append this phase's ✓NN to the local ledger (spec-ledger-format).
 2. `Phase` ← next phase enabled by the DAG.
-3. `Core` ← swap to the new phase's items (max 2 live).
+3. `Core` ← swap to the new phase's items (searched from the contract's
+   `### Context keywords` — spec-contract-format, "Context fetch").
 4. `Next` ← first action of the new phase.
 5. `Open` items belonging to future phases migrate with their numbers.
 

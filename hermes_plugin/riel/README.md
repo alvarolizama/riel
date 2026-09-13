@@ -114,6 +114,26 @@ Qué worktree se juzga: primero el de los **archivos editados** (un turno puede
 editar otro repo), y si ninguno es un worktree con ledger, el cwd de la sesión.
 El ✓ cuenta como evidencia cuando su línea trae `— verified by:`.
 
+## Índice de contexto (`riel_context`)
+
+`riel_context` entrega las keywords del contrato (`### Context keywords`: un
+término por línea, hint de fuente opcional) y **no busca**. Los backends de
+memoria viven en el memory manager del agente (`agent/memory_manager.py`), no en
+el registry de tools, así que **un plugin no los alcanza**: el que busca es el
+agente, con lo que tenga configurado (DRAN, su memoria, `search_files`). El tool
+le dice qué términos y dónde dejar el resultado (`## Core`, máx 2).
+
+Dos momentos, los dos donde `Core` se (re)escribe:
+
+| Momento | Qué pasa |
+|---|---|
+| Abrir la tarea (`resume`/`seam`) | `riel_context` → el agente busca → `Core` (máx 2) |
+| Avanzar de fase | lo mismo para la fase entrante |
+| `brief slice` a un hijo | las keywords viajan en el packet; el hijo busca con su propio budget |
+
+`rielctl context` emite el mismo índice en JSON para cualquier harness, no solo
+Hermes — el plugin no re-parsea el contrato.
+
 ## Verificación
 
 ```bash

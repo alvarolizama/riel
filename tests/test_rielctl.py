@@ -743,5 +743,153 @@ d
         self.assertIn("no phase node", err)
 
 
+class ContextKeywordTests(TempDirTest):
+    """Context keywords: the contract's index into memory (Spec 2)."""
+
+    CONTRACT = """# Task: login flow
+
+## Objective
+We need the login to validate both providers.
+
+## Context
+
+### Project
+- **Path:** /repo
+
+### Context keywords
+<!-- one per line; the source hint is optional -->
+- login flow → dran
+- phoenix streams
+- `top-level await`
+
+## Constraints
+- no new deps
+
+## Pre-registered claims
+- P1: a — verify with: true
+
+## Execution graph
+
+```mermaid
+flowchart TD
+  F1["EDIT a.ex — x"] --> F2["RUN mix test"]
+  F2 --> G1{"green?"}
+  G1 -->|no| F1
+  G1 -->|yes| END([Done])
+```
+
+## Verification gates
+g
+
+## Deliverable
+d
+
+## DO NOT
+- x
+"""
+
+    NO_KEYWORDS = """# Task: plain
+
+## Objective
+We need x
+
+## Context
+c
+
+## Constraints
+- x
+
+## Pre-registered claims
+- P1: a — verify with: true
+
+## Execution graph
+
+```mermaid
+flowchart TD
+  S1["RUN true"] --> G1{"ok?"}
+  G1 -->|yes| END([Done])
+```
+
+## Verification gates
+g
+
+## Deliverable
+d
+
+## DO NOT
+- x
+"""
+
+    def _contract(self, text=None):
+        d = os.path.join(self.tmp, ".riel")
+        os.makedirs(d, exist_ok=True)
+        path = os.path.join(d, "contract.md")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(self.CONTRACT if text is None else text)
+        return path
+
+    def test_context_emits_terms_and_source_hints(self):
+        self._contract()
+        rc, out, _ = run("context")
+        self.assertEqual(rc, 0)
+        self.assertEqual(json.loads(out)["keywords"], [
+            {"term": "login flow", "source": "dran"},
+            {"term": "phoenix streams", "source": ""},
+            {"term": "top-level await", "source": ""},
+        ])
+
+    def test_context_skips_comments_and_placeholders(self):
+        self._contract("# t\n\n## Context\n\n### Context keywords\n"
+                       "- real term\n- {{term}}\n<!-- - comentado -->\n\n## DO NOT\n- x\n")
+        rc, out, _ = run("context")
+        self.assertEqual(rc, 0)
+        self.assertEqual([k["term"] for k in json.loads(out)["keywords"]], ["real term"])
+
+    def test_context_without_a_contract_is_an_error(self):
+        rc, _, err = run("context")
+        self.assertEqual(rc, 1)
+        self.assertIn("no contract", err)
+
+    def test_context_without_the_subsection_is_empty_not_an_error(self):
+        self._contract(self.NO_KEYWORDS)
+        rc, out, _ = run("context")
+        self.assertEqual(rc, 0)
+        self.assertEqual(json.loads(out)["keywords"], [])
+
+    def test_context_output_flag_writes_the_same_json(self):
+        self._contract()
+        rc, out, _ = run("context", "-o", "kw.json")
+        self.assertEqual(rc, 0)
+        with open(os.path.join(self.tmp, "kw.json"), encoding="utf-8") as fh:
+            self.assertEqual(json.load(fh), json.loads(out))
+
+    def test_slice_inherits_the_keywords(self):
+        self._contract()
+        rc, out, _ = run("brief", "slice", ".riel/contract.md", "--phase", "F1")
+        self.assertEqual(rc, 0)
+        self.assertIn("### Context keywords", out)
+        self.assertIn("- login flow → dran", out)
+        self.assertIn("<!-- FILL: el resto del contexto", out)
+
+    def test_slice_without_keywords_keeps_the_plain_fill(self):
+        self._contract(self.NO_KEYWORDS)
+        rc, out, _ = run("brief", "slice", ".riel/contract.md", "--phase", "S1")
+        self.assertEqual(rc, 0)
+        self.assertNotIn("Context keywords", out)
+        self.assertIn("<!-- FILL: only what this phase needs -->", out)
+
+    def test_validate_warns_but_accepts_when_keywords_are_missing(self):
+        path = self._contract(self.NO_KEYWORDS)
+        rc, out, err = run("brief", "validate", path)
+        self.assertEqual(rc, 0, out)                  # non-fatal: a warn, not a gate
+        self.assertIn("Context keywords", err)        # warnings go to stderr
+
+    def test_validate_is_quiet_when_keywords_are_present(self):
+        path = self._contract()
+        rc, out, err = run("brief", "validate", path)
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn("Context keywords", err)
+
+
 if __name__ == "__main__":
     unittest.main()

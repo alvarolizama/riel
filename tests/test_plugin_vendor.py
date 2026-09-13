@@ -201,5 +201,82 @@ class HandlerTest(unittest.TestCase):
         self.assertEqual(payload["worktree"], self.tmp)
 
 
+class ContextToolTest(unittest.TestCase):
+    """`riel_context`: hands over the contract's index — it does NOT search.
+
+    Memory backends live in the agent's memory manager, not in the tool
+    registry, so a plugin cannot reach them. These tests pin that boundary:
+    the tool returns terms (and says who searches), never hits.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tools = load_module("riel_plugin_tools_ctx", os.path.join(PLUGIN, "tools.py"))
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="riel-ctx-")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def _contract(self, keywords="- login flow → dran\n- phoenix streams\n"):
+        path = os.path.join(self.tmp, ".riel", "contract.md")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(
+                "# Task: t\n\n## Objective\nWe need x\n\n## Context\n\n"
+                "### Context keywords\n" + keywords + "\n## DO NOT\n- x\n"
+            )
+
+    def payload(self, args):
+        raw = self.tools.riel_context(args)
+        self.assertIsInstance(raw, str, "handlers must return a JSON string")
+        return json.loads(raw)
+
+    def test_returns_the_contract_index(self):
+        self._contract()
+        result = self.payload({"worktree": self.tmp})
+        self.assertEqual(result["origin"], "contract")
+        self.assertEqual(result["keywords"], [
+            {"term": "login flow", "source": "dran"},
+            {"term": "phoenix streams", "source": ""},
+        ])
+
+    def test_it_does_not_search_and_says_who_does(self):
+        """The whole point of the boundary: no hits, and the agent is told."""
+        self._contract()
+        result = self.payload({"worktree": self.tmp})
+        self.assertNotIn("hits", result)
+        self.assertNotIn("results", result)
+        self.assertIn("Core", result["next"])
+        self.assertIn("does not search", result["next"])
+
+    def test_explicit_keywords_override_the_contract(self):
+        self._contract()
+        result = self.payload({"worktree": self.tmp, "keywords": ["solo esta"]})
+        self.assertEqual(result["origin"], "argument")
+        self.assertEqual(result["keywords"], [{"term": "solo esta", "source": ""}])
+
+    def test_keyword_count_is_capped(self):
+        self._contract("".join("- kw {}\n".format(i) for i in range(20)))
+        result = self.payload({"worktree": self.tmp})
+        self.assertEqual(len(result["keywords"]), self.tools.MAX_KEYWORDS)
+        self.assertTrue(result["truncated"])
+
+    def test_contract_without_keywords_is_a_note_not_an_error(self):
+        self._contract("")
+        result = self.payload({"worktree": self.tmp})
+        self.assertEqual(result["keywords"], [])
+        self.assertIn("note", result)
+        self.assertNotIn("next", result)
+
+    def test_missing_contract_errors_with_a_hint(self):
+        result = self.payload({"worktree": self.tmp})
+        self.assertIn("error", result)
+        self.assertIn("hint", result)
+
+    def test_bad_worktree_errors(self):
+        result = self.payload({"worktree": os.path.join(self.tmp, "nope")})
+        self.assertIn("not a directory", result["error"])
+
+
 if __name__ == "__main__":
     unittest.main()

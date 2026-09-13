@@ -98,12 +98,12 @@ Four load-bearing defenses against execution error:
 
 | Component | What it steers | Status |
 |---|---|---|
-| `riel-ledger` | **State** — Goal/Claims/Core/Verified/Open/Next, re-read at every seam, recovery via checkpoints, mirrors to the session todo | ✅ skill v1.10 |
+| `riel-ledger` | **State** — Goal/Claims/Core/Verified/Open/Next, re-read at every seam, recovery via checkpoints, mirrors to the session todo | ✅ skill v1.11 |
 | `riel-contract` | **Structure** — mermaid as contract: closed verb vocabulary, verification funnel, graph digest, machine-checkable | ✅ skill v3.6 |
 | `riel-protocol` | **Trajectory** — functional grammar, persona, minimal surface on the first turn | ✅ skill v1.7 |
-| `riel-briefs` | **Delegation briefs** — self-contained packets: curated context, verb-graph, pre-registered claims, executable gates, templates | ✅ skill v3.5 |
+| `riel-briefs` | **Delegation briefs** — self-contained packets: curated context + context-keyword index, verb-graph, pre-registered claims, executable gates, templates | ✅ skill v3.6 |
 | `riel-delegate` | **Delegation router** — plan, dispatch waves, JSON-schema'd returns, parent verifies | ✅ skill v1.3 |
-| `riel-cli` | **Tooling** — `rielctl` writes the ledger mechanically, instantiates/validates packets, expands the graph digest, derives the session-todo mirror | ✅ skill v1.3 |
+| `riel-cli` | **Tooling** — `rielctl` writes the ledger mechanically, instantiates/validates packets, expands the graph digest, derives the session-todo mirror, emits the context keywords | ✅ skill v1.4 |
 
 Each component is independent and optional: a short task uses zero; a long
 loop may use all six. Use only the machinery the task earns.
@@ -204,6 +204,12 @@ Riel worktree does not close while its ledger has claims and no ✓ carrying
 evidence — the rule `riel-ledger` states, enforced by the runtime. Bounded
 (one nudge per turn by default) and opt-out per worktree (no ledger, no gate).
 
+Contract context is indexed too: `### Context keywords` under `## Context` is
+the list the context fetch runs at open and at each phase advance. The plugin's
+`riel_context` hands that index over and stops — memory backends live in the
+agent's memory manager, not in the tool registry, so the search is the agent's,
+with whatever backend it has configured.
+
 ### Dependencies
 
 | Piece | Needed at | Requires |
@@ -232,6 +238,7 @@ it without resolving the skill path. Run from the task's worktree root
 | `rielctl seam` | re-print the ledger + which invariants are due |
 | `rielctl resume` | post-gap bootstrap (ledger → invariants → mode → next) |
 | `rielctl todo` | session-todo mirror (JSON) derived from the ledger |
+| `rielctl context` | context keywords of a contract (JSON) — the index the memory search reads |
 | `rielctl ship FILE` | dense-register check before delivery |
 | `rielctl brief new` / `validate` / `slice` | instantiate / structurally check / slice a phase into a mini packet |
 | `rielctl brief digest` · `rielctl digest` | explicit text digest of a graph |

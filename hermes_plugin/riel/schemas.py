@@ -120,4 +120,31 @@ RIEL_TODO = {
     "parameters": {"type": "object", "properties": {"worktree": _WORKTREE}},
 }
 
-SCHEMAS = (RIEL_NOTE, RIEL_SEAM, RIEL_RESUME, RIEL_TODO)
+RIEL_CONTEXT = {
+    "name": "riel_context",
+    "description": (
+        "Hand you the contract's context index — `### Context keywords` (or explicit keywords) "
+        "as a list of terms with an optional source hint. Call it when opening a Riel task and "
+        "when advancing to a new phase, then do the searching YOURSELF with the memory tools you "
+        "have configured (DRAN, your own memory, search_files) and keep the answers in the "
+        "ledger's `## Core` (max 2 live items). This tool does not search: a plugin cannot reach "
+        "the memory backends, so it gives you the terms and nothing else."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "keywords": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Terms to return instead of reading them from the contract. Omit in the "
+                    "normal case: the contract carries the index, and both parent and child "
+                    "read the same one."
+                ),
+            },
+            "worktree": _WORKTREE,
+        },
+    },
+}
+
+SCHEMAS = (RIEL_NOTE, RIEL_SEAM, RIEL_RESUME, RIEL_TODO, RIEL_CONTEXT)

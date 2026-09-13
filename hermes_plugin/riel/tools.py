@@ -180,9 +180,76 @@ riel_seam = _passthrough("seam")
 riel_resume = _passthrough("resume")
 riel_todo = _passthrough("todo")
 
+# ------------------------------------------------------------------ context ---
+# The tool is an INDEX provider, not a searcher: a plugin cannot reach the
+# memory backends. Those tools live in `agent/memory_manager.py`
+# (`get_all_tool_schemas` / `handle_tool_call`), not in `tools.registry`, so
+# `ctx.dispatch_tool("dran_memory_search", …)` returns "Unknown tool" — the
+# agent reaches them because its executor routes to the memory manager. So the
+# plugin supplies the contract's keywords and WHO searches decides: the agent,
+# with whatever memory backend it has configured.
+MAX_KEYWORDS = 12
+
+
+def _contract_keywords(worktree: str):
+    """(keywords, error) from the worktree's contract, via `rielctl context`."""
+    payload = json.loads(_run(["context"], {"worktree": worktree}, {}))
+    if payload.get("error"):
+        return None, payload["error"]
+    if payload.get("exit_code") != 0:
+        stderr = (payload.get("stderr") or "").strip()
+        return None, stderr or "rielctl context failed"
+    try:
+        keywords = json.loads(payload.get("stdout") or "{}").get("keywords") or []
+    except ValueError:
+        return None, "rielctl context did not return JSON"
+    return keywords, None
+
+
+def riel_context(args: dict, **kwargs) -> str:
+    """The contract's context keywords, for the agent to search memory with."""
+    worktree = _worktree(args, kwargs)
+    if not os.path.isdir(worktree):
+        return _error(f"worktree is not a directory: {worktree}", worktree=worktree)
+
+    raw_keywords = args.get("keywords")
+    if raw_keywords:
+        if isinstance(raw_keywords, str):
+            raw_keywords = [raw_keywords]
+        keywords = [{"term": str(k).strip(), "source": ""}
+                    for k in raw_keywords if str(k).strip()]
+        origin = "argument"
+    else:
+        keywords, error = _contract_keywords(worktree)
+        if error:
+            return _error(error, worktree=worktree, origin="contract",
+                          hint="write the contract first, or pass keywords explicitly")
+        keywords = keywords or []
+        origin = "contract"
+
+    total = len(keywords)
+    keywords = keywords[:MAX_KEYWORDS]
+    payload = {
+        "worktree": worktree,
+        "origin": origin,
+        "keywords": keywords,
+        "truncated": total > len(keywords),
+    }
+    if keywords:
+        payload["next"] = (
+            "Search these terms with the memory tools you have configured (DRAN, "
+            "your own memory) and keep the answers in the ledger's ## Core — max 2 "
+            "live items. This tool does not search: it only hands you the index."
+        )
+    else:
+        payload["note"] = "the contract declares no '### Context keywords' to search"
+    return json.dumps(payload, ensure_ascii=False)
+
+
 HANDLERS = {
     "riel_note": riel_note,
     "riel_seam": riel_seam,
     "riel_resume": riel_resume,
     "riel_todo": riel_todo,
+    "riel_context": riel_context,
 }

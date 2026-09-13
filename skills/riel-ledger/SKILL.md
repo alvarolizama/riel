@@ -1,7 +1,7 @@
 ---
 name: riel-ledger
 description: "Use when running a loop-mode task — write the local Goal/Core/Verified/Open/Next ledger in the worktree, re-read at every seam, verify before done. No remote dependency."
-version: 1.10.0
+version: 1.11.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -162,7 +162,11 @@ flowchart TD
    opening anything.
 1. State the Goal — one sentence, what "done" means. If the task came from
    a tracked item, set Source and take Goal from its title.
-2. Set Core — max 2 live items with their defining facts.
+2. Set Core — max 2 live items with their defining facts. When the task has
+   a contract, the facts usually already exist: search its
+   `### Context keywords` (`rielctl context`, or `riel_context` in the Hermes
+   plugin) and keep what answers, instead of rediscovering it. A Core item
+   you could not find is one you had to establish — say which.
 3. Set Phase if the task has a phases graph — the first phase without a
    checkbox.
 4. Set Next — the first concrete action.
@@ -297,7 +301,9 @@ reduces the false-positive risk on high-stakes results.
 
 One phase = one mini-ledger. N phases = N sequential mini-ledgers; only the
 active one is live. When a phase gate passes: append its ✓NN, advance
-Phase, swap Core to the new phase's items, set the new Next. Open items
+Phase, swap Core to the new phase's items — searching the contract's
+`### Context keywords` for what that phase needs, the second moment the
+context fetch runs — and set the new Next. Open items
 belonging to future phases migrate with their numbers. Then regenerate the
 session-todo mirror (`rielctl todo`): the new Phase enters as pending, the
 new Next is the only `in_progress`.

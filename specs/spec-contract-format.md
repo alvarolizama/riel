@@ -26,7 +26,8 @@ The nine sections, in order:
 
 1. `# Task:` — the name
 2. `## Objective` — one sentence, opens with "We need…"
-3. `## Context` — project, code to read/modify, reference snippets
+3. `## Context` — project, code to read/modify, reference snippets, plus the
+   `### Context keywords` index (see "Context fetch")
 4. `## Constraints` — hard rules
 5. `## Pre-registered claims` — P-ids with a verify-with
 6. `## Execution graph` — the mermaid DAG (riel-contract)
@@ -36,6 +37,28 @@ The nine sections, in order:
 
 Validate it mechanically: `rielctl brief validate .riel/contract.md` (the
 validator keys on this exact section set and order).
+
+## Context fetch (the keywords)
+
+`## Context` carries a machine-readable index: `### Context keywords`, one term
+per line with an optional `→ dran|memory|code` hint (`rielctl context` emits it
+as JSON). It is consulted at exactly the two moments where `Core` is (re)set —
+nowhere else, so no tool call pays for a search the task does not need:
+
+| Moment | What happens |
+|---|---|
+| Opening the task (`resume`, `seam`, `note --from-contract`) | the keywords are searched and the answers seed `Core` (max 2) |
+| Advancing a phase (spec-phase-advance, step 3) | the incoming phase's `Core` comes from the same search |
+| Slicing a packet for a child | `brief slice` carries the keywords into the packet, so the child searches the same index with its own budget |
+
+Missing keywords are a `WARN`, never an error: a contract without them still
+validates — the fetch simply has nothing to search.
+
+**Who searches:** the agent, with whatever memory backend it has configured
+(DRAN, its own memory, `search_files`). A plugin cannot reach those backends —
+they live in the agent's memory manager, not in the tool registry — so the
+plugin's job (`riel_context`) is to hand over the index, never to answer with
+hits it did not obtain.
 
 ## Contract vs ledger
 

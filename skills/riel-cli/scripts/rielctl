@@ -14,6 +14,7 @@ Usage:
     rielctl seam
     rielctl resume
     rielctl todo
+    rielctl context [--contract PATH] [-o OUT]   # keywords de contexto (JSON)
     rielctl ship    FILE...
     rielctl digest  FILE [-o OUT]
     rielctl brief new [--type T] [--param k=v ...] [--list]
@@ -150,6 +151,40 @@ def _first_paragraph(body):
         if para:
             return " ".join(l.strip() for l in para.splitlines() if l.strip())
     return ""
+
+
+def _subsection(text, section, sub):
+    """Body of '### <sub>' inside '## <section>' (up to the next ###/## heading)."""
+    body = _section(text, section)
+    m = re.search(
+        r"^###\s+" + re.escape(sub) + r"[^\n]*\n(.*?)(?=^###\s|^##\s|\Z)",
+        body, re.S | re.M,
+    )
+    return m.group(1).strip() if m else ""
+
+
+def context_keywords(text):
+    """Context-fetch keywords from '### Context keywords' inside '## Context'.
+
+    One bullet per term, with an optional source hint after an arrow
+    (`- login flow → dran`). Unfilled `{{placeholders}}` and comments are
+    skipped, so an untouched template yields no keywords instead of junk.
+    """
+    body = _subsection(text, "Context", "Context keywords")
+    found = []
+    for raw in body.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("<!--"):
+            continue
+        m = re.match(r"^[-*]\s+(.+)$", line)
+        if not m:
+            continue
+        term, _, source = m.group(1).partition("→")
+        term = term.strip().strip("`").strip()
+        if not term or term.startswith("{{"):
+            continue
+        found.append({"term": term, "source": source.strip().strip("`").lower()})
+    return found
 
 
 def seed_from_contract(path):
@@ -420,6 +455,28 @@ def cmd_todo(args):
             "fix the ledger, not the todo.",
             file=sys.stderr,
         )
+    return 0
+
+
+def cmd_context(args):
+    """Emit the contract's context-fetch keywords as JSON.
+
+    The keywords are the contract's index into memory (agent memory, DRAN): the
+    agent or the Hermes plugin reads this instead of re-parsing the contract.
+    """
+    path = args.contract
+    if not os.path.exists(path):
+        print("no contract at {}; write the contract first".format(path),
+              file=sys.stderr)
+        return 1
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    payload = {"contract": path, "keywords": context_keywords(text)}
+    out = json.dumps(payload, indent=2, ensure_ascii=False)
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as fh:
+            fh.write(out + "\n")
+    print(out)
     return 0
 
 
@@ -766,7 +823,23 @@ def cmd_brief_slice(args):
         _section(text, "Objective") or "<FILL>",
         "",
         "## Context",
-        "<!-- FILL: only what this phase needs -->",
+    ]
+    keywords = context_keywords(text)
+    if keywords:
+        body += [
+            "",
+            "### Context keywords",
+            "<!-- Heredadas del contrato: úsalas para traer contexto de "
+            "memoria/DRAN antes de ejecutar la fase. -->",
+        ]
+        for kw in keywords:
+            body.append("- {}{}".format(
+                kw["term"], " → {}".format(kw["source"]) if kw["source"] else ""))
+        body.append("")
+        body.append("<!-- FILL: el resto del contexto que esta fase necesita -->")
+    else:
+        body.append("<!-- FILL: only what this phase needs -->")
+    body += [
         "",
         "## Constraints",
         _section(text, "Constraints") or "<FILL>",
@@ -863,6 +936,13 @@ def cmd_brief_validate(args):
         items = [l for l in body.splitlines() if l.strip().startswith("-")]
         if not items:
             issues.append("DO NOT section has no items (scope enforcement missing)")
+
+    # Context keywords: non-fatal — a contract without them still validates, but
+    # the context-fetch step has nothing to search (see spec-contract-format).
+    if not context_keywords(text):
+        warnings.append(
+            "no '### Context keywords' under ## Context "
+            "(nothing for the context fetch to search)")
 
     # Graph conventions
     mermaid_blocks = re.findall(r"```mermaid\n(.*?)```", text, re.S)
@@ -1018,6 +1098,13 @@ def main(argv=None):
     t = sub.add_parser("todo",
                        help="derive the Hermes session-todo mirror (JSON)")
     t.set_defaults(fn=cmd_todo)
+
+    cx = sub.add_parser("context",
+                        help="context-fetch keywords from a contract (JSON)")
+    cx.add_argument("--contract", default=CONTRACT_PATH,
+                    help="path to contract.md (default: .riel/contract.md)")
+    cx.add_argument("--output", "-o")
+    cx.set_defaults(fn=cmd_context)
 
     h = sub.add_parser("ship", help="check outgoing file for dense markers")
     h.add_argument("files", nargs="+")
