@@ -187,13 +187,19 @@ function LedgerChip({ ledger, busy, tool }) {
       jsxs(PopoverContent, {
         key: 'content',
         align: 'end',
-        className: 'w-80 p-2',
+        // Fixed height + native overflow: ScrollArea's viewport is size-full,
+        // which needs a bounded parent height — with only max-h the content
+        // overflowed invisible (the "ledger incompleto" bug).
+        className: 'flex max-h-[60vh] w-[22rem] flex-col overflow-hidden p-2',
         children: [
           jsx('div', {
             className: 'px-1 pb-1 text-[0.6875rem] font-medium tracking-wide text-(--ui-text-quaternary)',
             children: 'Ledger'
           }),
-          jsx(ScrollArea, { className: 'max-h-72', children: jsx(LedgerPanel, { ledger, busy, tool }) })
+          jsx('div', {
+            className: 'min-h-0 flex-1 overflow-y-auto',
+            children: jsx(LedgerPanel, { ledger, busy, tool })
+          })
         ]
       })
     ]
@@ -331,14 +337,17 @@ function RielChips({ ctx }) {
   const globalCwd = useValue(host.state.cwd)
   const busy = useValue(host.state.busy)
   const focusedId = useValue(host.state.focusedSessionId)
+  const focusedStoredId = useValue(host.state.focusedStoredSessionId)
   const [status, setStatus] = useState(null)
   const [tool, setTool] = useState(null)
   const [revision, setRevision] = useState(0)
-  // Authoritative cwd PER session, from `session.info` events. Keyed by the
-  // session that reported it, so a switch never shows another conversation's
-  // folder: the map only answers for the focused session.
+  // Authoritative cwd PER session. session.info events (keyed by runtime id)
+  // seed it live; the stored-id fallback below fills sessions that never
+  // reported. Either way, the map only answers for the focused session.
   const [cwdBySession, setCwdBySession] = useState({})
-  const focusedCwd = (focusedId && cwdBySession[focusedId]) || ''
+  const focusedCwd = (focusedId && cwdBySession[focusedId])
+    || (focusedStoredId && cwdBySession[focusedStoredId])
+    || ''
   const cwd = focusedCwd || globalCwd
 
   // session.info: the gateway telling us a session's real cwd (and branch).
@@ -382,11 +391,34 @@ function RielChips({ ctx }) {
     }
   }, [])
 
-  // Focus switch: clear the stale state before refetching.
+  // Focus switch: clear the stale state, then resolve the NEW session's
+  // worktree. session.info events seed the map as sessions report; for a
+  // session that never reported (detached, older), ask the plugin's backend,
+  // which reads the stored cwd from the session DB — the app's own atoms can
+  // still hold the previous conversation's folder at this moment.
   useEffect(() => {
     setTool(null)
     setStatus(null)
-  }, [focusedId])
+    if (!focusedStoredId) return
+    let alive = true
+    const known = cwdBySession[focusedStoredId]
+    if (known) return
+    const resolve = async () => {
+      try {
+        // stored id: the one the session DB keys on
+        const data = await ctx.rest('/session_cwd?session_id=' + encodeURIComponent(focusedStoredId))
+        if (alive && data && data.found && data.cwd) {
+          setCwdBySession(prev => (prev[focusedStoredId] === data.cwd ? prev : { ...prev, [focusedStoredId]: data.cwd }))
+        }
+      } catch {
+        // no answer: the seed (global cwd) keeps serving until session.info
+      }
+    }
+    resolve()
+    return () => {
+      alive = false
+    }
+  }, [focusedStoredId, ctx])
 
   useEffect(() => {
     let alive = true

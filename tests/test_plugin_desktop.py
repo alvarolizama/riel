@@ -87,7 +87,8 @@ export const host = {
   state: {
     cwd: { get: () => process.env.RIEL_TEST_CWD || '' },
     busy: { get: () => process.env.RIEL_TEST_BUSY === '1' },
-    focusedSessionId: { get: () => (globalThis.__RIEL_FOCUS__ ||= process.env.RIEL_TEST_FOCUS || 's1') }
+    focusedSessionId: { get: () => (globalThis.__RIEL_FOCUS__ ||= process.env.RIEL_TEST_FOCUS || 's1') },
+    focusedStoredSessionId: { get: () => (globalThis.__RIEL_FOCUS__ ||= process.env.RIEL_TEST_FOCUS || 's1') }
   },
   notify: (payload) => {
     globalThis.__RIEL_NOTIFIED__ = payload
@@ -158,6 +159,14 @@ const contributions = []
 const restStub = async (path) => {
   restCalls += 1
   if (path.startsWith('/ledger')) globalThis.__RIEL_LAST_LEDGER_URL__ = path
+  if (path.startsWith('/session_cwd')) {
+    // Resolve the focused session's stored cwd (the DB fallback)
+    const m = /session_id=([^&]+)/.exec(path)
+    const sid = m ? decodeURIComponent(m[1]) : ''
+    const known = JSON.parse(process.env.RIEL_TEST_DB_CWDS || '{}')
+    const cwd = known[sid]
+    return cwd ? { found: true, cwd } : { found: false, error: 'session has no stored cwd' }
+  }
   if (path.startsWith('/contract')) {
     return process.env.RIEL_TEST_CONTRACT === '1'
       ? { present: true, markdown: '# Task: x' }
@@ -718,6 +727,22 @@ class ChipTest(unittest.TestCase):
         result = self.run_chip(ledger=self.LEDGER, extra_env={"RIEL_TEST_SWITCH": "1"})
         self.assertFalse(result["final_label"].startswith("Riel: Ledger ✓"),
                          "the previous session's ledger survived the focus switch")
+
+    def test_session_db_fallback_resolves_never_reported_sessions(self):
+        """A session that never emitted session.info still gets its REAL
+        worktree from the DB fallback — not the stale global cwd."""
+        db = json.dumps({"s1": "/wt/from-db"})
+        result = self.run_chip(ledger=self.LEDGER, extra_env={"RIEL_TEST_DB_CWDS": db})
+        self.assertTrue(result["session_cwd"].endswith("/wt/from-db"),
+                        "the DB fallback did not override the stale global cwd")
+
+    def test_ledger_popover_body_scrolls(self):
+        """The popover clips with a scrollable body — no invisible overflow."""
+        source = (DESKTOP / "plugin.js").read_text(encoding="utf-8")
+        popover = source.split("jsxs(PopoverContent")[1].split("})")[0]
+        self.assertIn("max-h-[60vh]", popover, "the popover has no bounded height")
+        self.assertIn("overflow-y-auto", source,
+                      "the ledger body must scroll when it exceeds the popover")
 
     def test_session_info_cwd_is_authoritative_per_session(self):
         """The worktree comes from session.info, keyed per session.
