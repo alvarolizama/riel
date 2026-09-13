@@ -7,11 +7,11 @@ The Hermes `todo` tool keeps a session-scoped task list: items
 the session ends. It is NOT durable state — the ledger is. This spec defines
 the derivation from the Riel contract + ledger into that list.
 
-v2: the todo now shows the WHOLE plan, not just the state — phases come from
-the contract's DAG (what will be done), steps of each phase come as nested
-subtasks (how), and the ledger decides the statuses (what is being done now).
-Division of labor: **todo = what must be done · ledger = what is being done ·
-contract = everything that will be done, and how.**
+The todo shows the whole plan: phases come from the contract's DAG (what
+will be done), steps of each phase come as nested subtasks (how), and the
+ledger decides the statuses (what is being done now). Division of labor:
+**todo = what must be done · ledger = what is being done · contract =
+everything that will be done, and how.**
 
 ## Layering
 
@@ -52,8 +52,8 @@ and prints the JSON array for the todo tool. Mapping:
   is `completed` when its phase's gate ✓ exists (the gate covers the phase),
   otherwise `pending`. No step is ever `in_progress` (the Next item is).
 
-Without a contract (or a graph-less task), the todo degrades to the v1
-mirror: goal + phase + next + opens + claims + verified.
+Tasks without a contract (or a graph-less task) mirror the ledger alone:
+goal + phase + next + opens + claims + verified.
 
 ## Rules
 

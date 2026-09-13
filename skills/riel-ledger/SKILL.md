@@ -1,7 +1,7 @@
 ---
 name: riel-ledger
 description: "Use when running a loop-mode task — write the local Goal/Core/Verified/Open/Next ledger in the worktree, re-read at every seam, verify before done. No remote dependency."
-version: 1.11.0
+version: 1.12.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -308,9 +308,9 @@ Phase, swap Core to the new phase's items — searching the contract's
 `### Context keywords` for what that phase needs, the second moment the
 context fetch runs — and set the new Next. Open items
 belonging to future phases migrate with their numbers. Then regenerate the
-session-todo mirror (`rielctl todo`, Spec 6 v2 — with the contract, the
-phases and their steps enter as nested rows): regenerate it. Then **inject
-it into the session todo**:
+session-todo mirror (`rielctl todo` — the contract's phases and their
+steps enter as nested rows): regenerate it. Then **inject it into the
+session todo**:
 pass the JSON array to the `todo_list` tool so the UI mirrors the ledger
 (`todo_list(todos=<array>)` — the mirror is the tool call, not just the file).
 

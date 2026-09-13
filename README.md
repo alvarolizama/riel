@@ -98,12 +98,12 @@ Four load-bearing defenses against execution error:
 
 | Component | What it steers | Status |
 |---|---|---|
-| `riel-ledger` | **State** — Goal/Claims/Core/Verified/Open/Next, re-read at every seam, recovery via checkpoints, mirrors to the session todo | ✅ skill v1.11 |
+| `riel-ledger` | **State** — Goal/Claims/Core/Verified/Open/Next, re-read at every seam, recovery via checkpoints, mirrors to the session todo | ✅ skill v1.12 |
 | `riel-contract` | **Structure** — mermaid as contract: closed verb vocabulary, verification funnel, graph digest, machine-checkable | ✅ skill v3.6 |
 | `riel-protocol` | **Trajectory** — functional grammar, persona, minimal surface on the first turn | ✅ skill v1.7 |
 | `riel-briefs` | **Delegation briefs** — self-contained packets: curated context + context-keyword index, verb-graph, pre-registered claims, executable gates, templates | ✅ skill v3.6 |
 | `riel-delegate` | **Delegation router** — plan, dispatch waves, JSON-schema'd returns, parent verifies | ✅ skill v1.3 |
-| `riel-cli` | **Tooling** — `rielctl` writes the ledger mechanically, instantiates/validates packets, expands the graph digest, derives the session-todo mirror (v2: phases + steps from the contract), emits the context keywords | ✅ skill v1.6 |
+| `riel-cli` | **Tooling** — `rielctl` writes the ledger mechanically, instantiates/validates packets, expands the graph digest, derives the session-todo mirror (phases + steps from the contract), emits the context keywords | ✅ skill v1.6 |
 
 Each component is independent and optional: a short task uses zero; a long
 loop may use all six. Use only the machinery the task earns.
@@ -237,7 +237,7 @@ it without resolving the skill path. Run from the task's worktree root
 | `rielctl note …` | write/update `.riel/ledger.md` — goal, claims, core, checks, open, next; `--from-contract` seeds Goal/Phase/Claims/Next from `.riel/contract.md` |
 | `rielctl seam` | re-print the ledger + which invariants are due |
 | `rielctl resume` | post-gap bootstrap (ledger → invariants → mode → next) |
-| `rielctl todo` | session-todo mirror (JSON) derived from the ledger |
+| `rielctl todo` | session-todo mirror (JSON): goal, the contract's phases with their steps as nested subtasks, the Next as the only in_progress, opens, claims and verified checkpoints |
 | `rielctl context` | context keywords of a contract (JSON) — the index the memory search reads |
 | `rielctl ship FILE` | dense-register check before delivery |
 | `rielctl brief new` / `validate` / `slice` | instantiate / structurally check / slice a phase into a mini packet |
@@ -294,7 +294,7 @@ riel/
 ├── specs/             ← design contracts
 │   ├── spec-ledger-format.md    ← .riel/ledger.md format + rules
 │   ├── spec-contract-format.md  ← .riel/contract.md format (the plan)
-│   ├── spec-todo-hermes.md      ← session-todo mirror v2 (phases + steps from the contract)
+│   ├── spec-todo-hermes.md      ← session-todo mirror (phases + steps from the contract)
 │   └── spec-phase-advance.md    ← per-phase ledger
 ├── scripts/           ← repo tooling
 │   ├── validate-mermaid.sh   ← validates every mermaid block with mmdc
