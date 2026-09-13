@@ -23,6 +23,10 @@ RIELCTL = PLUGIN_DIR / "vendor" / "riel-cli" / "scripts" / "rielctl"
 TIMEOUT_SECS = 15
 
 _LEDGER_SUFFIX = (".riel", "ledger.md")
+_CONTRACT_SUFFIX = (".riel", "contract.md")
+# A contract is working memory for the task in flight, not a book — if it ever
+# grows past this, the dialog still opens, it just stops at the cap.
+MAX_CONTRACT_CHARS = 262_144
 
 
 def _blank(worktree: str) -> dict:
@@ -123,4 +127,38 @@ def read_status(worktree: str, rielctl: Path = RIELCTL, timeout: int = TIMEOUT_S
         return status
     if isinstance(items, list):
         status.update(summarize(items))
+    return status
+
+
+def read_contract(worktree: str) -> dict:
+    """The worktree's contract.md, verbatim, for the statusbar dialog. Never raises.
+
+    Same boundary discipline as `read_status`: the only path this ever reads is
+    `<worktree>/.riel/contract.md`, and `present` is only true when that file
+    exists — a missing contract is reported, never invented.
+    """
+    raw = str(worktree or "").strip()
+    if not raw:
+        status = {"present": False, "worktree": "", "markdown": "", "chars": 0}
+        status["error"] = "worktree is required"
+        return status
+    root = os.path.abspath(os.path.expanduser(raw))
+    status = {"present": False, "worktree": root, "markdown": "", "chars": 0}
+    if not os.path.isdir(root):
+        status["error"] = "worktree is not a directory"
+        return status
+    path = Path(root).joinpath(*_CONTRACT_SUFFIX)
+    if not path.is_file():
+        status["error"] = "no .riel/contract.md in this worktree (write the contract first)"
+        return status
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        status["error"] = f"contract unreadable: {exc}"
+        return status
+    if len(text) > MAX_CONTRACT_CHARS:
+        text = text[:MAX_CONTRACT_CHARS] + "\n\n<!-- truncated at 256 KiB -->"
+    status["present"] = True
+    status["markdown"] = text
+    status["chars"] = len(text)
     return status

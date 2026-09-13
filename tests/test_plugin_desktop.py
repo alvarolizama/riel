@@ -75,6 +75,10 @@ function map() {
   return (globalThis.__RIEL_LISTENERS__ ||= new Map())
 }
 
+// Dialog/Streamdown stubs: they only need to EXIST for the import to resolve —
+// the chip tests assert the label and the click, not the dialog's pixels.
+const makeStub = (tag) => (props) => ({ tag, props: props || {} })
+
 export const host = {
   state: {
     cwd: { get: () => process.env.RIEL_TEST_CWD || '' },
@@ -94,6 +98,13 @@ export const haptic = () => {
   globalThis.__RIEL_TAPPED__ = true
 }
 export const useValue = (atom) => (atom && typeof atom.get === 'function' ? atom.get() : null)
+
+export const Streamdown = makeStub('streamdown')
+export const Dialog = makeStub('dialog')
+export const DialogContent = makeStub('dialog-content')
+export const DialogHeader = makeStub('dialog-header')
+export const DialogTitle = makeStub('dialog-title')
+export const DialogDescription = makeStub('dialog-description')
 """
 
 REACT_STUB = """\
@@ -152,7 +163,12 @@ const render = () => {
   globalThis.__RIEL_INDEX__ = 0
   globalThis.__RIEL_EFFECT_INDEX__ = 0
   const element = chip.render()
-  return element.type(element.props)
+  const tree = element.type(element.props)
+  // The chip renders as a span: [button, dialog] — click the button, not the span.
+  const button = Array.isArray(tree.props.children)
+    ? tree.props.children.find((child) => child && child.type === 'button')
+    : tree
+  return { tree, button: button || tree }
 }
 
 const first = render()
@@ -167,8 +183,8 @@ if (tool && process.env.RIEL_TEST_COMPLETE === '1') {
   afterComplete = render()
 }
 
-const tree = afterComplete || withActivity
-tree.props.onClick()
+const current = afterComplete || withActivity
+current.button.props.onClick()
 
 console.log(JSON.stringify({
   id: plugin.id,
@@ -176,12 +192,12 @@ console.log(JSON.stringify({
   defaultEnabled: plugin.defaultEnabled,
   areas: contributions.map((c) => c.area),
   order: chip.order,
-  first_label: first.props.children,
-  activity_label: withActivity.props.children,
-  activity_title: withActivity.props.title,
-  activity_class: withActivity.props.className,
-  final_label: tree.props.children,
-  final_title: tree.props.title,
+  first_label: first.button.props.children,
+  activity_label: withActivity.button.props.children,
+  activity_title: withActivity.button.props.title,
+  activity_class: withActivity.button.props.className,
+  final_label: current.button.props.children,
+  final_title: current.button.props.title,
   rest_calls: restCalls,
   tapped: globalThis.__RIEL_TAPPED__ === true,
   notified: globalThis.__RIEL_NOTIFIED__ || null
@@ -301,6 +317,31 @@ class LedgerStatusTest(unittest.TestCase):
         self.assertIsInstance(status["updated"], int)
         self.assertGreaterEqual(status["stale_secs"], 0)
 
+    def test_read_contract_returns_verbatim_markdown(self):
+        Path(self.tmp, ".riel").mkdir()
+        Path(self.tmp, ".riel", "contract.md").write_text(
+            "# Task: probe\n\n## Objective\nWe need x\n\n```mermaid\nflowchart TD\n  A[\"B\"]\n```\n",
+            encoding="utf-8",
+        )
+        result = self.status.read_contract(self.tmp)
+        self.assertTrue(result["present"])
+        self.assertIn("# Task: probe", result["markdown"])
+        self.assertIn("```mermaid", result["markdown"])
+        self.assertEqual(result["chars"], len(result["markdown"]))
+
+    def test_read_contract_without_one_says_so(self):
+        result = self.status.read_contract(self.tmp)
+        self.assertFalse(result["present"])
+        self.assertIn("contract", result["error"])
+        self.assertEqual(result["markdown"], "")
+
+    def test_read_contract_junk_inputs_never_raise(self):
+        for value in ("", "   ", "/dev/null", "\x00"):
+            with self.subTest(value=value):
+                result = self.status.read_contract(value)
+                self.assertFalse(result["present"])
+                self.assertIsInstance(result, dict)
+
     def test_ledger_without_goal_is_present_but_empty(self):
         ledger = Path(self.tmp) / ".riel" / "ledger.md"
         ledger.parent.mkdir(parents=True)
@@ -362,6 +403,27 @@ class PluginApiRouteTest(unittest.TestCase):
         payload = self._client().get("/health").json()
         self.assertTrue(payload["ok"], payload)
         self.assertTrue(payload["rielctl"].endswith("rielctl"))
+
+    def test_contract_route_returns_verbatim_markdown(self):
+        with tempfile.TemporaryDirectory(prefix="riel-route-") as tmp:
+            contract = Path(tmp) / ".riel" / "contract.md"
+            contract.parent.mkdir(parents=True)
+            contract.write_text("# Task: x\n\n```mermaid\nflowchart TD\n  A[\"B\"]\n```\n", encoding="utf-8")
+            client = self._client()
+            ok = client.get("/contract", params={"worktree": tmp})
+            self.assertEqual(ok.status_code, 200)
+            payload = ok.json()
+            self.assertTrue(payload["present"])
+            self.assertIn("# Task: x", payload["markdown"])
+            self.assertIn("```mermaid", payload["markdown"])
+            self.assertEqual(payload["chars"], len(payload["markdown"]))
+
+    def test_contract_route_reports_missing_not_invented(self):
+        with tempfile.TemporaryDirectory(prefix="riel-route-") as tmp:
+            payload = self._client().get("/contract", params={"worktree": tmp}).json()
+            self.assertFalse(payload["present"])
+            self.assertIn("contract", payload["error"])
+            self.assertEqual(payload["markdown"], "")
 
 
 @unittest.skipUnless(_node_available(), "node is not installed")
@@ -438,11 +500,11 @@ class ChipTest(unittest.TestCase):
         result = self.run_chip(tool="terminal", complete=True)
         self.assertEqual(result["final_label"], "riel · último: terminal")
 
-    def test_click_reports_goal_and_tool(self):
+    def test_click_opens_the_contract_dialog(self):
+        """The click now opens the contract dialog instead of toasting."""
         result = self.run_chip(ledger=self.LEDGER, tool="terminal", complete=True)
-        self.assertTrue(result["tapped"])
-        self.assertIn("ship the chip", result["notified"]["message"])
-        self.assertIn("terminal", result["notified"]["message"])
+        self.assertFalse(result["tapped"], "the click belongs to the dialog now")
+        self.assertIsNone(result["notified"])
 
 
 if __name__ == "__main__":

@@ -1,22 +1,26 @@
 // Riel — desktop half: a statusbar chip with the live ledger of the current
-// worktree AND what the agent is doing right now.
+// worktree AND what the agent is doing right now. Clicking it opens the
+// task's contract.md, rendered as Markdown (Streamdown draws the sections and
+// the mermaid graph — the same pipeline core chat surfaces use).
 //
-// Two data paths:
+// Data paths:
 //   * state  — host.state.cwd → ctx.rest('/ledger') → the plugin's own Python
 //     backend → the vendored `rielctl todo` mirror (polled, and refetched the
 //     moment a tool finishes, so the counters catch up fast).
 //   * activity — host.onEvent('tool.start' | 'tool.complete'), the app's
 //     gateway event tap: turn-in-progress comes from host.state.busy.
+//   * contract — the same backend, GET /contract, verbatim markdown.
 // The renderer never reads the filesystem.
 //
-// App-level by design: the chip is one app-wide surface (see the package
-// README), so activity is not filtered per tile — it shows the most recent
-// tool the app saw.
+// App-level by design: the chip is one app-wide surface, so activity is not
+// filtered per tile — it shows the most recent tool the app saw.
 //
 // Opt-in: `defaultEnabled: false` ships it inventory-only in Capabilities →
 // Plugins, mirroring the agent half's `plugins.enabled` gate in config.yaml.
 
 import { host, haptic, useValue } from '@hermes/plugin-sdk'
+import { Streamdown } from '@hermes/plugin-sdk'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@hermes/plugin-sdk'
 import { jsx } from 'react/jsx-runtime'
 import { useEffect, useState } from 'react'
 
@@ -56,7 +60,75 @@ function chipTitle(ledger, busy, tool) {
     const took = tool.running ? '' : tool.duration_s == null ? '' : ` (${tool.duration_s}s)`
     lines.push(`último tool: ${tool.name}${took}${tool.error ? ' — error: ' + truncate(tool.error, 80) : ''}`)
   }
+  lines.push('clic: ver el contrato')
   return lines.join('\n')
+}
+
+function ContractDialog({ open, onOpenChange, cwd }) {
+  const [contract, setContract] = useState(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    let alive = true
+    setLoading(true)
+    setContract(null)
+    const load = async () => {
+      try {
+        const data = await globalThis.__rielCtx.rest(
+          '/contract?worktree=' + encodeURIComponent(cwd || '')
+        )
+        if (alive) setContract(data)
+      } catch (error) {
+        if (alive) {
+          setContract({ present: false, error: String((error && error.message) || error) })
+        }
+      } finally {
+        if (alive) setLoading(false)
+      }
+    }
+    load()
+    return () => {
+      alive = false
+    }
+  }, [open, cwd])
+
+  const body = () => {
+    if (loading) return jsx('div', { className: 'py-8 text-center text-sm text-(--ui-text-tertiary)', children: 'cargando contrato…' })
+    if (!contract) return null
+    if (!contract.present) {
+      return jsx('div', {
+        className: 'py-8 text-center text-sm text-(--ui-text-tertiary)',
+        children: contract.error || 'sin contrato en este worktree'
+      })
+    }
+    return jsx('div', {
+      className: 'max-h-[70vh] overflow-y-auto rounded-md border border-(--ui-stroke-secondary) bg-(--ui-background) p-4 text-sm',
+      children: jsx(Streamdown, { children: contract.markdown })
+    })
+  }
+
+  return jsx(Dialog, {
+    open,
+    onOpenChange,
+    children: jsx(DialogContent, {
+      className: 'max-w-3xl',
+      children: [
+        jsx(DialogHeader, {
+          key: 'head',
+          children: [
+            jsx(DialogTitle, { key: 't', children: 'Contrato Riel' }),
+            jsx(DialogDescription, {
+              key: 'd',
+              className: 'truncate text-(--ui-text-tertiary)',
+              children: cwd || ''
+            })
+          ]
+        }),
+        jsx('div', { key: 'body', children: body() })
+      ]
+    })
+  })
 }
 
 function RielChip({ ctx }) {
@@ -65,6 +137,10 @@ function RielChip({ ctx }) {
   const [status, setStatus] = useState(null)
   const [tool, setTool] = useState(null)
   const [revision, setRevision] = useState(0)
+  const [dialogOpen, setDialogOpen] = useState(false)
+
+  // The dialog fetches through the plugin context; reach it from its effect.
+  globalThis.__rielCtx = ctx
 
   // Activity: the app's gateway event tap. Every finished tool bumps `revision`
   // so the ledger is re-read immediately instead of at the next poll.
@@ -112,13 +188,7 @@ function RielChip({ ctx }) {
   }, [cwd, revision, ctx])
 
   const ledger = status && status.present ? status : null
-  const onClick = () => {
-    haptic('tap')
-    const parts = []
-    parts.push(ledger ? `${truncate(ledger.goal, 120)} → ${truncate(ledger.next, 120)}` : `Sin ledger en ${cwd || '(sin worktree)'}`)
-    if (tool) parts.push(`${tool.name}${tool.error ? ' (error: ' + truncate(tool.error, 60) + ')' : ''}`)
-    host.notify({ kind: ledger ? 'info' : 'warning', message: parts.join(' · ') })
-  }
+  const onClick = () => setDialogOpen(true)
 
   const className = busy
     ? `${CHIP_CLASS} text-(--ui-accent)`
@@ -126,12 +196,24 @@ function RielChip({ ctx }) {
       ? `${CHIP_CLASS} text-(--ui-text-tertiary)`
       : `${CHIP_CLASS} text-(--ui-text-quaternary)`
 
-  return jsx('button', {
-    type: 'button',
-    title: chipTitle(ledger, busy, tool),
-    className,
-    onClick,
-    children: chipLabel(ledger, busy, tool)
+  return jsx('span', {
+    className: 'inline-flex items-center',
+    children: [
+      jsx('button', {
+        key: 'chip',
+        type: 'button',
+        title: chipTitle(ledger, busy, tool),
+        className,
+        onClick,
+        children: chipLabel(ledger, busy, tool)
+      }),
+      jsx(ContractDialog, {
+        key: 'dialog',
+        open: dialogOpen,
+        onOpenChange: setDialogOpen,
+        cwd
+      })
+    ]
   })
 }
 

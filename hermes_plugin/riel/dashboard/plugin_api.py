@@ -1,14 +1,16 @@
 """Backend routes for the Riel desktop half, mounted at `/api/plugins/riel/`.
 
-Two read-only endpoints, both answering the statusbar chip:
+Three read-only endpoints, answering the statusbar chip:
 
   GET /health            → is the backend up and does it have its vendored rielctl
-  GET /ledger?worktree=  → the ledger summary for one worktree
+  GET /ledger?worktree=  → the ledger summary for one worktree (the chip's counters)
+  GET /contract?worktree= → the contract.md verbatim (the chip's click dialog)
 
 The mount is the dashboard plugin API, which runs inside the gateway process.
-Bound by construction: the only path this ever reads is `<worktree>/.riel/ledger.md`,
-and only a normalized summary (counters + the goal/next headlines) leaves here —
-never raw file contents of anything else.
+Bound by construction: the only paths this ever reads are
+`<worktree>/.riel/ledger.md` and `<worktree>/.riel/contract.md` — and of the
+contract, the verbatim markdown leaves (the renderer, Streamdown, draws the
+sections and the mermaid graph; no digest or re-parsing here).
 
 The ledger logic lives beside this file in `ledger_status.py`, loaded by path so
 it works whatever loader the gateway uses for `plugin_api.py`.
@@ -47,3 +49,11 @@ async def ledger(worktree: str = Query("", max_length=MAX_WORKTREE_CHARS)) -> di
     if not worktree.strip():
         return {"present": False, "worktree": "", "error": "worktree query parameter is required"}
     return _ledger_status.read_status(worktree)
+
+
+@router.get("/contract")
+async def contract(worktree: str = Query("", max_length=MAX_WORKTREE_CHARS)) -> dict:
+    """The verbatim `<worktree>/.riel/contract.md` — the chip's click dialog renders it."""
+    if not worktree.strip():
+        return {"present": False, "worktree": "", "error": "worktree query parameter is required"}
+    return _ledger_status.read_contract(worktree)
