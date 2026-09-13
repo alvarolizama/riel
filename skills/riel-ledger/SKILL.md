@@ -289,8 +289,11 @@ your own result, not just in favor.
 
 `✓NN <what holds> — verified by: <command/test/review>, covering <scope>[, confidence X/20]`
 
-**Mirror:** regenerate the session todo right after (`rielctl todo`) — the
-new checkpoint shows as `DONE NN` in the UI without hand-editing the todo.
+**Mirror:** regenerate the session todo right after — and **inject it**:
+`rielctl todo` prints the JSON array; pass it to the `todo_list` tool
+(`todo_list(todos=<that array>)`, or `riel_todo` then `todo_list` where the
+Hermes plugin is installed). The new checkpoint shows as `DONE NN` in the UI
+without hand-editing the todo.
 
 Re-verifying a **critical** checkpoint is allowed — but only with *variation*
 (a different angle, order, or question), never the same check repeated.
@@ -306,7 +309,9 @@ Phase, swap Core to the new phase's items — searching the contract's
 context fetch runs — and set the new Next. Open items
 belonging to future phases migrate with their numbers. Then regenerate the
 session-todo mirror (`rielctl todo`): the new Phase enters as pending, the
-new Next is the only `in_progress`.
+new Next is the only `in_progress`. Then **inject it into the session todo**:
+pass the JSON array to the `todo_list` tool so the UI mirrors the ledger
+(`todo_list(todos=<array>)` — the mirror is the tool call, not just the file).
 
 ### Done-check (before declaring done)
 

@@ -105,6 +105,13 @@ pending, P# → `CLAIM:` pending, ✓NN → `DONE NN` completed. The todo is a
 projection — fix the ledger and regenerate the mirror; never hand-edit the
 todo into a divergent plan. Spec: `riel/specs/spec-todo-hermes.md`.
 
+**Injecting it (Hermes):** the mirror is complete only when the array reaches
+the session todo UI — pass it to the `todo_list` tool as
+`todo_list(todos=<array>)` right after generating it (with the plugin:
+`riel_todo` → `todo_list`). Regenerate + re-inject at every seam where the
+ledger moved; the store is session-scoped, so a new session re-injects from
+the current ledger.
+
 Exit codes:
 
 - `note` / `seam` / `resume` / `todo`: 0 unless arguments invalid or the

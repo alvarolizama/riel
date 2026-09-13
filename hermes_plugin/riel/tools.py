@@ -169,16 +169,23 @@ def riel_note(args: dict, **kwargs) -> str:
     return _run(["note", *argv], args, kwargs)
 
 
-def _passthrough(verb: str):
+def _passthrough(verb: str, extra_note: "str | None" = None):
     def handler(args: dict, **kwargs) -> str:
-        return _run([verb], args, kwargs)
+        payload = json.loads(_run([verb], args, kwargs))
+        if extra_note and isinstance(payload, dict) and payload.get("exit_code") == 0:
+            payload["next"] = extra_note
+        return json.dumps(payload, ensure_ascii=False)
 
     return handler
 
 
 riel_seam = _passthrough("seam")
 riel_resume = _passthrough("resume")
-riel_todo = _passthrough("todo")
+riel_todo = _passthrough(
+    "todo",
+    "Inject this into the session todo: pass the items array (stdout) to the "
+    "todo_list tool (todos=<array>) so the UI mirrors the ledger.",
+)
 
 # ------------------------------------------------------------------ context ---
 # The tool is an INDEX provider, not a searcher: a plugin cannot reach the

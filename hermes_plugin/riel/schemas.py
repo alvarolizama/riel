@@ -111,11 +111,13 @@ RIEL_RESUME = {
 RIEL_TODO = {
     "name": "riel_todo",
     "description": (
-        "Derive the session-todo mirror from the Riel ledger as JSON, ready for the todo tool "
-        "(Goal is the root item, Next is the only in_progress, open questions and pending "
-        "checkpoints are pending, verified checkpoints are completed). Use it to keep the "
-        "session todo aligned with the ledger — the todo is a projection, so fix the ledger "
-        "and regenerate instead of editing the list by hand."
+        "Derive the session-todo mirror from the Riel ledger: Goal is the root item, Next is the "
+        "only in_progress, open questions and pending claims are pending, verified checkpoints are "
+        "completed. THEN INJECT IT: pass the returned items array to the todo_list tool "
+        "(todo_list with todos=<the array>) so the session's todo UI mirrors the ledger — "
+        "generating the mirror without injecting it shows nothing. The todo is a projection: "
+        "when the ledger moves, call this again and re-inject; never hand-edit the list into a "
+        "divergent plan."
     ),
     "parameters": {"type": "object", "properties": {"worktree": _WORKTREE}},
 }
