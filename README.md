@@ -103,7 +103,7 @@ Four load-bearing defenses against execution error:
 | `riel-protocol` | **Trajectory** — functional grammar, persona, minimal surface on the first turn | ✅ skill v1.7 |
 | `riel-briefs` | **Delegation briefs** — self-contained packets: curated context + context-keyword index, verb-graph, pre-registered claims, executable gates, templates | ✅ skill v3.6 |
 | `riel-delegate` | **Delegation router** — plan, dispatch waves, JSON-schema'd returns, parent verifies | ✅ skill v1.3 |
-| `riel-cli` | **Tooling** — `rielctl` writes the ledger mechanically, instantiates/validates packets, expands the graph digest, derives the session-todo mirror (phases + steps from the contract), emits the context keywords | ✅ skill v1.6 |
+| `riel-cli` | **Tooling** — `rielctl` writes the ledger mechanically, instantiates/validates packets, expands the graph digest, derives the session-todo mirror (phases + steps from the contract), emits the context keywords, and fetches a remote contract to disk (HTTPS, atomic, sha256-verified) | ✅ skill v1.7 |
 
 Each component is independent and optional: a short task uses zero; a long
 loop may use all six. Use only the machinery the task earns.
@@ -242,6 +242,7 @@ it without resolving the skill path. Run from the task's worktree root
 | `rielctl ship FILE` | dense-register check before delivery |
 | `rielctl brief new` / `validate` / `slice` | instantiate / structurally check / slice a phase into a mini packet |
 | `rielctl brief digest` · `rielctl digest` | explicit text digest of a graph |
+| `rielctl fetch URL -o FILE` | download a contract (or any file) over HTTP(S) into the worktree — run it at the **task opening** (`resume`/`seam`/`note --from-contract`), not only when delegating; atomic, sha256-verified (`--sha256`), HTTPS by default (`--allow-http` for a trusted transport such as a VPN); the URL may carry a short-lived single-use token instead of the API key, and is never printed |
 | `rielctl --version` · `--help` | version / usage |
 
 If the command is not found, re-run `make install` or invoke the skill copy

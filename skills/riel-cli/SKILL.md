@@ -1,7 +1,7 @@
 ---
 name: riel-cli
 description: "Use when Riel needs its mechanical helper — writes the ledger with the exact format, instantiates and validates packets, expands a graph digest, derives the session-todo mirror. The agent invokes it in RUN nodes instead of handwriting state files."
-version: 1.6.0
+version: 1.7.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -24,6 +24,8 @@ of the framework so the agent doesn't have to remember them:
 - Emitting a contract's context keywords as JSON (`rielctl context`) so the
   memory search has one authoritative index to read instead of re-parsing
   the contract
+- Downloading a remote contract to disk without routing it through the
+  agent's context (`rielctl fetch`) — HTTPS-only, atomic, sha256-verified
 
 **When to use:** on any `loop`-mode task and on every delegated task, the
 agent invokes `rielctl` in `RUN` nodes instead of handwriting ledger files.
@@ -162,6 +164,39 @@ over-long labels are reported as non-fatal `WARN`s.
 authored edges, branches, entry/terminals and loops, with a "meaning &
 limits" footer. Use it to give an agent the text beside the diagram (the
 diagram stays for humans).
+
+### Fetch (download a contract, Spec 2 — local-first)
+
+```bash
+rielctl fetch URL -o .riel/contract.md [--sha256 H] \
+                 [--header 'Authorization: Bearer …'] [--allow-http] [--timeout 30] [--max-bytes 5000000]
+```
+
+Materializes a contract that lives on a server (e.g. Gorim's
+`GET /api/steps/:id/contract.md`) into the worktree — the body never travels
+through the agent's context (MCP responses cap at ~10KB; a contract exceeds
+it). The server's export returns a reference `{url, sha256, bytes}`; `fetch`
+downloads the URL and verifies the hash before writing. The URL typically
+embeds a **short-lived signed token** (not the api_key): it expires (TTL) and
+is single-use, so the CLI needs no credentials.
+
+**When to run it:** at the *opening* of a task that uses a remote contract —
+`resume` / `seam` / `note --from-contract`, before the context fetch — **not
+only when delegating**. A solo task fetches its contract the same way;
+`brief slice` (for a child) is a later, separate moment and is never the
+trigger.
+
+Security defaults (not optional): **HTTPS required** — plain `http` is
+refused except for `localhost`/`127.0.0.1`/`::1`, or anywhere with
+`--allow-http` (a trusted transport such as a VPN); TLS is verified; the body
+is bounded by `--max-bytes`; the write is **atomic** (temp file + rename, so
+a failed or mismatched download never leaves a partial file); and the URL is
+**never printed** — a short-lived token embedded in the query string must not
+leak into logs or stderr. Pass `--sha256` to enforce end-to-end integrity.
+
+Exit codes: `0` ok · `1` network/HTTP/write error · `2` bad scheme or refused
+plain-http · `3` body exceeds `--max-bytes` · `4` sha256 mismatch (nothing
+written).
 
 ## The one rule
 

@@ -11,8 +11,10 @@ the plan artifact and its relationship to the ledger.
 - `.riel/contract.md` in the task worktree; goes in `.gitignore` (local
   state, never a deliverable — same git hygiene as the ledger).
 - **One workstream = one worktree = one contract.**
-- **Written first, always** — before opening the ledger, before any
-  execution, whether the task delegates or not.
+- **Written (or fetched) first, always** — before opening the ledger, before
+  any execution, **whether the task delegates or not**. A remote contract
+  (authored elsewhere) is materialized here, at the opening, with
+  `rielctl fetch` — never deferred to delegation ("Remote contracts", below).
 - Overwritten per session: it is working memory for the task in flight, not
   a durable record.
 
@@ -80,6 +82,27 @@ narrowed to the child's phase — its subgraph, its gates, its Deliverable,
 its DO NOT. Same format, fewer phases. The child **never opens a ledger**:
 it returns JSON and the **parent** — the sole writer of `.riel/ledger.md` —
 turns that into ✓NN. The parent keeps the full contract and the ledger.
+
+## Remote contracts (fetch)
+
+The contract is not always hand-written in the worktree: an authoring tool
+(e.g. Gorim) can render it server-side and hand the agent a reference. The
+body never travels through the agent's context — MCP responses cap at ~10KB
+and a contract exceeds it — so the export returns `{url, sha256, bytes}` and
+`rielctl fetch <url> -o .riel/contract.md --sha256 <hash>` materializes it
+into the worktree. `fetch` is server-agnostic: HTTPS by default (plain `http`
+only for localhost, or anywhere with `--allow-http` on a trusted transport
+such as a VPN), TLS verified, body bounded, **atomic** write, and the URL is
+never printed — a short-lived, single-use token embedded in the query string
+must not leak into logs. The `sha256` from the reference pins end-to-end
+integrity. Full flags and exit codes: skill `riel-cli`, "Fetch" section.
+
+**When:** at the *opening* of the task — the moment Riel starts working on the
+contract (`resume` / `seam` / `note --from-contract`), right before the
+context fetch. **Independent of delegation:** a solo task fetches its contract
+the same way, and slicing a packet for a child (`brief slice`) is a later,
+separate moment — never the trigger. Tying the download to delegation would
+leave a non-delegating task without its contract.
 
 ## Cross-references
 

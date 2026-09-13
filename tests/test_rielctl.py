@@ -6,6 +6,7 @@ subprocess so we exercise exactly what an agent would invoke.
 Run:
     python3 -m unittest discover -s tests -v
 """
+import hashlib
 import json
 import os
 import re
@@ -977,6 +978,84 @@ d
         rc, out, err = run("brief", "validate", path)
         self.assertEqual(rc, 0, out)
         self.assertNotIn("Context keywords", err)
+
+
+class FetchTests(TempDirTest):
+    """rielctl fetch — HTTP(S) download with integrity + security defaults."""
+
+    def _serve(self, payload):
+        import http.server
+        import threading
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Type", "text/markdown; charset=utf-8")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+            def log_message(self, format, *args):
+                pass
+
+        srv = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        self.addCleanup(srv.server_close)
+        self.addCleanup(srv.shutdown)
+        return "http://127.0.0.1:{}".format(srv.server_address[1])
+
+    def test_writes_file_and_verifies_sha256(self):
+        payload = b"# Task: demo\n\n## Objective\nWe need...\n"
+        digest = hashlib.sha256(payload).hexdigest()
+        base = self._serve(payload)
+        out = os.path.join(self.tmp, ".riel", "contract.md")
+        rc, stdout, err = run("fetch", base + "/contract.md", "-o", out,
+                              "--sha256", digest)
+        self.assertEqual(rc, 0, err)
+        with open(out, "rb") as fh:
+            self.assertEqual(fh.read(), payload)
+        self.assertIn(digest, stdout)
+
+    def test_rejects_sha256_mismatch_without_writing(self):
+        base = self._serve(b"payload")
+        out = os.path.join(self.tmp, "x.md")
+        rc, _, err = run("fetch", base + "/x", "-o", out, "--sha256", "0" * 64)
+        self.assertEqual(rc, 4)
+        self.assertIn("sha256 mismatch", err)
+        self.assertFalse(os.path.exists(out))          # no partial write
+
+    def test_refuses_plain_http_for_non_local_host(self):
+        rc, _, err = run("fetch", "http://example.com/x", "-o", "x.md")
+        self.assertEqual(rc, 2)
+        self.assertIn("refusing plain http", err)
+
+    def test_allow_http_flag_permits_non_local_host(self):
+        # without the flag the host is refused (exit 2); with it the request is
+        # attempted (here the name does not resolve → network error, exit 1)
+        rc, _, err = run("fetch", "http://nonexistent.invalid/x", "-o", "x.md",
+                         "--allow-http", "--timeout", "2")
+        self.assertEqual(rc, 1)
+        self.assertNotIn("refusing plain http", err)
+
+    def test_rejects_unsupported_scheme(self):
+        rc, _, err = run("fetch", "ftp://example.com/x", "-o", "x.md")
+        self.assertEqual(rc, 2)
+        self.assertIn("unsupported scheme", err)
+
+    def test_does_not_leak_token_on_error(self):
+        # connection refused → URLError; the query token must not reach stderr
+        rc, _, err = run("fetch", "http://127.0.0.1:1/contract.md?token=SECRET",
+                         "-o", "x.md", "--timeout", "1")
+        self.assertNotEqual(rc, 0)
+        self.assertNotIn("SECRET", err)
+
+    def test_aborts_when_body_exceeds_max_bytes(self):
+        base = self._serve(b"x" * 5000)
+        out = os.path.join(self.tmp, "big.md")
+        rc, _, err = run("fetch", base + "/big", "-o", out, "--max-bytes", "1024")
+        self.assertEqual(rc, 3)
+        self.assertIn("exceeds", err)
+        self.assertFalse(os.path.exists(out))
 
 
 if __name__ == "__main__":
