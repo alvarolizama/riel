@@ -134,9 +134,10 @@ funnel from riel-contract — what varies is the pipeline topology:
 | **Research** | Search → Extract → Synthesize → Validate | cited sources, complete answer |
 | **Writing** | Outline → Draft → Review → Polish | structure, tone, accuracy |
 
-Each type has a ready-made packet skeleton at `templates/<type>.md` in
-this skill — start from that instead of writing the packet from scratch.
-The `packet.md` template is the empty base if none of the types fit.
+Each type has a ready-made skeleton at `templates/<type>.md` in this skill
+— start from that instead of writing the contract from scratch. The
+`packet.md` template is the empty base **of the format** (used for the
+contract and for a child packet alike) when none of the types fit.
 
 ## Step 4: Build the instruction graph
 
@@ -193,9 +194,10 @@ mechanically, without the parent reading any prose.
 
 ## Step 6: Write the dispatch prompt
 
-The canonical packet lives at `templates/packet.md` in this skill — copy it
-and fill the `{{placeholders}}`. A complete worked example (password-reset)
-lives at `templates/example-password-reset.md`.
+The **format skeleton** lives at `templates/packet.md` in this skill — copy
+it and fill the `{{placeholders}}`. It is the skeleton of the **contract**
+(the plan) and of a child **packet** alike. A complete worked example
+(password-reset) lives at `templates/example-password-reset.md`.
 
 The packet is a markdown document with these sections, in this order:
 
@@ -292,7 +294,7 @@ Content:
 
 ## Cross-references
 
-- Canonical packet file: `templates/packet.md`
+- Format skeleton (contract + packet): `templates/packet.md`
 - Worked example: `templates/example-password-reset.md`
 - Verb-graph syntax conventions (canonical): `riel-contract`
 - Opening conditions and functional grammar: `riel-protocol`

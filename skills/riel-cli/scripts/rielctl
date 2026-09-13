@@ -137,7 +137,7 @@ def entry_number(prefix, seq):
 def _section(text, name):
     """Body of '## <name>' up to the next '## ' heading (or EOF)."""
     m = re.search(
-        r"^##\s+" + re.escape(name) + r"\s*$\n(.*?)(?=^##\s|\Z)",
+        r"^##\s+" + re.escape(name) + r"[^\n]*\n(.*?)(?=^##\s|\Z)",
         text, re.S | re.M,
     )
     return m.group(1).strip() if m else ""
@@ -179,7 +179,7 @@ def seed_from_contract(path):
     if not fields["claims"]:
         warnings.append("no P# claims found")
 
-    block = _first_mermaid(text)
+    block = _graph_block(text)
     if block:
         nodes, edges = mermaid_graph(block)
         backs = set(graph_back_edges(edges))
@@ -548,6 +548,12 @@ def _first_mermaid(text):
     return text[i:j].strip()
 
 
+def _graph_block(text):
+    """The mermaid under '## Execution graph'; else the first block."""
+    block = _first_mermaid(_section(text, "Execution graph"))
+    return block if block is not None else _first_mermaid(text)
+
+
 def mermaid_graph(block):
     """Best-effort parse of a mermaid flowchart block → (nodes, edges).
 
@@ -645,7 +651,7 @@ def graph_back_edges(edges):
 def cmd_brief_digest(args):
     with open(args.file, encoding="utf-8") as fh:
         text = fh.read()
-    block = _first_mermaid(text)
+    block = _graph_block(text)
     if block is None:
         print("no mermaid graph found in {}".format(args.file), file=sys.stderr)
         return 1
@@ -733,7 +739,7 @@ def cmd_brief_slice(args):
     """
     with open(args.file, encoding="utf-8") as fh:
         text = fh.read()
-    block = _first_mermaid(text)
+    block = _graph_block(text)
     if block is None:
         print("no mermaid graph found in {}".format(args.file), file=sys.stderr)
         return 1

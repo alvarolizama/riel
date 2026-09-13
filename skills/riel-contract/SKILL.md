@@ -258,7 +258,7 @@ spelled out as plain text — elements, authored edges, branch candidates,
 entry/terminals, loops, and a "meaning & limits" footer. Generate it with:
 
 ```bash
-rielctl brief digest .riel/packet.md
+rielctl brief digest .riel/contract.md
 ```
 
 The digest is best-effort and quote-aware (no parser dependency); it proves

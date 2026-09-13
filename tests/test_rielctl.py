@@ -709,6 +709,33 @@ d
         rc2, out2, _ = run("brief", "validate", "mini.md")
         self.assertEqual(rc2, 0, out2)
 
+    def test_slice_carries_constraints_with_suffixed_heading(self):
+        # real template heading is "## Constraints (hard rules)"
+        self.CONTRACT = self.CONTRACT.replace(
+            "## Constraints\n", "## Constraints (hard rules)\n")
+        self._contract()
+        rc, out, _ = run("brief", "slice", ".riel/contract.md", "--phase", "F1")
+        self.assertEqual(rc, 0)
+        self.assertIn("## Constraints\n- no new deps", out)
+
+    def test_graph_prefers_execution_graph_section(self):
+        doc = (
+            "# Task: x\n\n## Objective\nWe need x\n\n## Context\n\n"
+            "```mermaid\nflowchart TD\n  Z1[\"RUN decoy\"] --> Z2[\"RUN d2\"]\n```\n\n"
+            "## Execution graph\n\n"
+            "```mermaid\nflowchart TD\n  S1[\"RUN real\"] --> G1{\"ok?\"}\n"
+            "  G1 -->|yes| END([Done])\n```\n\n"
+            "## Pre-registered claims\n- P1: p — verify with: true\n\n"
+            "## DO NOT\n- x\n"
+        )
+        path = os.path.join(self.tmp, "c.md")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(doc)
+        rc, out, _ = run("brief", "digest", path)
+        self.assertEqual(rc, 0)
+        self.assertIn("S1", out)       # the Execution graph block wins
+        self.assertNotIn("Z1", out)    # the decoy before it is ignored
+
     def test_slice_unknown_phase_errors(self):
         self._contract()
         rc, _, err = run("brief", "slice", ".riel/contract.md", "--phase", "F9")

@@ -98,14 +98,18 @@ Exit codes:
 - `ship`: exit 0 if the file is clean; exit 1 if it finds dense markers
   (the agent should fix before delivery).
 
-### Packets
+### Contracts & packets
 
 ```bash
+# the contract (the plan) — from a typed skeleton
 rielctl brief new --type feature --param name="reset flow" \
                   --param one_sentence="add password reset via email" \
-                  > .riel/packet.md
-rielctl brief validate .riel/packet.md
-rielctl brief digest   .riel/packet.md     # explicit text expansion of the graph
+                  > .riel/contract.md
+rielctl brief validate .riel/contract.md
+rielctl brief digest   .riel/contract.md   # explicit text expansion of the graph
+
+# a child's packet — one phase sliced from the contract
+rielctl brief slice .riel/contract.md --phase F2
 ```
 
 `brief new` searches templates in order:
