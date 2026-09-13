@@ -1,0 +1,11 @@
+name: riel
+version: 0.1.0
+description: "Riel — ledger/contract machinery as Hermes tools. Wraps a vendored rielctl (one ledger per worktree). The protocol prose ships as a skill tap, not here."
+author: Álvaro Lizama
+license: MIT
+homepage: https://github.com/alvarolizama/riel
+provides_tools:
+  - riel_note
+  - riel_seam
+  - riel_resume
+  - riel_todo

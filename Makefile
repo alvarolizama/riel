@@ -13,12 +13,14 @@
 #   make install BIN_DIR=/other/bin
 BIN_DIR ?= $(HOME)/.local/bin
 SKILLS_DIR ?= $(HOME)/Workspace/Skills
+PLUGINS_DIR ?= $(HOME)/.hermes/plugins
 
 SKILLS = riel-cli riel-ledger riel-contract riel-protocol riel-briefs riel-delegate
+PLUGIN_DIR = hermes_plugin/riel
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install skills uninstall test validate lint
+.PHONY: help install skills plugin-vendor plugin-link uninstall test validate digest lint
 
 ## help: list the available targets
 help:
@@ -38,6 +40,21 @@ skills:
 		mkdir -p $(SKILLS_DIR)/$$s && cp -R skills/$$s/. $(SKILLS_DIR)/$$s/; \
 	done
 	@echo "synced 6 skills -> $(SKILLS_DIR)/"
+
+## plugin-vendor: rebuild the plugin's vendored copy from skills/ (build artifact)
+plugin-vendor:
+	@rm -rf $(PLUGIN_DIR)/vendor
+	@mkdir -p $(PLUGIN_DIR)/vendor/riel-cli/scripts $(PLUGIN_DIR)/vendor/riel-briefs/templates
+	@cp skills/riel-cli/scripts/rielctl $(PLUGIN_DIR)/vendor/riel-cli/scripts/rielctl
+	@cp skills/riel-briefs/templates/*.md $(PLUGIN_DIR)/vendor/riel-briefs/templates/
+	@echo "vendored: rielctl + $(words $(wildcard skills/riel-briefs/templates/*.md)) templates -> $(PLUGIN_DIR)/vendor/"
+
+## plugin-link: symlink the plugin package into a Hermes plugins dir (dev)
+plugin-link:
+	@mkdir -p $(PLUGINS_DIR)
+	@ln -sfn $(CURDIR)/$(PLUGIN_DIR) $(PLUGINS_DIR)/riel
+	@echo "linked: $(PLUGINS_DIR)/riel -> $(CURDIR)/$(PLUGIN_DIR)"
+	@echo "enable it with: hermes plugins enable riel"
 
 ## uninstall: remove the rielctl symlink (deployed skills stay in place)
 uninstall:
@@ -61,7 +78,7 @@ digest:
 
 ## lint: byte-compile the Python tooling; shellcheck the shell scripts if present
 lint:
-	python3 -m compileall -q scripts skills/riel-cli/scripts/rielctl tests
+	python3 -m compileall -q scripts skills/riel-cli/scripts/rielctl tests $(PLUGIN_DIR)
 	@if command -v shellcheck >/dev/null 2>&1; then \
 		shellcheck scripts/*.sh; \
 	else \

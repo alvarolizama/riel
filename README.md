@@ -172,6 +172,31 @@ Verify: the skill must appear in the session's skill index (`skills_list`).
 Note the deployed copies are **copies**, not symlinks — re-run
 `make skills` after pulling new commits.
 
+### Hermes plugin (optional)
+
+The repo also ships a Hermes plugin package at `hermes_plugin/riel`: the
+ledger/contract machinery as four tools (`riel_note`, `riel_seam`,
+`riel_resume`, `riel_todo`) wrapping a **vendored** `rielctl`. The package is
+self-contained, so it never needs this checkout at runtime.
+
+| Piece | Command |
+|---|---|
+| The 6 skills as an indexed Hermes skill source | `hermes skills tap add alvarolizama/riel` |
+| The tools (pair them with the tap: the protocol prose is the skills) | `hermes plugins install alvarolizama/riel/hermes_plugin/riel` then `hermes plugins enable riel` |
+| Development: link this checkout instead of installing | `make plugin-vendor` + `make plugin-link` (`PLUGINS_DIR` overridable) |
+
+`vendor/` is a build artifact generated from `skills/` by `make plugin-vendor`
+and compared byte for byte in the test suite, so the repo stays the single
+source of truth. Note plugins are **per profile** (`$HERMES_HOME/plugins/`),
+unlike skills, which are shared through `skills.external_dirs`.
+`hermes_plugin/riel/README.md` documents how the plugin resolves the worktree's
+`.riel/` state (session cwd, never the Hermes process cwd).
+
+With the plugin active, its desktop half also puts an activity chip in the
+statusbar — `riel 4✓ 2? · next: <acción>` for the worktree in focus, read through
+the plugin's own backend (`GET /api/plugins/riel/ledger`). The desktop half is
+opt-in and app-level; see the plugin README for the three switches.
+
 ### Dependencies
 
 | Piece | Needed at | Requires |
@@ -180,7 +205,8 @@ Note the deployed copies are **copies**, not symlinks — re-run
 | `rielctl` (`skills/riel-cli/scripts/rielctl`) | runtime (loop/delegate tasks) | **Python 3, stdlib only** |
 | Task templates (`skills/riel-briefs/templates/`) | runtime | nothing — `rielctl` reads them directly |
 | `scripts/validate-mermaid.sh` | development (validate graph files) | Node + `mmdc`: `npm install -g @mermaid-js/mermaid-cli` |
-| `tests/test_rielctl.py` | development (run the suite) | Python 3, stdlib only |
+| `tests/test_rielctl.py`, `tests/test_plugin_vendor.py` | development (run the suite) | Python 3, stdlib only |
+| Hermes plugin package (`hermes_plugin/riel/`) | Hermes users (optional) | Hermes ≥ 0.21 + Python 3; `vendor/` carries its own `rielctl` |
 
 Optional. `rielctl brief validate` will *also* run `mmdc` on each graph if
 it finds it on PATH; without it, structural checks still run, just without
@@ -214,6 +240,8 @@ directly: `python3 <skills-root>/riel-cli/scripts/rielctl ...`.
 | `help` | list targets (default when you run bare `make`) |
 | `install` | symlink `rielctl` into `$(BIN_DIR)` (`~/.local/bin`) |
 | `skills` | sync the 6 skills to `$(SKILLS_DIR)` (deploy copies, not symlinks) |
+| `plugin-vendor` | rebuild `hermes_plugin/riel/vendor/` from `skills/` (build artifact) |
+| `plugin-link` | symlink the plugin package into `$(PLUGINS_DIR)` (`~/.hermes/plugins`) |
 | `test` | regression suite (unittest discovery) |
 | `validate` | parse every mermaid block with `mmdc` |
 | `digest` | print the explicit graph digest for README + specs + skills |
@@ -244,6 +272,11 @@ riel/
 │   ├── riel-briefs/     ← delegation briefs + pre-registered claims + templates/
 │   ├── riel-delegate/   ← delegation router + JSON output_schema
 │   └── riel-cli/        ← rielctl: ledger writer, packet + digest tooling
+├── hermes_plugin/     ← Hermes plugin package (machinery only, optional)
+│   ├── riel/            ← 4 tools + vendored rielctl/templates (self-contained)
+│   │   ├── dashboard/     ← backend del chip (GET /api/plugins/riel/ledger)
+│   │   └── desktop/       ← chip de actividad en el statusbar (opt-in)
+│   └── probe-session-cwd.py ← live probe of the Hermes load path (needs Hermes)
 ├── specs/             ← design contracts
 │   ├── spec-ledger-format.md    ← .riel/ledger.md format + rules
 │   ├── spec-contract-format.md  ← .riel/contract.md format (the plan)
@@ -252,7 +285,7 @@ riel/
 ├── scripts/           ← repo tooling
 │   ├── validate-mermaid.sh   ← validates every mermaid block with mmdc
 │   └── extract-mermaid.py    ← extracts mermaid blocks (regex, re.DOTALL)
-├── tests/             ← stdlib unittest regression suite (test_rielctl.py)
+├── tests/             ← stdlib unittest suite (test_rielctl.py, test_plugin_vendor.py)
 └── references/        ← evidence & design notes (public)
 ```
 
@@ -262,5 +295,19 @@ riel/
 make test     # or: python3 -m unittest discover -s tests -v
 ```
 
-Stdlib-only, subprocess-driven. 49 tests cover `rielctl note/seam/resume/todo/ship`,
-`brief new/validate/digest`, the graph checks, and `extract-mermaid.py` end-to-end.
+Stdlib-only, subprocess-driven. 75 tests cover `rielctl note/seam/resume/todo/ship`,
+`brief new/validate/digest`, the graph checks, and `extract-mermaid.py` end-to-end,
+plus the Hermes plugin package: vendoring hashes, manifest/schema/handler
+wiring, and the handlers end-to-end through the vendored copy.
+
+The Hermes-side load path (discovery, registration, session-cwd resolution,
+per-session isolation) needs a real Hermes install, so it is probed separately —
+run from a directory that is not a worktree:
+
+```bash
+# the same interpreter the `hermes` launcher execs
+hermes_dir="$(dirname "$(sed -n 's/^exec "\(.*\)\/hermes".*/\1/p' "$(command -v hermes)")")"
+"$hermes_dir/bin/python" hermes_plugin/probe-session-cwd.py
+```
+
+Any Python that can `import hermes_cli` works as well.
