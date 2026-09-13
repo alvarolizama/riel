@@ -1,4 +1,4 @@
-# Riel — rielctl installer
+# Riel — rielctl installer + repo tooling
 #
 # The 6 skills are plain markdown read by the agent from wherever they
 # are deployed (default: ~/Workspace/Skills). `rielctl` additionally
@@ -16,7 +16,14 @@ SKILLS_DIR ?= $(HOME)/Workspace/Skills
 
 SKILLS = riel-cli riel-ledger riel-contract riel-protocol riel-briefs riel-delegate
 
-.PHONY: install skills uninstall test
+.DEFAULT_GOAL := help
+
+.PHONY: help install skills uninstall test validate lint
+
+## help: list the available targets
+help:
+	@echo "Riel — make targets:"
+	@grep -hE '^## ' $(MAKEFILE_LIST) | sed -E 's/^## /  /'
 
 ## install: symlink rielctl into ~/.local/bin (PATH)
 install:
@@ -32,9 +39,31 @@ skills:
 	done
 	@echo "synced 6 skills -> $(SKILLS_DIR)/"
 
+## uninstall: remove the rielctl symlink (deployed skills stay in place)
 uninstall:
 	@rm -f $(BIN_DIR)/rielctl
 	@echo "removed $(BIN_DIR)/rielctl (deployed skills left in place)"
 
+## test: run the stdlib regression suite (discovery — picks up new test files)
 test:
-	python3 tests/test_rielctl.py
+	python3 -m unittest discover -s tests
+
+## validate: parse every mermaid block with mmdc (needs mermaid-cli on PATH)
+validate:
+	scripts/validate-mermaid.sh
+
+## digest: print the explicit graph digest for every skill, README and spec
+digest:
+	@for f in README.md specs/*.md skills/*/SKILL.md; do \
+		R="$$(python3 skills/riel-cli/scripts/rielctl digest "$$f" 2>/dev/null)"; \
+		if [ -n "$$R" ]; then printf '\n===== %s =====\n%s\n' "$$f" "$$R"; fi; \
+	done
+
+## lint: byte-compile the Python tooling; shellcheck the shell scripts if present
+lint:
+	python3 -m compileall -q scripts skills/riel-cli/scripts/rielctl tests
+	@if command -v shellcheck >/dev/null 2>&1; then \
+		shellcheck scripts/*.sh; \
+	else \
+		echo "shellcheck not found — skipped"; \
+	fi

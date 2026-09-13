@@ -14,8 +14,10 @@ Usage:
     rielctl resume
     rielctl todo
     rielctl ship    FILE...
+    rielctl digest  FILE [-o OUT]
     rielctl brief new [--type T] [--param k=v ...] [--list]
     rielctl brief validate FILE
+    rielctl brief digest FILE [-o OUT]
 """
 import argparse
 import json
@@ -26,7 +28,7 @@ import subprocess
 import sys
 import tempfile
 
-VERSION = "1.1.0"
+VERSION = "1.3.0"
 LEDGER_DIR = ".riel"
 LEDGER_PATH = os.path.join(LEDGER_DIR, "ledger.md")
 VERIFY_CMD = os.environ.get("RIEL_MMDC", "mmdc")
@@ -72,24 +74,15 @@ def read_ledger(path):
     except OSError:
         return out
     cur = None
+    headers = {
+        "## Goal": "goal", "## Source": "source", "## Phase": "phase",
+        "## Claims": "claims", "## Core": "core", "## Verified": "verified",
+        "## Open": "open", "## Next": "next",
+    }
     for line in text.splitlines():
-        if line.startswith("## Goal"):
-            cur = "goal"
-        elif line.startswith("## Source"):
-            cur = "source"
-        elif line.startswith("## Phase"):
-            cur = "phase"
-        elif line.startswith("## Claims"):
-            cur = "claims"
-        elif line.startswith("## Core"):
-            cur = "core"
-        elif line.startswith("## Verified"):
-            cur = "verified"
-        elif line.startswith("## Open"):
-            cur = "open"
-        elif line.startswith("## Next"):
-            cur = "next"
-        elif line.startswith("#") or line.startswith("## "):
+        if line.strip() in headers:
+            cur = headers[line.strip()]
+        elif line.startswith("#"):
             cur = None
         elif cur in ("goal", "source", "phase", "next"):
             if line.strip():
@@ -207,6 +200,14 @@ def cmd_note(args):
                 break
         if idx is None:
             print("no such open question: {}".format(needle), file=sys.stderr)
+            return 2
+        if args.check is None:
+            print(
+                "--close requires --check (the checkpoint that settled "
+                "{}); a question is closed against a checkpoint, never "
+                "dropped silently".format(needle),
+                file=sys.stderr,
+            )
             return 2
         st["open"].pop(idx)
 
@@ -427,7 +428,7 @@ def cmd_brief_new(args):
     try:
         result = render_template(text, params, strict=args.strict)
     except KeyError as exc:
-        print(str(exc), file=sys.stderr)
+        print(exc.args[0] if exc.args else str(exc), file=sys.stderr)
         return 2
     leftover = _PARAM_RE.findall(result)
     if leftover:
@@ -446,10 +447,178 @@ def cmd_brief_new(args):
     return 0
 
 
+_CLOSED_VERBS = ("READ", "EDIT", "CREATE", "RUN", "VERIFY", "ASK")
+_TOOL_NAMES = ("read_file", "write_file", "patch", "terminal", "clarify",
+               "search_files")
+
+
+def _first_mermaid(text):
+    """Return the body of the first ```mermaid block, or None."""
+    tag = "```mermaid"
+    i = text.find(tag)
+    if i == -1:
+        return None
+    i += len(tag)
+    j = text.find("```", i)
+    if j == -1:
+        return None
+    return text[i:j].strip()
+
+
+def mermaid_graph(block):
+    """Best-effort parse of a mermaid flowchart block → (nodes, edges).
+
+    nodes: {id: (shape_opener, label)}; edges: [(src, edge_label, dst)] in
+    authored order. Quote-aware, so `{{placeholders}}` inside labels do not
+    break bracketing. Not a full mermaid parser — just enough to expand a
+    Riel execution graph into explicit text.
+    """
+    nodes, i, n = {}, 0, len(block)
+    opener = {"[": "]", "(": ")", "{": "}"}
+    while i < n:
+        ch = block[i]
+        if ch == '"':
+            nxt = block.find('"', i + 1)
+            i = n if nxt == -1 else nxt + 1
+            continue
+        if ch.isalpha() or ch == "_":
+            j = i
+            while j < n and (block[j].isalnum() or block[j] == "_"):
+                j += 1
+            ident = block[i:j]
+            k = j
+            while k < n and block[k] == " ":
+                k += 1
+            if k < n and block[k] in opener:
+                closer = opener[block[k]]
+                buf, m = [], k + 1
+                while m < n:
+                    c2 = block[m]
+                    if c2 == '"':
+                        end = block.find('"', m + 1)
+                        if end == -1:
+                            m = n
+                            break
+                        buf.append(block[m + 1:end])
+                        m = end + 1
+                        continue
+                    if c2 == closer:
+                        break
+                    buf.append(c2)
+                    m += 1
+                label = ("".join(buf).strip().strip("[]").strip()
+                         .replace(chr(92) + "n", " "))
+                nodes.setdefault(ident, (block[k], label))
+                i = m + 1
+                continue
+            i = j
+            continue
+        i += 1
+    edges = []
+    for line in block.splitlines():
+        s = line.strip()
+        if not s or s.startswith(("flowchart", "graph", "%%", "style ",
+                                  "classDef", "class ", "subgraph", "end")):
+            continue
+        for m in re.finditer(
+            r"([A-Za-z_][A-Za-z0-9_]*)\s*(?:\[[^\]]*\]|\{[^}]*\}|\([^)]*\))?"
+            r"\s*--+>?\s*(?:\|([^|]*)\|\s*)?([A-Za-z_][A-Za-z0-9_]*)",
+            s,
+        ):
+            lbl = ((m.group(2) or "").strip().strip('"').strip()
+                   .replace(chr(92) + "n", " "))
+            edges.append((m.group(1), lbl, m.group(3)))
+    return nodes, edges
+
+
+def graph_back_edges(edges):
+    """Edges that close a cycle (u->v where v is an ancestor of u)."""
+    adj = {}
+    for u, _l, v in edges:
+        adj.setdefault(u, []).append((_l, v))
+    color, backs, roots = {}, [], []
+    for u, _l, v in edges:
+        if u not in roots:
+            roots.append(u)
+        if v not in roots:
+            roots.append(v)
+
+    def dfs(u):
+        color[u] = 1
+        for lbl, v in adj.get(u, ()):
+            c = color.get(v, 0)
+            if c == 1:
+                backs.append((u, lbl, v))
+            elif c == 0:
+                dfs(v)
+        color[u] = 2
+
+    for r in roots:
+        if color.get(r, 0) == 0:
+            dfs(r)
+    return backs
+
+
+def cmd_brief_digest(args):
+    with open(args.file, encoding="utf-8") as fh:
+        text = fh.read()
+    block = _first_mermaid(text)
+    if block is None:
+        print("no mermaid graph found in {}".format(args.file), file=sys.stderr)
+        return 1
+    nodes, edges = mermaid_graph(block)
+    out = []
+    out.append("Graph digest — explicit structure (the diagram stays for humans)")
+    out.append("")
+    out.append("Elements ({}):".format(len(nodes)))
+    for nid, (_shape, label) in nodes.items():
+        out.append("  {} — {}".format(nid, label))
+    out.append("")
+    out.append("Edges, authored order ({}):".format(len(edges)))
+    for u, lbl, v in edges:
+        out.append("  {} {} {}".format(
+            u, "=[{}]=>".format(lbl) if lbl else "->", v))
+    outgoing = {}
+    for u, lbl, v in edges:
+        outgoing.setdefault(u, []).append((lbl, v))
+    branches = {u: a for u, a in outgoing.items() if len({v for _l, v in a}) > 1}
+    if branches:
+        out.append("")
+        out.append("Branches (decision → labeled alternatives):")
+        for u, alts in branches.items():
+            out.append("  {} → {}".format(
+                u, " | ".join("{}: {}".format(l or "?", v) for l, v in alts)))
+    incoming = {v for _u, _l, v in edges}
+    source = {u for u, _l, _v in edges}
+    entries = [nid for nid in nodes if nid not in incoming] or ["(none)"]
+    terminals = [nid for nid in nodes if nid not in source] or ["(none)"]
+    out.append("")
+    out.append("Entry (no incoming): " + ", ".join(entries))
+    out.append("Terminals (no outgoing): " + ", ".join(terminals))
+    backs = graph_back_edges(edges)
+    if backs:
+        counter = re.search("< *[0-9]|>= *[0-9]", block)
+        guarded = ("  guards: yes" if counter
+                   else "  guards: NONE — add a bounded '< 3 / >= 3'")
+        out.append("Loops (back-edges): " + ", ".join(
+            "{}->{}".format(u, v) for u, _l, v in backs) + guarded)
+    out.append("")
+    out.append("Meaning & limits: a graph proves order, branches and loops only. "
+               "It does not prove a command ran, a gate passed, or the "
+               "deliverable exists — that lives in the gates and the ledger.")
+    result = "\n".join(out)
+    print(result)
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as fh:
+            fh.write(result + "\n")
+    return 0
+
+
 def cmd_brief_validate(args):
     with open(args.file, encoding="utf-8") as fh:
         text = fh.read()
     issues = []
+    warnings = []
 
     # Structure: nine sections in order
     headings = re.findall(r"^(#{1,2})\s+(.+)$", text, re.MULTILINE)
@@ -507,10 +676,14 @@ def cmd_brief_validate(args):
     if not mermaid_blocks:
         issues.append("no mermaid execution graph found")
     else:
-        all_nodes = re.findall(r'([A-Za-z_][A-Za-z0-9_]*)\[', mermaid_blocks[0])
-        ok_ids = {"S", "G", "W", "END", "START", "Q", "SELF", "DC", "APP", "REC", "FIX"}
-        bad_ids = [n for n in all_nodes if n.upper() not in ok_ids
-                   and not re.match(r"^(S|G|W)\d+", n)]
+        g = mermaid_blocks[0]
+        parsed_nodes, parsed_edges = mermaid_graph(g)
+        ok_ids = {"S", "G", "W", "END", "START", "Q", "SELF", "DC", "APP",
+                  "REC", "FIX", "ERR"}
+        bad_ids = [
+            nid for nid in parsed_nodes
+            if nid.upper() not in ok_ids and not re.match(r"^(S|G|W)\d+", nid)
+        ]
         if bad_ids:
             issues.append("non-predictable node ids: {}".format(sorted(set(bad_ids))))
         # A graph with nodes but no edges at all is degenerate
@@ -531,6 +704,50 @@ def cmd_brief_validate(args):
                 issues.append(
                     "decision node {!r} has no labeled outgoing edge".format(node)
                 )
+        # --- closed verb vocabulary on execution nodes (riel-contract) ---
+        bad_verbs = []
+        for nid, (shape, label) in parsed_nodes.items():
+            lab = label.strip()
+            m = re.match("[A-Za-z]+", lab)
+            verb = m.group(0).upper() if m else ""
+            if shape == "[" and verb not in _CLOSED_VERBS:
+                bad_verbs.append((nid, lab[:50]))
+            if verb == "ASK" and not re.match(
+                    r"ASK\[(irreversible|outside-claims|goal-changing)\]", lab):
+                issues.append(
+                    "ASK node {!r} must start with its trigger: "
+                    "ASK[irreversible|outside-claims|goal-changing]".format(nid))
+            if len(lab.split()) > 20:
+                warnings.append(
+                    "node {} label is {} tokens (keep <= 15-20)".format(
+                        nid, len(lab.split())))
+        if bad_verbs:
+            issues.append(
+                "execution node(s) not starting with a closed verb "
+                "(READ/EDIT/CREATE/RUN/VERIFY/ASK): {}".format(bad_verbs))
+        if "<br" in g:
+            issues.append(
+                "uses <br/> — mermaid v11 strict breaks on it; "
+                "use a line-break label")
+        if any(ln.strip().startswith("style ") for ln in g.splitlines()):
+            issues.append(
+                "execution graph carries `style` — a parsed-as-spec DAG must not")
+        labels = re.findall('"([^"]*)"', g)
+        found_tools = sorted({
+            t for label in labels
+            for t in _TOOL_NAMES
+            if t in re.findall("[A-Za-z_][A-Za-z0-9_]*", label)
+        })
+        if found_tools:
+            issues.append(
+                "tool name(s) in node labels — use semantic verbs: {}".format(
+                    found_tools))
+        # soft: a loop without a counter guard
+        if graph_back_edges(parsed_edges) and not re.search(
+                "< *[0-9]|>= *[0-9]", g):
+            warnings.append(
+                "graph has a loop but no counter guard (< 3 / >= 3) — "
+                "bounded retries prevent infinite loops")
 
     # if mmdc is available, try parsing each graph block
     if shutil.which(VERIFY_CMD) and mermaid_blocks:
@@ -554,6 +771,8 @@ def cmd_brief_validate(args):
         finally:
             shutil.rmtree(out_dir, ignore_errors=True)
 
+    for w in warnings:
+        print("WARN: {}".format(w), file=sys.stderr)
     if issues:
         print("INVALID packet {}:".format(args.file))
         for issue in issues:
@@ -589,7 +808,8 @@ def main(argv=None):
     n.add_argument("--confidence", type=int)
     n.add_argument("--open")
     n.add_argument("--settled-by")
-    n.add_argument("--close", type=int)
+    n.add_argument("--close", type=int,
+                   help="close open question N (requires --check/--by)")
     n.set_defaults(fn=cmd_note)
 
     s = sub.add_parser("seam", help="re-print ledger + due reminders")
@@ -605,6 +825,12 @@ def main(argv=None):
     h = sub.add_parser("ship", help="check outgoing file for dense markers")
     h.add_argument("files", nargs="+")
     h.set_defaults(fn=cmd_ship)
+
+    dg = sub.add_parser("digest",
+                        help="explicit text digest of a file's mermaid graph")
+    dg.add_argument("file")
+    dg.add_argument("--output", "-o")
+    dg.set_defaults(fn=cmd_brief_digest)
 
     b = sub.add_parser("brief", help="work with packets")
     bsub = b.add_subparsers(dest="bcmd", required=True)
@@ -624,6 +850,12 @@ def main(argv=None):
     bv = bsub.add_parser("validate", help="validate a packet file")
     bv.add_argument("file")
     bv.set_defaults(fn=cmd_brief_validate)
+
+    bd = bsub.add_parser("digest",
+                         help="print an explicit text digest of the graph")
+    bd.add_argument("file")
+    bd.add_argument("--output", "-o")
+    bd.set_defaults(fn=cmd_brief_digest)
 
     args = p.parse_args(argv)
     return args.fn(args)

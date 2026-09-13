@@ -8,6 +8,7 @@ Run:
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -18,12 +19,24 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 RIELCTL = os.path.join(REPO, "skills", "riel-cli", "scripts", "rielctl")
 BRIEFS_TEMPLATES = os.path.join(REPO, "skills", "riel-briefs", "templates")
+EXTRACT_MERMAID = os.path.join(REPO, "scripts", "extract-mermaid.py")
 
 
 def run(*argv, cwd=None):
     """Run rielctl and return (exit_code, stdout, stderr)."""
     proc = subprocess.run(
         [sys.executable, RIELCTL] + list(argv),
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+    )
+    return proc.returncode, proc.stdout, proc.stderr
+
+
+def run_script(script, *argv, cwd=None):
+    """Run a repo script and return (exit_code, stdout, stderr)."""
+    proc = subprocess.run(
+        [sys.executable, script] + list(argv),
         cwd=cwd,
         capture_output=True,
         text=True,
@@ -150,6 +163,26 @@ class NoteTests(TempDirTest):
         self.assertEqual(rc, 2)
         self.assertIn("no such open question", err)
 
+    def test_close_requires_check(self):
+        # a question is closed against a checkpoint, never dropped silently
+        run("note", "--goal", "g", "--next", "n")
+        run("note", "--open", "q1", "--settled-by", "t")
+        rc, _, err = run("note", "--close", "1")
+        self.assertEqual(rc, 2)
+        self.assertIn("requires --check", err)
+        # nothing was written — the open question is untouched
+        self.assertIn("q1", self.read_ledger())
+
+    def test_close_with_check_records_checkpoint(self):
+        run("note", "--goal", "g", "--next", "n")
+        run("note", "--open", "q1", "--settled-by", "t")
+        rc, out, _ = run("note", "--close", "1", "--check", "settled",
+                         "--by", "t")
+        self.assertEqual(rc, 0, out)
+        body = self.read_ledger()
+        self.assertNotIn("q1", body)
+        self.assertIn("✓01 settled", body)
+
 
 class TodoTests(TempDirTest):
     def test_todo_without_ledger_errors(self):
@@ -225,6 +258,134 @@ class SeamResumeShipTests(TempDirTest):
         self.assertEqual(rc, 1)
         self.assertIn("dense markers", out)
 
+    def test_ship_missing_file(self):
+        rc, _, err = run("ship", os.path.join(self.tmp, "nope.md"))
+        self.assertEqual(rc, 1)
+        self.assertIn("cannot read", err)
+
+
+class CLITests(TempDirTest):
+    def test_version(self):
+        rc, out, _ = run("--version")
+        self.assertEqual(rc, 0)
+        with open(RIELCTL, encoding="utf-8") as fh:
+            declared = re.search(r'VERSION = "([^"]+)"', fh.read()).group(1)
+        self.assertIn(declared, out)
+
+
+class GraphAndValidateTests(TempDirTest):
+    VALID = """# Task: x
+
+## Objective
+We need x
+
+## Context
+c
+
+## Constraints
+- r
+
+## Pre-registered claims
+- P1: a — verify with: true
+
+## Execution graph
+
+```mermaid
+flowchart TD
+  S1["RUN ls"] --> G1{"ok?"}
+  G1 -->|yes| END([Done])
+  G1 -->|no| S1
+```
+
+## Verification gates
+g
+
+## Deliverable
+d
+
+## DO NOT
+- x
+"""
+
+    def _write(self, name, content):
+        path = os.path.join(self.tmp, name)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        return path
+
+    def test_rejects_non_verb_execution_node(self):
+        bad = self.VALID.replace('S1["RUN ls"]', 'S1["Fetch it"]')
+        rc, out, _ = run("brief", "validate", self._write("b.md", bad))
+        self.assertEqual(rc, 1)
+        self.assertIn("closed verb", out)
+
+    def test_rejects_br_tag(self):
+        bad = self.VALID.replace('{"ok?"}', '{"ok?<br/>x"}')
+        rc, out, _ = run("brief", "validate", self._write("b.md", bad))
+        self.assertEqual(rc, 1)
+        self.assertIn("<br/>", out)
+
+    def test_rejects_style_in_execution_graph(self):
+        bad = self.VALID.replace('  G1 -->|no| S1\n',
+                                 '  G1 -->|no| S1\n  style S1 fill:#f00\n')
+        rc, out, _ = run("brief", "validate", self._write("b.md", bad))
+        self.assertEqual(rc, 1)
+        self.assertIn("style", out)
+
+    def test_rejects_tool_name_in_label(self):
+        bad = self.VALID.replace('S1["RUN ls"]', 'S1["RUN read_file x"]')
+        rc, out, _ = run("brief", "validate", self._write("b.md", bad))
+        self.assertEqual(rc, 1)
+        self.assertIn("tool name", out)
+
+    def test_warns_loop_without_counter(self):
+        rc, out, err = run("brief", "validate",
+                           self._write("ok.md", self.VALID))
+        self.assertEqual(rc, 0, out)
+        self.assertIn("WARN", err)
+
+    def test_digest_lists_structure(self):
+        path = self._write("ok.md", self.VALID)
+        rc, out, _ = run("brief", "digest", path)
+        self.assertEqual(rc, 0, out)
+        for marker in ("Elements", "Edges", "Branches", "Entry", "Terminals",
+                       "S1", "G1", "END"):
+            self.assertIn(marker, out)
+
+    def test_digest_writes_output_file(self):
+        path = self._write("ok.md", self.VALID)
+        outp = os.path.join(self.tmp, "digest.txt")
+        rc, _, _ = run("brief", "digest", path, "-o", outp)
+        self.assertEqual(rc, 0)
+        with open(outp, encoding="utf-8") as fh:
+            self.assertIn("Elements", fh.read())
+
+    def test_digest_without_graph_errors(self):
+        path = self._write("plain.md", "# Task: x\n\nno graph here\n")
+        rc, _, err = run("brief", "digest", path)
+        self.assertEqual(rc, 1)
+        self.assertIn("no mermaid", err)
+
+    def test_digest_top_level_any_file(self):
+        path = self._write("ok.md", self.VALID)
+        rc, out, _ = run("digest", path)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("Elements", out)
+
+    def test_rejects_ask_without_trigger(self):
+        bad = self.VALID.replace('S1["RUN ls"]',
+                                 'S1["ASK should we proceed?"]')
+        rc, out, _ = run("brief", "validate", self._write("b.md", bad))
+        self.assertEqual(rc, 1)
+        self.assertIn("ASK", out)
+
+    def test_accepts_ask_with_trigger(self):
+        ok = self.VALID.replace('S1["RUN ls"]',
+                                'S1["ASK[irreversible] proceed?"]')
+        rc, out, err = run("brief", "validate", self._write("ok.md", ok))
+        # the ASK node is valid; only the (unrelated) no-RUN-gate issue may fire
+        self.assertNotIn("must start with its trigger", out + err)
+
 
 class BriefTests(TempDirTest):
     MINIMAL_VALID = """# Task: x
@@ -292,6 +453,38 @@ d
         self.assertEqual(rc, 2)
         self.assertIn("missing --param", err)
 
+    def test_brief_new_strict_message_not_quoted(self):
+        # the message is a plain sentence, not repr()'d
+        rc, _, err = run(
+            "brief", "new", "--type", "feature",
+            "--strict", "--param", "name=x",
+        )
+        self.assertEqual(rc, 2)
+        self.assertNotIn("'missing --param", err)
+
+    def test_brief_new_output_writes_file(self):
+        out_path = os.path.join(self.tmp, "packet.md")
+        rc, _, err = run(
+            "brief", "new", "--type", "feature",
+            "--param", "name=reset flow",
+            "--param", "one_sentence=add reset",
+            "-o", out_path,
+        )
+        self.assertEqual(rc, 0, err)
+        with open(out_path, encoding="utf-8") as fh:
+            self.assertIn("# Task: reset flow", fh.read())
+
+    def test_brief_new_finds_project_template(self):
+        tdir = os.path.join(self.tmp, ".riel", "templates")
+        os.makedirs(tdir, exist_ok=True)
+        with open(os.path.join(tdir, "custom.md"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("# Task: {{name}}\n")
+        rc, out, err = run("brief", "new", "--type", "custom",
+                           "--param", "name=proj")
+        self.assertEqual(rc, 0, err)
+        self.assertIn("# Task: proj", out)
+
     def test_brief_new_unknown_type_errors(self):
         rc, _, err = run("brief", "new", "--type", "no-such")
         self.assertEqual(rc, 2)
@@ -341,6 +534,33 @@ d
             path = os.path.join(BRIEFS_TEMPLATES, name + ".md")
             rc, out, _ = run("brief", "validate", path)
             self.assertEqual(rc, 0, "%s: %s" % (name, out))
+
+
+class ExtractMermaidTests(TempDirTest):
+    def _write(self, name, content):
+        path = os.path.join(self.tmp, name)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        return path
+
+    def test_extracts_blocks_in_order(self):
+        md = self._write(
+            "doc.md",
+            "# t\n\n```mermaid\nflowchart TD\n  A --> B\n```\n\n"
+            "prose\n\n```mermaid\nflowchart LR\n  C --> D\n```\n",
+        )
+        out_dir = os.path.join(self.tmp, "out")
+        rc, _, err = run_script(EXTRACT_MERMAID, md, out_dir)
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(sorted(os.listdir(out_dir)), ["001.mmd", "002.mmd"])
+        with open(os.path.join(out_dir, "001.mmd"), encoding="utf-8") as fh:
+            self.assertIn("A --> B", fh.read())
+
+    def test_no_blocks_exits_zero(self):
+        md = self._write("plain.md", "just prose, no diagrams\n")
+        out_dir = os.path.join(self.tmp, "empty")
+        rc, _, _ = run_script(EXTRACT_MERMAID, md, out_dir)
+        self.assertEqual(rc, 0)
 
 
 if __name__ == "__main__":
