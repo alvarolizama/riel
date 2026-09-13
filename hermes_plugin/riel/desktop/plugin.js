@@ -22,6 +22,8 @@
 import { host, haptic, useValue } from '@hermes/plugin-sdk'
 import { Streamdown } from '@hermes/plugin-sdk'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@hermes/plugin-sdk'
+import { Popover, PopoverContent, PopoverTrigger } from '@hermes/plugin-sdk'
+import { ScrollArea } from '@hermes/plugin-sdk'
 import { jsx, jsxs } from 'react/jsx-runtime'
 import { useEffect, useState } from 'react'
 
@@ -40,14 +42,48 @@ function truncate(text, max) {
 
 /* ------------------------------------------------------------------ ledger */
 
-function LedgerChip({ ctx, ledger, busy, tool }) {
-  const onClick = () => {
-    haptic('tap')
-    const parts = []
-    parts.push(ledger ? `${truncate(ledger.goal, 120)} → ${truncate(ledger.next, 120)}` : 'Sin ledger en este worktree')
-    if (tool) parts.push(`${tool.name}${tool.error ? ' (error: ' + truncate(tool.error, 60) + ')' : ''}`)
-    host.notify({ kind: ledger ? 'info' : 'warning', message: parts.join(' · ') })
+/** The ledger's popover body: the same sections `rielctl seam` prints. */
+function LedgerPanel({ ledger, busy, tool }) {
+  const row = (label, value, valueClass) =>
+    jsxs('div', {
+      className: 'flex items-baseline justify-between gap-3 py-0.5',
+      children: [
+        jsx('span', { className: 'shrink-0 text-(--ui-text-quaternary)', children: label }),
+        jsx('span', { className: valueClass || 'text-right text-(--ui-text-secondary)', children: value })
+      ]
+    })
+
+  if (!ledger) {
+    return jsx('div', {
+      className: 'px-2 py-3 text-center text-xs text-(--ui-text-quaternary)',
+      children: 'Este worktree no tiene .riel/ledger.md'
+    })
   }
+
+  const stale = ledger.stale_secs == null ? '' : ` · hace ${Math.round(ledger.stale_secs / 60)} min`
+  return jsxs('div', {
+    className: 'flex flex-col gap-1.5 px-1 py-0.5 text-xs',
+    children: [
+      jsx('div', { className: 'font-medium text-(--ui-text-primary)', children: ledger.goal || '(sin goal)' }),
+      jsxs('div', { className: 'flex items-baseline gap-1.5 text-(--ui-text-secondary)', children: [
+        jsx('span', { className: 'text-(--ui-text-quaternary)', children: '→' }),
+        jsx('span', { children: ledger.next || '(sin next)' })
+      ]}),
+      jsx('div', { className: 'mt-1 border-t border-(--ui-stroke-secondary) pt-1.5' }),
+      row('Verificados', `${ledger.verified}${stale ? '' : ''}`, 'text-right tabular-nums text-primary'),
+      row('Abiertas', ledger.open, 'text-right tabular-nums ' + (ledger.open > 0 ? OPEN_CLASS : '')),
+      row('Claims', ledger.claims, 'text-right tabular-nums'),
+      busy
+        ? row('Turno', 'en curso' + (tool ? `: ${tool.name}` : ''), 'text-right')
+        : tool
+          ? row('Último tool', `${tool.name}${tool.duration_s != null ? ` (${tool.duration_s}s)` : ''}${tool.error ? ' — error' : ''}`, 'text-right')
+          : null
+    ]
+  })
+}
+
+function LedgerChip({ ledger, busy, tool }) {
+  const [open, setOpen] = useState(false)
 
   const title = () => {
     const lines = []
@@ -63,34 +99,54 @@ function LedgerChip({ ctx, ledger, busy, tool }) {
       const took = tool.duration_s == null ? '' : ` (${tool.duration_s}s)`
       lines.push(`Último tool: ${tool.name}${took}${tool.error ? ' — ' + truncate(tool.error, 80) : ''}`)
     }
+    lines.push('clic: ver el ledger')
     return lines.join('\n')
   }
 
-  return jsx('button', {
-    type: 'button',
-    title: title(),
-    className: CHIP_CLASS,
-    onClick,
-    children: jsxs('span', {
-      className: 'inline-flex items-center gap-1',
-      children: [
-        jsx('span', { children: 'Riel' }),
-        busy
-          ? jsx('span', { className: RUNNING_CLASS, children: '●' })
-          : null,
-        ledger
-          ? jsxs('span', {
-              className: 'inline-flex items-center gap-1 tabular-nums',
-              children: [
-                jsx('span', { className: CHECK_CLASS, children: `✓${ledger.verified}` }),
-                ledger.open > 0
-                  ? jsx('span', { className: OPEN_CLASS, children: `?${ledger.open}` })
-                  : null
-              ]
-            })
-          : null
-      ]
-    })
+  return jsxs(Popover, {
+    open,
+    onOpenChange: setOpen,
+    children: [
+      jsx(PopoverTrigger, {
+        key: 'trigger',
+        asChild: true,
+        children: jsx('button', {
+          type: 'button',
+          title: title(),
+          className: CHIP_CLASS,
+          children: jsxs('span', {
+            className: 'inline-flex items-center gap-1',
+            children: [
+              jsx('span', { children: 'Riel' }),
+              busy ? jsx('span', { className: RUNNING_CLASS, children: '●' }) : null,
+              ledger
+                ? jsxs('span', {
+                    className: 'inline-flex items-center gap-1 tabular-nums',
+                    children: [
+                      jsx('span', { className: CHECK_CLASS, children: `✓${ledger.verified}` }),
+                      ledger.open > 0
+                        ? jsx('span', { className: OPEN_CLASS, children: `?${ledger.open}` })
+                        : null
+                    ]
+                  })
+                : null
+            ]
+          })
+        })
+      }),
+      jsxs(PopoverContent, {
+        key: 'content',
+        align: 'end',
+        className: 'w-80 p-2',
+        children: [
+          jsx('div', {
+            className: 'px-1 pb-1 text-[0.6875rem] font-medium tracking-wide text-(--ui-text-quaternary)',
+            children: 'Ledger'
+          }),
+          jsx(ScrollArea, { className: 'max-h-72', children: jsx(LedgerPanel, { ledger, busy, tool }) })
+        ]
+      })
+    ]
   })
 }
 

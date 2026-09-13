@@ -75,9 +75,13 @@ function map() {
   return (globalThis.__RIEL_LISTENERS__ ||= new Map())
 }
 
-// Dialog/Streamdown stubs: they only need to EXIST for the import to resolve —
-// the chip tests assert the label and the click, not the dialog's pixels.
-const makeStub = (tag) => (props) => ({ tag, props: props || {} })
+// Dialog/Streamdown/Popover stubs: they only need to EXIST for the import to
+// resolve. `asChild` triggers (PopoverTrigger) must PASS THROUGH their child
+// so the walk still finds the real button — Radix does the same.
+const makeStub = (tag) => (props) => {
+  if (props && props.asChild && props.children) return props.children
+  return { tag, props: props || {} }
+}
 
 export const host = {
   state: {
@@ -106,6 +110,10 @@ export const DialogContent = makeStub('dialog-content')
 export const DialogHeader = makeStub('dialog-header')
 export const DialogTitle = makeStub('dialog-title')
 export const DialogDescription = makeStub('dialog-description')
+export const Popover = makeStub('popover')
+export const PopoverContent = makeStub('popover-content')
+export const PopoverTrigger = makeStub('popover-trigger')
+export const ScrollArea = makeStub('scroll-area')
 """
 
 REACT_STUB = """\
@@ -180,7 +188,7 @@ const render = () => {
 // Minimal React: function components arrive UNINVOKED — call them (depth-capped)
 // so the assertion walks real DOM-ish nodes, the same way React would.
 const instantiate = (node, depth = 0) => {
-  if (depth > 6 || !node || typeof node !== 'object') return node
+  if (depth > 8 || !node || typeof node !== 'object') return node
   if (typeof node.type === 'function') {
     return instantiate(node.type(node.props), depth + 1)
   }
@@ -188,14 +196,15 @@ const instantiate = (node, depth = 0) => {
   if (Array.isArray(children)) {
     return { ...node, props: { ...node.props, children: children.map((c) => instantiate(c, depth + 1)) } }
   }
-  if (children && typeof children === 'object' && typeof children.type === 'function') {
+  if (children && typeof children === 'object') {
     return { ...node, props: { ...node.props, children: instantiate(children, depth + 1) } }
   }
   return node
 }
 
-// The chips render as nested spans: [ [ledger-button], [contract-button, dialog] ].
-// Walk the tree for the FIRST button — the ledger chip owns the toast/click contract.
+// The chips render as nested spans. Walk for the FIRST button that has an
+// onClick handler OR is the ledger trigger (the Popover wraps it now — Radix
+// passes asChild through, but the stub doesn't, so we accept either shape).
 const findLedgerButton = (node) => {
   if (!node || typeof node !== 'object') return null
   if (node.type === 'button') return node
@@ -205,6 +214,8 @@ const findLedgerButton = (node) => {
       const found = findLedgerButton(child)
       if (found) return found
     }
+  } else if (children && typeof children === 'object') {
+    return findLedgerButton(children)
   }
   return null
 }
@@ -239,7 +250,9 @@ if (process.env.RIEL_TEST_SWITCH === '1') {
 }
 
 const current = switched || afterComplete || withActivity
-current.button.props.onClick()
+// The ledger button is now a PopoverTrigger (Radix owns the click): the
+// harness toggles the popover state cell directly instead of calling onClick.
+if (current.button.props.onClick) current.button.props.onClick()
 
 // The label is now nested spans — flatten to text for the assertions.
 const textOf = (node) => {
@@ -616,12 +629,11 @@ class ChipTest(unittest.TestCase):
         self.assertEqual(result["final_label"], "Riel")
         self.assertIn("Último tool: terminal", result["final_title"])
 
-    def test_ledger_click_reports_goal_and_tool(self):
-        """The LEDGER chip's click is the toast; the contract has its own chip."""
+    def test_ledger_click_opens_the_popover(self):
+        """The ledger chip opens a popover now (Radix trigger), not a toast."""
         result = self.run_chip(ledger=self.LEDGER, tool="terminal", complete=True)
-        self.assertTrue(result["tapped"])
-        self.assertIn("ship the chip", result["notified"]["message"])
-        self.assertIn("terminal", result["notified"]["message"])
+        self.assertFalse(result["tapped"], "no toast anymore — the popover is the UI")
+        self.assertIsNone(result["notified"])
 
     def test_background_session_tools_do_not_move_the_chip(self):
         """A tool in ANOTHER tile must not reach the focused chip's tooltip.
