@@ -1,7 +1,7 @@
 ---
 name: riel-cli
 description: "Use when Riel needs its mechanical helper — writes the ledger with the exact format, instantiates and validates packets, expands a graph digest, derives the session-todo mirror. The agent invokes it in RUN nodes instead of handwriting state files."
-version: 1.4.0
+version: 1.6.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -99,11 +99,17 @@ when the contract is missing.
 rielctl todo    # JSON array for the todo tool, derived from the ledger
 ```
 
-Reads the ledger and prints the session-todo items: Goal → root item,
-Phase → pending child, Next → the only `in_progress`, ?NN → `OPEN NN`
-pending, P# → `CLAIM:` pending, ✓NN → `DONE NN` completed. The todo is a
-projection — fix the ledger and regenerate the mirror; never hand-edit the
-todo into a divergent plan. Spec: `riel/specs/spec-todo-hermes.md`.
+Reads the ledger AND the contract (when present) and prints the
+session-todo items. Spec 6 v2 — the todo shows the whole plan:
+Goal → root item; **each contract phase → a row (`PHASE F1: …`) and each
+phase's steps → nested subtasks** (`parent` = the phase — the todo tool's
+own nesting); Next → the only `in_progress`; ?NN → `OPEN NN` pending;
+P# → `CLAIM:` pending; ✓NN → `DONE NN` completed. A phase is completed when
+its gate's ✓ exists; the phase owning the Next stays pending (the Next owns
+in_progress). Without a contract it degrades to the v1 mirror (single PHASE
+row). The todo is a projection — fix the ledger (or the contract) and
+regenerate the mirror; never hand-edit the todo into a divergent plan. Spec:
+`riel/specs/spec-todo-hermes.md`.
 
 **Injecting it (Hermes):** the mirror is complete only when the array reaches
 the session todo UI — pass it to the `todo_list` tool as

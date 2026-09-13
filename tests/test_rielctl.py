@@ -222,6 +222,94 @@ class TodoTests(TempDirTest):
         items = json.loads(out)
         self.assertEqual([i["id"] for i in items], ["goal"])
 
+    CONTRACT_V2 = """# Task: probe
+
+## Objective
+We need probar el todo v2
+
+## Context
+c
+
+## Pre-registered claims
+- P1: la cosa — verify with: make test
+
+## Execution graph
+
+```mermaid
+flowchart TD
+  F1["READ exports"] --> S1["EDIT plugin.js"]
+  S1 --> S2["RUN make test"]
+  S2 --> G1{"green?"}
+  G1 -->|no| S1
+  G1 -->|yes| F2["EDIT labels"]
+  F2 --> S3["RUN lint"]
+  S3 --> END([Done])
+```
+
+## Verification gates
+**Command:** `make test`
+
+## Deliverable
+d
+
+## DO NOT
+- x
+"""
+
+    def _write_contract(self):
+        d = os.path.join(self.tmp, ".riel")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "contract.md"), "w", encoding="utf-8") as fh:
+            fh.write(self.CONTRACT_V2)
+
+    def test_todo_with_contract_carries_phases_and_steps(self):
+        """Spec 6 v2: the todo shows the plan — phases as rows, steps nested."""
+        self._write_contract()
+        run("note", "--goal", "probar", "--next", "EDIT plugin.js")
+        rc, out, _ = run("todo")
+        self.assertEqual(rc, 0, out)
+        items = json.loads(out)
+        by_id = {i["id"]: i for i in items}
+        # phases as rows, in authored order
+        self.assertIn("phase-F1", by_id)
+        self.assertIn("phase-F2", by_id)
+        self.assertEqual(by_id["phase-F1"]["parent"], "goal")
+        self.assertIn("READ exports", by_id["phase-F1"]["content"])
+        # steps nested under their phase
+        self.assertEqual(by_id["step-F1-S1"]["parent"], "phase-F1")
+        self.assertEqual(by_id["step-F1-S1"]["content"], "EDIT plugin.js")
+        self.assertIn("step-F1-S2", by_id)                      # RUN make test
+        self.assertEqual(by_id["step-F2-S3"]["parent"], "phase-F2")
+        # gates and terminals are NOT steps
+        self.assertNotIn("step-F1-G1", by_id)
+        self.assertNotIn("step-F2-END", by_id)
+        # exactly one in_progress: the Next
+        self.assertEqual(sum(1 for i in items if i["status"] == "in_progress"), 1)
+        self.assertEqual(by_id["next"]["status"], "in_progress")
+
+    def test_todo_phase_completed_when_its_gate_is_verified(self):
+        self._write_contract()
+        run("note", "--goal", "probar", "--next", "EDIT labels")
+        run("note", "--check", "F1 gate", "--by", "make test")
+        rc, out, _ = run("todo")
+        items = json.loads(out)
+        by_id = {i["id"]: i for i in items}
+        self.assertEqual(by_id["phase-F1"]["status"], "completed")
+        # its steps completed too (the gate covers the phase)
+        self.assertEqual(by_id["step-F1-S1"]["status"], "completed")
+        self.assertEqual(by_id["step-F1-S2"]["status"], "completed")
+        # the active phase (owns the Next) stays pending
+        self.assertEqual(by_id["phase-F2"]["status"], "pending")
+        self.assertEqual(by_id["step-F2-S3"]["status"], "pending")
+
+    def test_todo_degrades_to_v1_without_contract(self):
+        run("note", "--goal", "g", "--phase", "F1 algo", "--next", "n")
+        rc, out, _ = run("todo")
+        items = json.loads(out)
+        ids = [i["id"] for i in items]
+        self.assertIn("phase", ids)          # v1 single phase row
+        self.assertNotIn("phase-F1", ids)    # no DAG-derived rows
+
 
 class SeamResumeShipTests(TempDirTest):
     def test_seam_without_ledger_errors(self):

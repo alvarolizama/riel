@@ -103,7 +103,7 @@ Four load-bearing defenses against execution error:
 | `riel-protocol` | **Trajectory** — functional grammar, persona, minimal surface on the first turn | ✅ skill v1.7 |
 | `riel-briefs` | **Delegation briefs** — self-contained packets: curated context + context-keyword index, verb-graph, pre-registered claims, executable gates, templates | ✅ skill v3.6 |
 | `riel-delegate` | **Delegation router** — plan, dispatch waves, JSON-schema'd returns, parent verifies | ✅ skill v1.3 |
-| `riel-cli` | **Tooling** — `rielctl` writes the ledger mechanically, instantiates/validates packets, expands the graph digest, derives the session-todo mirror, emits the context keywords | ✅ skill v1.4 |
+| `riel-cli` | **Tooling** — `rielctl` writes the ledger mechanically, instantiates/validates packets, expands the graph digest, derives the session-todo mirror (v2: phases + steps from the contract), emits the context keywords | ✅ skill v1.6 |
 
 Each component is independent and optional: a short task uses zero; a long
 loop may use all six. Use only the machinery the task earns.
@@ -294,7 +294,7 @@ riel/
 ├── specs/             ← design contracts
 │   ├── spec-ledger-format.md    ← .riel/ledger.md format + rules
 │   ├── spec-contract-format.md  ← .riel/contract.md format (the plan)
-│   ├── spec-todo-hermes.md      ← session-todo mirror (Hermes todo tool)
+│   ├── spec-todo-hermes.md      ← session-todo mirror v2 (phases + steps from the contract)
 │   └── spec-phase-advance.md    ← per-phase ledger
 ├── scripts/           ← repo tooling
 │   ├── validate-mermaid.sh   ← validates every mermaid block with mmdc
@@ -309,7 +309,7 @@ riel/
 make test     # or: python3 -m unittest discover -s tests -v
 ```
 
-Stdlib-only, subprocess-driven. 119 tests cover `rielctl note/seam/resume/todo/ship`,
+Stdlib-only, subprocess-driven. 153 tests cover `rielctl note/seam/resume/todo/ship`,
 `brief new/validate/digest`, the graph checks, and `extract-mermaid.py` end-to-end,
 plus the Hermes plugin package: vendoring hashes, manifest/schema/handler
 wiring, the handlers end-to-end through the vendored copy, the statusbar chip
