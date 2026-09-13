@@ -16,6 +16,10 @@ To **land a process on the fly** as a self-contained instruction for an
 agent/subagent: dispatch packets for `delegate_task`, execution specs with
 phases, prompts another agent runs without you.
 
+This skill owns the **contract** (the plan) and its format. The contract is
+written first, always — solo or delegated — at `.riel/contract.md`; a packet
+is the contract's **delegation form** (see below).
+
 If you need a **durable, reusable skill**, use `riel-contract` — this
 skill is for one-shot instructions.
 
@@ -24,6 +28,33 @@ skill is for one-shot instructions.
 **Agents have no memory of your conversation.** Every packet must be a
 standalone document. If the agent needs to ask "what do you mean?" — the
 packet is incomplete.
+
+## The contract comes first — solo or delegated
+
+Before any execution, and **before the ledger**, write the plan as a
+**contract** at `.riel/contract.md`, in the packet format below. This happens
+**always** — the contract is the plan, the ledger is the state, and the
+ledger is written from the contract. (A `fast` task — one step, no plan —
+needs neither.)
+
+- **Solo:** work the contract phase by phase; the ledger tracks state.
+- **Delegated:** the contract stays with the parent; each child receives a
+  **mini contract** — the contract narrowed to that child's phase (its
+  subgraph, gates, Deliverable, DO NOT) — as its packet. The **parent** keeps
+  and validates the ledger; the child never does. Slice it mechanically with
+  `rielctl brief slice .riel/contract.md --phase F#` (subgraph + FILL sections),
+  then complete the FILLs by hand.
+
+Seed the ledger from the contract, then iterate normally (`note`, `seam`,
+`todo`):
+
+```bash
+rielctl note --from-contract    # Goal <- Objective, Claims <- P#, Next <- entry, Phase <- first F#/W#
+```
+
+Before using the ledger, re-read the contract — never execute from the
+ledger or from memory alone.
+Full format + rules: `riel/specs/spec-contract-format.md`.
 
 ## Anchored opening
 
@@ -265,4 +296,5 @@ Content:
 - Worked example: `templates/example-password-reset.md`
 - Verb-graph syntax conventions (canonical): `riel-contract`
 - Opening conditions and functional grammar: `riel-protocol`
+- The contract (the plan) and its format: `riel/specs/spec-contract-format.md`
 - Delegation end-to-end (plan + dispatch + parent verification): `riel-delegate`

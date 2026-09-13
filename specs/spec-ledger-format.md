@@ -7,7 +7,7 @@ Applies to every task in `loop` mode (multi-file, multi-tool, multi-phase, or sp
 
 - `.riel/ledger.md` in the task worktree; goes into `.gitignore`.
 - **One workstream = one worktree = one ledger** (isolates parallel sessions; same lesson as git index races).
-- It is ephemeral: after the final push it may be deleted — the durable state already lives in the remote.
+- It is ephemeral: after the done-check it may be deleted — the plan lives in `.riel/contract.md`; the ledger is disposable state.
 
 ### Git hygiene (the ledger is local state, never a deliverable)
 
@@ -30,10 +30,10 @@ order.
 # Riel ledger
 
 ## Goal
-<one sentence: what "done" means — from the remote todo's title/objective>
+<one sentence: what "done" means — from the contract's objective>
 
 ## Source
-<remote system + identifier — e.g. todo:<slug>>
+<where the task came from — e.g. todo:<slug>>
 
 ## Phase
 <active phase derived from the DAG — e.g. "F2: CREATE router_test.exs">
@@ -60,7 +60,7 @@ order.
 | Field | Rule |
 |---|---|
 | Goal | One sentence; updated only if the goal changes |
-| Source | Optional; present only when the task came from a remote todo |
+| Source | Optional; present when the task came from a tracked item |
 | Phase | Derived from the DAG (spec-phase-advance); pointer to the active mini-ledger |
 | Claims | Pre-registered before the first action; P-ids; never edited after execution begins — a failed claim is refuted, not reinterpreted |
 | Core | Max 2 live items; change only via explicit swap; each with its defining fact |

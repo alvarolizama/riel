@@ -195,12 +195,12 @@ it without resolving the skill path. Run from the task's worktree root
 
 | Command | Does |
 |---|---|
-| `rielctl note …` | write/update `.riel/ledger.md` — goal, claims, core, checks, open, next |
+| `rielctl note …` | write/update `.riel/ledger.md` — goal, claims, core, checks, open, next; `--from-contract` seeds Goal/Phase/Claims/Next from `.riel/contract.md` |
 | `rielctl seam` | re-print the ledger + which invariants are due |
 | `rielctl resume` | post-gap bootstrap (ledger → invariants → mode → next) |
 | `rielctl todo` | session-todo mirror (JSON) derived from the ledger |
 | `rielctl ship FILE` | dense-register check before delivery |
-| `rielctl brief new` / `validate` | instantiate / structurally check a packet |
+| `rielctl brief new` / `validate` / `slice` | instantiate / structurally check / slice a phase into a mini packet |
 | `rielctl brief digest` · `rielctl digest` | explicit text digest of a graph |
 | `rielctl --version` · `--help` | version / usage |
 
@@ -246,11 +246,9 @@ riel/
 │   └── riel-cli/        ← rielctl: ledger writer, packet + digest tooling
 ├── specs/             ← design contracts
 │   ├── spec-ledger-format.md    ← .riel/ledger.md format + rules
-│   ├── spec-todo-contract.md    ← what the todo body must carry
+│   ├── spec-contract-format.md  ← .riel/contract.md format (the plan)
 │   ├── spec-todo-hermes.md      ← session-todo mirror (Hermes todo tool)
-│   ├── spec-pull-push.md        ← local↔remote protocol
-│   ├── spec-phase-advance.md    ← per-phase ledger
-│   └── spec-adapters.md         ← contract for remote task systems
+│   └── spec-phase-advance.md    ← per-phase ledger
 ├── scripts/           ← repo tooling
 │   ├── validate-mermaid.sh   ← validates every mermaid block with mmdc
 │   └── extract-mermaid.py    ← extracts mermaid blocks (regex, re.DOTALL)

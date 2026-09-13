@@ -55,14 +55,15 @@ only what dispatching itself adds.
    with a literal definition of done; subagents get disjoint file scopes,
    grouped in waves (Wave 2 depends on Wave 1). Any cross-edge between
    scopes means they are NOT parallel-safe.
-2. **BRIEF** — load `riel-briefs`. Every child gets a standalone packet:
-   anchored goal, curated context, exact files, verification command,
-   DO NOT section.
+2. **BRIEF** — load `riel-briefs`. The parent contract (`.riel/contract.md`)
+   is sliced into a **mini contract** per child: a standalone packet with
+   anchored goal, curated context, exact files, verification command, DO NOT.
 3. **DISPATCH** — waves, bounded and disjoint (rules below).
-4. **VERIFY** — load `riel-ledger`. Decompose the phase's definition of
-   done into criteria; run each gate yourself; `confidence X/20` per
-   criterion; borderline (< 12/20) re-sampled with variation before
-   accepting. Children are self-reports, not ground truth.
+4. **VERIFY** — load `riel-ledger`. The **parent owns and validates the
+   ledger**; children never do. Decompose the phase's definition of done
+   into criteria; run each gate yourself; `confidence X/20` per criterion;
+   borderline (< 12/20) re-sampled with variation before accepting.
+   Children are self-reports, not ground truth.
 5. **INTEGRATE** — commits per logical concern (rules below).
 
 ## DISPATCH — the operational rules this skill owns
@@ -78,6 +79,14 @@ only what dispatching itself adds.
 - **Always dispatch with `output_schema`.** The child's final response is
   JSON validated against this schema — not prose. The parent parses fields;
   it does not read narratives.
+- **The ledger is the parent's — its only writer.** Children never touch a
+  ledger, not even their own; they are not a layer of it. The parent owns
+  `.riel/ledger.md`, seeds it from the contract (`rielctl note
+  --from-contract`) and validates it itself.
+- **The child's JSON carries everything the parent needs to write the
+  ledger:** per gate `command` + `exit_code` + `passed` + `coverage`; per
+  claim `verified` + `evidence`. The parent turns those into ✓NN entries
+  (verifier + coverage) — the child writes nothing durable.
 
 ```json
 {
@@ -175,6 +184,7 @@ starts clean.
 - [ ] Every child gets a self-contained packet (riel-briefs)
 - [ ] Packet includes pre-registered claims (P-ids) that cannot be edited post-execution
 - [ ] Dispatch uses output_schema — child returns JSON, not prose
+- [ ] Children never touch a ledger; the parent is its only writer (seed: `rielctl note --from-contract`)
 - [ ] Children never commit, never run the full suite
 - [ ] Parent verified: decomposed criteria + `confidence X/20` per criterion (riel-ledger)
 - [ ] Failures triaged A/B/C; B fixed by parent, not re-dispatched

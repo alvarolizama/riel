@@ -18,8 +18,8 @@ task state** after every seam: a tool call, a file change, a context
 compaction, an hours-long gap. This is the heart of the Riel framework.
 
 **Local-first:** this skill operates entirely inside the task worktree.
-It does NOT depend on any remote task system. Remote sync is an adapter's
-job — see "Remote systems" at the end.
+It depends on no remote task system. The plan it navigates lives in
+`.riel/contract.md` (spec-contract-format); the ledger holds the state.
 
 ## When to use
 
@@ -38,7 +38,10 @@ verified; hours passed and you cannot remember where you left off.
 - Lives at the worktree root; goes in `.gitignore`.
 - **One workstream = one worktree = one ledger** — parallel sessions never
   share a ledger (same lesson as git index races).
-- Ephemeral: after the final writeback it may be deleted.
+- Ephemeral: after the done-check it may be deleted.
+- **Before using the ledger, read `.riel/contract.md`** — the contract is
+  the plan; the ledger is state. Never execute from the ledger or from
+  memory alone (spec-contract-format).
 
 ### Git hygiene — the ledger must never be committed
 
@@ -58,7 +61,7 @@ The ledger is local state, not a deliverable. When working inside a repo:
 <one sentence: what "done" means>
 
 ## Source
-<optional: remote system + identifier — e.g. todo:<slug>>
+<optional: where the task came from — e.g. todo:<slug>>
 
 ## Phase
 <active phase if the task has phases — e.g. "F2: CREATE router_test.exs">
@@ -87,7 +90,7 @@ The ledger is local state, not a deliverable. When working inside a repo:
 |---|---|
 | Goal | One sentence; updated only if the goal changes |
 | Claims | Pre-registered before first action; P-ids; **never edited after execution begins** — a failed claim is refuted, not reinterpreted |
-| Source | Optional; present when the task came from a remote todo |
+| Source | Optional; present when the task came from a tracked item |
 | Phase | Derived from the phases graph (riel-contract); pointer to the active phase |
 | Core | Max 2 live items; change only via explicit swap; each with its defining fact |
 | Verified | Numbered ✓NN, append-only; never deleted or renumbered; critical checkpoints may carry `confidence X/20` |
@@ -148,7 +151,7 @@ flowchart TD
   ADV --> W
   PH -->|"no phases left"| DC["done-check: every Goal\nline maps to a ✓NN"]
   DC -->|"missing"| W
-  DC -->|"all covered"| WB["Adapter writeback if Source:\nmark checkboxes + status done"]
+  DC -->|"all covered"| DONE([Done])
 ```
 
 ### Opening (loop mode only)
@@ -158,7 +161,7 @@ flowchart TD
    without looking, you don't understand the task yet; go back before
    opening anything.
 1. State the Goal — one sentence, what "done" means. If the task came from
-   a remote todo, set Source and pull Goal from its title.
+   a tracked item, set Source and take Goal from its title.
 2. Set Core — max 2 live items with their defining facts.
 3. Set Phase if the task has a phases graph — the first phase without a
    checkbox.
@@ -340,15 +343,15 @@ Notice what is NOT here: no narrative of what was tried, no dead ends, no
 plan. Those live in the conversation. The ledger is only what another
 session needs to pick up exactly here.
 
-## Remote systems (adapter responsibility, not this skill's)
+## The plan: `.riel/contract.md`
+
+The ledger is **state**; the **plan** it navigates lives in
+`.riel/contract.md` — the phases graph, pre-registered claims and gates,
+written first (spec-contract-format). The ledger's `Phase` pointer selects
+which of the contract's phases is live (spec-phase-advance).
 
 This skill is local-only: `Goal` / `Core` / `Verified` / `Open` / `Next`
-live in `.riel/ledger.md` and are never pushed to a remote task system.
-`Source` only records where the task came from (e.g. `todo:<slug>`).
-
-Connecting to a remote system — reading the task in, marking its
-checkboxes, setting status done — is the job of a per-system adapter. The
-adapter contract lives in `riel/specs/spec-adapters.md`.
+live in `.riel/ledger.md`. Remote task systems are out of scope.
 
 ## Pitfalls
 
@@ -371,7 +374,7 @@ adapter contract lives in `riel/specs/spec-adapters.md`.
 ## Checklist
 
 - [ ] Mode classified: fast/full/loop — ledger only for loop
-- [ ] `.riel/ledger.md` opened with Goal + Core + Next (Source if remote)
+- [ ] `.riel/ledger.md` opened with Goal + Core + Next (Source if any)
 - [ ] One worktree per workstream
 - [ ] `.riel/` ignored in the worktree's `.gitignore`; `git status` clean of it before any commit
 - [ ] Ledger re-read at every seam
@@ -381,13 +384,12 @@ adapter contract lives in `riel/specs/spec-adapters.md`.
 - [ ] Every ?NN has a settled-by
 - [ ] Next never empty
 - [ ] Done-check passed: every Goal line maps to a ✓NN
-- [ ] Adapter writeback done if Source was set
+- [ ] Contract `.riel/contract.md` written before execution (spec-contract-format)
 
 ## Cross-references
 
+- Local contract (the plan): `riel/specs/spec-contract-format.md`
 - Local format and rules: `riel/specs/spec-ledger-format.md`
 - Session-todo mirror (Spec 6, `rielctl todo`): `riel/specs/spec-todo-hermes.md`
-- Pull/push protocol: `riel/specs/spec-pull-push.md`
 - Phase advancement: `riel/specs/spec-phase-advance.md`
-- System adapters: `riel/specs/spec-adapters.md`
 - The phases graph the ledger navigates: `riel-contract`

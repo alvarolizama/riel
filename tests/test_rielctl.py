@@ -563,5 +563,158 @@ class ExtractMermaidTests(TempDirTest):
         self.assertEqual(rc, 0)
 
 
+class ContractSeedTests(TempDirTest):
+    CONTRACT = """# Task: x
+
+## Objective
+We need the thing to work.
+
+## Context
+c
+
+## Constraints
+- r
+
+## Pre-registered claims
+- P1: a — verify with: true
+- P2: b — verify with: cmd
+
+## Execution graph
+
+```mermaid
+flowchart TD
+  F1["EDIT a.ex — x"] --> F2["RUN test"]
+  F2 --> G1{"green?"}
+  G1 -->|no| F1
+  G1 -->|yes| END([Done])
+```
+
+## Verification gates
+g
+
+## Deliverable
+d
+
+## DO NOT
+- x
+"""
+
+    def _write_contract(self, content=None):
+        d = os.path.join(self.tmp, ".riel")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "contract.md"), "w", encoding="utf-8") as fh:
+            fh.write(content if content is not None else self.CONTRACT)
+
+    def test_seeds_goal_phase_claims_next(self):
+        self._write_contract()
+        rc, _, err = run("note", "--from-contract")
+        self.assertEqual(rc, 0, err)
+        body = self.read_ledger()
+        self.assertIn("## Goal\nWe need the thing to work.", body)
+        self.assertIn("## Phase\nEDIT a.ex — x", body)
+        self.assertIn("- P1: a — verify with: true", body)
+        self.assertIn("- P2: b — verify with: cmd", body)
+        # entry node ignores the back-edge F1 <- G1
+        self.assertIn("## Next\nEDIT a.ex — x", body)
+
+    def test_missing_contract_errors(self):
+        rc, _, err = run("note", "--from-contract")
+        self.assertEqual(rc, 2)
+        self.assertIn("no contract found", err)
+
+    def test_explicit_flag_overrides_seed(self):
+        self._write_contract()
+        run("note", "--from-contract", "--goal", "explicit")
+        self.assertIn("## Goal\nexplicit", self.read_ledger())
+
+    def test_seed_idempotent_on_claims(self):
+        self._write_contract()
+        run("note", "--from-contract")
+        run("note", "--from-contract")
+        self.assertEqual(
+            self.read_ledger().count("- P1: a — verify with: true"), 1)
+
+    def test_from_contract_custom_path(self):
+        path = os.path.join(self.tmp, "c.md")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(self.CONTRACT)
+        rc, _, _ = run("note", "--from-contract", path)
+        self.assertEqual(rc, 0)
+        self.assertIn("## Goal\nWe need the thing to work.", self.read_ledger())
+
+
+class SliceTests(TempDirTest):
+    CONTRACT = """# Task: login flow
+
+## Objective
+We need the login to validate both providers.
+
+## Context
+c
+
+## Constraints
+- no new deps
+
+## Pre-registered claims
+- P1: both providers validate — verify with: mix test auth_test.exs
+
+## Execution graph
+
+```mermaid
+flowchart TD
+  F1["EDIT a.ex — x"] --> F2["RUN mix test"]
+  F2 --> G1{"green?"}
+  G1 -->|no| F1
+  G1 -->|yes| END([Done])
+```
+
+## Verification gates
+g
+
+## Deliverable
+d
+
+## DO NOT
+- x
+"""
+
+    def _contract(self):
+        d = os.path.join(self.tmp, ".riel")
+        os.makedirs(d, exist_ok=True)
+        path = os.path.join(d, "contract.md")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(self.CONTRACT)
+        return path
+
+    def test_slice_keeps_phase_subgraph_only(self):
+        self._contract()
+        rc, out, _ = run("brief", "slice", ".riel/contract.md", "--phase", "F2")
+        self.assertEqual(rc, 0)
+        self.assertIn('F2["RUN mix test"]', out)
+        self.assertIn('G1{"green?"}', out)
+        self.assertNotIn("F1", out)      # does not cross into the other phase
+        self.assertNotIn("|no|", out)    # back-edge to F1 dropped
+
+    def test_slice_default_first_phase(self):
+        self._contract()
+        rc, out, _ = run("brief", "slice", ".riel/contract.md")
+        self.assertEqual(rc, 0)
+        self.assertIn('F1["EDIT a.ex — x"]', out)
+
+    def test_slice_output_validates(self):
+        self._contract()
+        rc, _, _ = run("brief", "slice", ".riel/contract.md",
+                       "--phase", "F2", "-o", "mini.md")
+        self.assertEqual(rc, 0)
+        rc2, out2, _ = run("brief", "validate", "mini.md")
+        self.assertEqual(rc2, 0, out2)
+
+    def test_slice_unknown_phase_errors(self):
+        self._contract()
+        rc, _, err = run("brief", "slice", ".riel/contract.md", "--phase", "F9")
+        self.assertEqual(rc, 2)
+        self.assertIn("no phase node", err)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -10,6 +10,7 @@ Usage:
                     [--check WHAT --by CMD --covering SCOPE [--confidence N]]
                     [--open Q --settled-by TEST]
                     [--close N --check WHAT --by CMD [--covering SCOPE]]
+                    [--from-contract [PATH]]   # seed from .riel/contract.md
     rielctl seam
     rielctl resume
     rielctl todo
@@ -18,6 +19,7 @@ Usage:
     rielctl brief new [--type T] [--param k=v ...] [--list]
     rielctl brief validate FILE
     rielctl brief digest FILE [-o OUT]
+    rielctl brief slice  FILE [--phase F#] [-o OUT]
 """
 import argparse
 import json
@@ -31,6 +33,7 @@ import tempfile
 VERSION = "1.3.0"
 LEDGER_DIR = ".riel"
 LEDGER_PATH = os.path.join(LEDGER_DIR, "ledger.md")
+CONTRACT_PATH = os.path.join(LEDGER_DIR, "contract.md")
 VERIFY_CMD = os.environ.get("RIEL_MMDC", "mmdc")
 
 DENSE_RE = re.compile(r"[✓?]\d+|↔|⇒|⊕|λ|Σ")
@@ -131,8 +134,88 @@ def entry_number(prefix, seq):
     return max(nums, default=0) + 1
 
 
+def _section(text, name):
+    """Body of '## <name>' up to the next '## ' heading (or EOF)."""
+    m = re.search(
+        r"^##\s+" + re.escape(name) + r"\s*$\n(.*?)(?=^##\s|\Z)",
+        text, re.S | re.M,
+    )
+    return m.group(1).strip() if m else ""
+
+
+def _first_paragraph(body):
+    """First non-empty paragraph of a section, collapsed to one line."""
+    for para in re.split(r"\n\s*\n", body):
+        para = para.strip()
+        if para:
+            return " ".join(l.strip() for l in para.splitlines() if l.strip())
+    return ""
+
+
+def seed_from_contract(path):
+    """Read a contract.md -> (fields, warnings).
+
+    Best-effort: Goal <- Objective, Claims <- P#, Phase <- first F#/W#
+    node, Next <- the graph's entry node (no incoming edge). Returns
+    (None, [...]) when the file is missing.
+    """
+    fields = {"goal": "", "phase": "", "claims": [], "next": ""}
+    warnings = []
+    if not os.path.exists(path):
+        return None, ["no contract found at {}".format(path)]
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+
+    goal = _first_paragraph(_section(text, "Objective"))
+    if goal:
+        fields["goal"] = goal
+    else:
+        warnings.append("no ## Objective found")
+
+    for line in _section(text, "Pre-registered claims").splitlines():
+        s = line.strip()
+        if re.match(r"^-?\s*P\d+", s):
+            fields["claims"].append(re.sub(r"^-\s*", "", s))
+    if not fields["claims"]:
+        warnings.append("no P# claims found")
+
+    block = _first_mermaid(text)
+    if block:
+        nodes, edges = mermaid_graph(block)
+        backs = set(graph_back_edges(edges))
+        incoming = {v for u, l, v in edges if (u, l, v) not in backs}
+        for nid, (_shape, label) in nodes.items():
+            if nid not in incoming:
+                fields["next"] = label
+                break
+        for nid, (_shape, label) in nodes.items():
+            if re.match(r"^[FW]\d+$", nid):
+                fields["phase"] = label
+                break
+        if not fields["next"]:
+            warnings.append("graph has no entry node")
+    else:
+        warnings.append("no ## Execution graph (mermaid) found")
+    return fields, warnings
+
+
 def cmd_note(args):
     st = read_ledger(args.ledger)
+
+    if args.from_contract is not None:
+        fields, warns = seed_from_contract(args.from_contract)
+        if fields is None:
+            print(warns[0], file=sys.stderr)
+            return 2
+        for w in warns:
+            print("seed: " + w, file=sys.stderr)
+        for key in ("goal", "phase", "next"):
+            if fields[key] and not st[key]:
+                st[key] = fields[key]
+        for c in fields["claims"]:
+            if c not in st["claims"]:
+                st["claims"].append(c)
+
     fresh = not st["goal"] and not st["verified"] and not st["next"]
 
     if args.goal is not None:
@@ -614,6 +697,110 @@ def cmd_brief_digest(args):
     return 0
 
 
+def _first_phase_id(nodes):
+    for nid in nodes:
+        if re.match(r"^[FW]\d+$", nid):
+            return nid
+    return None
+
+
+def _phase_subgraph(nodes, edges, start):
+    """Node ids reachable from `start` without crossing into another phase."""
+    phase_ids = {nid for nid in nodes if re.match(r"^[FW]\d+$", nid)}
+    adj = {}
+    for u, _l, v in edges:
+        adj.setdefault(u, []).append(v)
+    keep, stack = set(), [start]
+    while stack:
+        nid = stack.pop()
+        if nid in keep:
+            continue
+        keep.add(nid)
+        for v in adj.get(nid, ()):
+            if v in phase_ids and v != start:
+                continue
+            if v not in keep:
+                stack.append(v)
+    return keep
+
+
+def cmd_brief_slice(args):
+    """Slice one phase of a contract into a mini packet (assisted).
+
+    Mechanical: the phase subgraph (nodes reachable from the phase without
+    crossing into another phase). Context / Gates / Deliverable are left as
+    FILL for the parent to complete — the packet format is not per-phase.
+    """
+    with open(args.file, encoding="utf-8") as fh:
+        text = fh.read()
+    block = _first_mermaid(text)
+    if block is None:
+        print("no mermaid graph found in {}".format(args.file), file=sys.stderr)
+        return 1
+    nodes, edges = mermaid_graph(block)
+
+    start = args.phase or _first_phase_id(nodes)
+    if not start or start not in nodes:
+        print("no phase node {!r} in {}".format(args.phase, args.file),
+              file=sys.stderr)
+        return 2
+
+    keep = _phase_subgraph(nodes, edges, start)
+    closers = {"[": "]", "(": ")", "{": "}"}
+    task_line = ""
+    for ln in text.splitlines():
+        if ln.startswith("# Task:"):
+            task_line = ln[len("# Task:"):].strip()
+            break
+
+    body = [
+        "# Task: {} — {}".format(task_line or "(task)", nodes[start][1]),
+        "",
+        "## Objective",
+        _section(text, "Objective") or "<FILL>",
+        "",
+        "## Context",
+        "<!-- FILL: only what this phase needs -->",
+        "",
+        "## Constraints",
+        _section(text, "Constraints") or "<FILL>",
+        "",
+        "## Pre-registered claims",
+        _section(text, "Pre-registered claims") or "<FILL>",
+        "",
+        "## Execution graph",
+        "",
+        "```mermaid",
+        "flowchart TD",
+    ]
+    for nid, (opener, label) in nodes.items():
+        if nid in keep:
+            body.append('  {}{}"{}"{}'.format(
+                nid, opener, label, closers[opener]))
+    for u, lbl, v in edges:
+        if u in keep and v in keep:
+            body.append("  {} -->|{}| {}".format(u, lbl, v) if lbl
+                        else "  {} --> {}".format(u, v))
+    body += [
+        "```",
+        "",
+        "## Verification gates",
+        "<!-- FILL: command / expected / on failure for this phase -->",
+        "",
+        "## Deliverable",
+        "<!-- FILL -->",
+        "",
+        "## DO NOT",
+        _section(text, "DO NOT") or "<FILL>",
+    ]
+    result = "\n".join(body)
+    print(result)
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as fh:
+            fh.write(result + "\n")
+    return 0
+
+
 def cmd_brief_validate(args):
     with open(args.file, encoding="utf-8") as fh:
         text = fh.read()
@@ -678,11 +865,11 @@ def cmd_brief_validate(args):
     else:
         g = mermaid_blocks[0]
         parsed_nodes, parsed_edges = mermaid_graph(g)
-        ok_ids = {"S", "G", "W", "END", "START", "Q", "SELF", "DC", "APP",
+        ok_ids = {"S", "G", "W", "F", "END", "START", "Q", "SELF", "DC", "APP",
                   "REC", "FIX", "ERR"}
         bad_ids = [
             nid for nid in parsed_nodes
-            if nid.upper() not in ok_ids and not re.match(r"^(S|G|W)\d+", nid)
+            if nid.upper() not in ok_ids and not re.match(r"^(S|G|W|F)\d+", nid)
         ]
         if bad_ids:
             issues.append("non-predictable node ids: {}".format(sorted(set(bad_ids))))
@@ -810,6 +997,10 @@ def main(argv=None):
     n.add_argument("--settled-by")
     n.add_argument("--close", type=int,
                    help="close open question N (requires --check/--by)")
+    n.add_argument("--from-contract", nargs="?", const=CONTRACT_PATH,
+                   default=None, metavar="PATH",
+                   help="seed goal/phase/claims/next from a contract.md "
+                        "(default: .riel/contract.md)")
     n.set_defaults(fn=cmd_note)
 
     s = sub.add_parser("seam", help="re-print ledger + due reminders")
@@ -856,6 +1047,14 @@ def main(argv=None):
     bd.add_argument("file")
     bd.add_argument("--output", "-o")
     bd.set_defaults(fn=cmd_brief_digest)
+
+    bs = bsub.add_parser("slice",
+                         help="slice one phase into a mini packet")
+    bs.add_argument("file")
+    bs.add_argument("--phase",
+                    help="phase node id (default: first F#/W#)")
+    bs.add_argument("--output", "-o")
+    bs.set_defaults(fn=cmd_brief_slice)
 
     args = p.parse_args(argv)
     return args.fn(args)
