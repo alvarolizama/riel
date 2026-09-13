@@ -153,6 +153,7 @@ const contributions = []
 // contract exists (RIEL_TEST_CONTRACT=1); /ledger always answers the fixture.
 const restStub = async (path) => {
   restCalls += 1
+  if (path.startsWith('/ledger')) globalThis.__RIEL_LAST_LEDGER_URL__ = path
   if (path.startsWith('/contract')) {
     return process.env.RIEL_TEST_CONTRACT === '1'
       ? { present: true, markdown: '# Task: x' }
@@ -227,6 +228,26 @@ if (tool) emit('tool.start', { payload: { name: tool, tool_id: 't1' }, session_i
 await tick()
 const withActivity = render()
 
+// session.info events: the focused session's own cwd report, then optionally a
+// FOREIGN session reporting a different one — the chip must keep the focused's.
+// Each report is followed by a re-render (the stub's setState does not schedule
+// one) plus a tool.complete to bump the ledger-refetch revision.
+if (process.env.RIEL_TEST_INFO_CWD) {
+  const sid = process.env.RIEL_TEST_INFO_SESSION || 's1'
+  emit('session.info', { payload: { cwd: process.env.RIEL_TEST_INFO_CWD }, session_id: sid })
+  await tick()
+  emit('tool.complete', { payload: { name: 'refetch', tool_id: 't2' }, session_id: sid })
+  await tick()
+  render()
+}
+if (process.env.RIEL_TEST_FOREIGN_INFO) {
+  emit('session.info', { payload: { cwd: process.env.RIEL_TEST_FOREIGN_INFO }, session_id: 's9' })
+  await tick()
+  emit('tool.complete', { payload: { name: 'refetch2', tool_id: 't3' }, session_id: 's1' })
+  await tick()
+  render()
+}
+
 let afterComplete = null
 if (tool && process.env.RIEL_TEST_COMPLETE === '1') {
   emit('tool.complete', { payload: { name: tool, tool_id: 't1', duration_s: 1.4 }, session_id: 's1' })
@@ -294,6 +315,11 @@ console.log(JSON.stringify({
   defaultEnabled: plugin.defaultEnabled,
   areas: contributions.map((c) => c.area),
   order: chip.order,
+  session_cwd: (() => {
+    // The cwd the chips resolved to, captured from the last /ledger rest call
+    const m = /worktree=([^&]+)/.exec(globalThis.__RIEL_LAST_LEDGER_URL__ || '')
+    return m ? decodeURIComponent(m[1]) : null
+  })(),
   first_label: labelOf(firstAfterFetch),
   activity_label: labelOf(withActivity),
   activity_title: withActivity.button.props.title,
@@ -670,6 +696,26 @@ class ChipTest(unittest.TestCase):
         result = self.run_chip(ledger=self.LEDGER, extra_env={"RIEL_TEST_SWITCH": "1"})
         self.assertFalse(result["final_label"].startswith("Riel: Ledger ✓"),
                          "the previous session's ledger survived the focus switch")
+
+    def test_session_info_cwd_is_authoritative_per_session(self):
+        """The worktree comes from session.info, keyed per session.
+
+        A background session reporting a DIFFERENT cwd must not move the
+        focused chip's worktree; the focused session's own session.info does.
+        """
+        # focused s1 reported /wt/riel -> chip reads that worktree
+        mine = self.run_chip(ledger=self.LEDGER, extra_env={"RIEL_TEST_INFO_CWD": "/wt/riel"})
+        self.assertTrue(mine["session_cwd"].endswith("/wt/riel"))
+        # s2 reports /wt/other: stored, but the focused chip keeps /wt/riel
+        other = self.run_chip(
+            ledger=self.LEDGER,
+            extra_env={"RIEL_TEST_INFO_CWD": "/wt/riel", "RIEL_TEST_FOREIGN_INFO": "/wt/other"},
+        )
+        self.assertTrue(other["session_cwd"].endswith("/wt/riel"),
+                        "a background session's cwd leaked into the focused chip")
+        # now s1 itself reports a move -> the focused chip follows
+        moved = self.run_chip(ledger=self.LEDGER, extra_env={"RIEL_TEST_INFO_CWD": "/wt/moved"})
+        self.assertTrue(moved["session_cwd"].endswith("/wt/moved"))
 
 
 if __name__ == "__main__":

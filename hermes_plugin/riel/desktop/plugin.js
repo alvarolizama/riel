@@ -10,11 +10,13 @@
 // text-(--ui-text-tertiary) at 0.6875rem, color ONLY on the ✓/? marks
 // (primary / amber-600, the two accents the bar itself uses).
 //
-// Session-awareness: both chips follow the FOCUSED chat. `host.state.cwd` is a
+// Session-awareness: the chips follow the FOCUSED chat. `host.state.cwd` is a
 // workspace-global that can still hold the previous conversation's folder right
-// after a switch, and background sessions can move it. So every read is gated
-// on `focusedSessionId`, activity events are filtered by `session_id`, and a
-// focus switch clears the stale state before refetching.
+// after a switch (the app's own store docs it), and a detached session never
+// republishes it. So the authoritative worktree comes from the gateway's
+// `session.info` events (cwd + session_id), captured per focused session and
+// re-adopted on focus switch; `host.state.cwd` is only the seed while nothing
+// better has arrived.
 //
 // Opt-in: `defaultEnabled: false` ships it inventory-only in Capabilities →
 // Plugins, mirroring the agent half's `plugins.enabled` gate in config.yaml.
@@ -320,12 +322,31 @@ function ContractChip({ ctx, cwd, sessionId }) {
 /* ------------------------------------------------------------------- host */
 
 function RielChips({ ctx }) {
-  const cwd = useValue(host.state.cwd)
+  const globalCwd = useValue(host.state.cwd)
   const busy = useValue(host.state.busy)
   const focusedId = useValue(host.state.focusedSessionId)
   const [status, setStatus] = useState(null)
   const [tool, setTool] = useState(null)
   const [revision, setRevision] = useState(0)
+  // Authoritative cwd PER session, from `session.info` events. Keyed by the
+  // session that reported it, so a switch never shows another conversation's
+  // folder: the map only answers for the focused session.
+  const [cwdBySession, setCwdBySession] = useState({})
+  const focusedCwd = (focusedId && cwdBySession[focusedId]) || ''
+  const cwd = focusedCwd || globalCwd
+
+  // session.info: the gateway telling us a session's real cwd (and branch).
+  // Stored under the REPORTING session's id — background sessions included,
+  // their entry just never gets read while another session is focused.
+  useEffect(() => {
+    const off = host.onEvent('session.info', event => {
+      const sid = event && event.session_id
+      const cwd = event && event.payload && event.payload.cwd
+      if (!sid || !cwd) return
+      setCwdBySession(prev => (prev[sid] === cwd ? prev : { ...prev, [sid]: cwd }))
+    })
+    return off
+  }, [])
 
   // Activity: the app's gateway event tap, FILTERED to the focused session.
   useEffect(() => {
