@@ -199,6 +199,11 @@ live activity while a turn runs (`riel ● <tool> · …`, from the gateway's
 `tool.start` / `tool.complete` events). The desktop half is opt-in and
 app-level; see the plugin README for the three switches.
 
+The plugin also carries the `pre_verify` gate: a turn that edited code inside a
+Riel worktree does not close while its ledger has claims and no ✓ carrying
+evidence — the rule `riel-ledger` states, enforced by the runtime. Bounded
+(one nudge per turn by default) and opt-out per worktree (no ledger, no gate).
+
 ### Dependencies
 
 | Piece | Needed at | Requires |
@@ -275,7 +280,7 @@ riel/
 │   ├── riel-delegate/   ← delegation router + JSON output_schema
 │   └── riel-cli/        ← rielctl: ledger writer, packet + digest tooling
 ├── hermes_plugin/     ← Hermes plugin package (machinery only, optional)
-│   ├── riel/            ← 4 tools + vendored rielctl/templates (self-contained)
+│   ├── riel/            ← tools + gate + vendored rielctl/templates (self-contained)
 │   │   ├── dashboard/     ← backend del chip (GET /api/plugins/riel/ledger)
 │   │   └── desktop/       ← chip de actividad en el statusbar (opt-in)
 │   └── probe-session-cwd.py ← live probe of the Hermes load path (needs Hermes)
@@ -297,12 +302,14 @@ riel/
 make test     # or: python3 -m unittest discover -s tests -v
 ```
 
-Stdlib-only, subprocess-driven. 96 tests cover `rielctl note/seam/resume/todo/ship`,
+Stdlib-only, subprocess-driven. 119 tests cover `rielctl note/seam/resume/todo/ship`,
 `brief new/validate/digest`, the graph checks, and `extract-mermaid.py` end-to-end,
 plus the Hermes plugin package: vendoring hashes, manifest/schema/handler
 wiring, the handlers end-to-end through the vendored copy, the statusbar chip
 rendered by node against a stubbed SDK (labels, tooltip, click, and the refetch
-a finished tool triggers) and the backend routes through a real FastAPI app.
+a finished tool triggers), the backend routes through a real FastAPI app, and
+the `pre_verify` gate's decision table (worktree resolution, counters,
+self-throttling, and its opt-out rules).
 
 The Hermes-side load path (discovery, registration, session-cwd resolution,
 per-session isolation) needs a real Hermes install, so it is probed separately —

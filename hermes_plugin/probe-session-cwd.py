@@ -10,7 +10,10 @@ What it proves, against a real Hermes install:
   2. dispatching a tool through the real registry resolves the worktree from
      the **session cwd record**, not from this process's cwd;
   3. two sessions in different worktrees never touch each other's ledger;
-  4. bad input returns error JSON instead of raising.
+  4. bad input returns error JSON instead of raising;
+  5. the `pre_verify` gate fires through Hermes' own hook dispatch
+     (`get_pre_verify_continue_message`) and closes once a ✓ with evidence is
+     in the ledger.
 
 Usage (run from a directory that is NOT either worktree):
 
@@ -21,12 +24,14 @@ Usage (run from a directory that is NOT either worktree):
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 PLUGIN = REPO / "hermes_plugin" / "riel"
+RIELCTL = PLUGIN / "vendor" / "riel-cli" / "scripts" / "rielctl"
 
 
 def _dispatch(registry, tool: str, args: dict, task: str) -> dict:
@@ -35,9 +40,21 @@ def _dispatch(registry, tool: str, args: dict, task: str) -> dict:
     return json.loads(raw if isinstance(raw, str) else json.dumps(raw))
 
 
+def _seed(worktree: str, *argv) -> None:
+    """Write ledger entries with the vendored rielctl."""
+    subprocess.run(
+        [sys.executable, str(RIELCTL), *argv],
+        cwd=worktree,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+
 def main() -> int:
     home = tempfile.mkdtemp(prefix="hermes-probe-home-")
     work_a = tempfile.mkdtemp(prefix="riel-session-a-")
+    gate_tree = tempfile.mkdtemp(prefix="riel-gate-")
     work_b = tempfile.mkdtemp(prefix="riel-session-b-")
     cwd_before = os.getcwd()
     # The probe may be run from a directory that legitimately has its own ledger
@@ -50,11 +67,14 @@ def main() -> int:
         plugins_root.mkdir(parents=True)
         os.symlink(PLUGIN, plugins_root / "riel")
 
-        from hermes_cli.plugins import PluginManager
+        from hermes_cli.plugins import get_plugin_manager
         from tools.registry import registry
         from tools.terminal_tool import get_session_cwd, record_session_cwd
 
-        manager = PluginManager()
+        # THE manager the runtime uses (module-level lookups like has_hook go
+        # through it) — a private PluginManager() would register into an object
+        # nothing else consults.
+        manager = get_plugin_manager()
         manifests = manager._scan_directory(plugins_root, source="user")
         if len(manifests) != 1:
             print(f"FAIL: expected 1 manifest, found {len(manifests)}", file=sys.stderr)
@@ -66,7 +86,7 @@ def main() -> int:
             print(f"FAIL: registration error: {getattr(loaded, 'error', 'no record')}", file=sys.stderr)
             return 1
         print(f"discovery : {manifest.name} {manifest.version} ({manifest.source})")
-        print(f"registered: {sorted(loaded.tools_registered)}")
+        print(f"registered: {sorted(loaded.tools_registered)} + hooks {sorted(loaded.hooks_registered)}")
 
         record_session_cwd("probe-a", work_a)
         record_session_cwd("probe-b", work_b)
@@ -96,11 +116,46 @@ def main() -> int:
         bad = _dispatch(registry, "riel_seam", {"worktree": "/nope/nope"}, "probe-a")
         assert "error" in bad, bad
         print(f"bad input  -> error JSON: {bad['error']}")
-        print("\nOK: discovery, registry dispatch, session cwd resolution and isolation verified")
+
+        # --- the pre_verify gate, through Hermes' own hook dispatch ---------
+        from hermes_cli.plugins import get_pre_verify_continue_message
+
+        _seed(gate_tree, "note", "--goal", "gate probe",
+              "--claim", "P1: la cosa", "--verify-with", "make test")
+        payload = {
+            "session_id": "probe-a",
+            "platform": "desktop",
+            "model": "m",
+            "coding": True,
+            "changed_paths": [str(Path(gate_tree) / "lib" / "a.ex")],
+        }
+        nudge = get_pre_verify_continue_message(attempt=0, **payload)
+        print(f"gate       -> {nudge.splitlines()[0][:88] if nudge else 'NO NUDGE'}")
+        assert nudge and os.path.realpath(gate_tree) in nudge, nudge
+
+        throttled = get_pre_verify_continue_message(attempt=1, **payload)
+        assert throttled is None, throttled
+        print("gate       -> no insiste dos veces (gate_attempts=1 por defecto)")
+
+        untracked = tempfile.mkdtemp(prefix="riel-untracked-")
+        try:
+            assert get_pre_verify_continue_message(
+                attempt=0, **{**payload, "changed_paths": [str(Path(untracked) / "a.py")]}
+            ) is None
+        finally:
+            shutil.rmtree(untracked, ignore_errors=True)
+        print("gate       -> no toca worktrees sin .riel/ledger.md")
+
+        _seed(gate_tree, "note", "--check", "el gate corrió", "--by", "probe-session-cwd.py")
+        assert get_pre_verify_continue_message(attempt=0, **payload) is None
+        print("gate       -> cierra el turno cuando hay un ✓ con evidencia")
+
+        print("\nOK: discovery, registry dispatch, session cwd resolution, per-session")
+        print("    isolation and the pre_verify gate verified")
         return 0
     finally:
         os.chdir(cwd_before)
-        for path in (home, work_a, work_b):
+        for path in (home, work_a, work_b, gate_tree):
             shutil.rmtree(path, ignore_errors=True)
 
 

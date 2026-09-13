@@ -95,6 +95,25 @@ Dos asimetrías que conviene tener presentes: la mitad desktop es **app-level**
 Electron), y el backend Python se importa al arrancar la sesión del gateway —
 un plugin recién enlazado no sirve rutas hasta la sesión siguiente.
 
+## El gate (`pre_verify`)
+
+Riel dice que un checkpoint ✓ solo existe con el gate real detrás; hasta ahora
+era prosa. El hook lo vuelve condición del turno: si un turno **editó código**
+dentro de un worktree con `.riel/ledger.md` y ese ledger tiene claims sin ningún
+✓ con evidencia, el plugin devuelve `{"action": "continue", "message": …}` y el
+agente sigue en vez de cerrar.
+
+| Límite | Cómo |
+|---|---|
+| Opt-in por worktree | sin `.riel/ledger.md` encima de los archivos editados no hay aviso: no es un nag global |
+| Un solo aviso por turno | `plugins.entries.riel.settings.gate_attempts` (default 1); por encima de eso Hermes corta en `agent.max_verify_nudges` (3) |
+| Nunca bloquea | cualquier fallo (sin ledger, sin `rielctl`, timeout, ledger ilegible) devuelve `None` y el turno cierra |
+| Apagable | `plugins.entries.riel.settings.gate: false` |
+
+Qué worktree se juzga: primero el de los **archivos editados** (un turno puede
+editar otro repo), y si ninguno es un worktree con ledger, el cwd de la sesión.
+El ✓ cuenta como evidencia cuando su línea trae `— verified by:`.
+
 ## Verificación
 
 ```bash

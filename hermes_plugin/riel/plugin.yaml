@@ -1,6 +1,6 @@
 name: riel
-version: 0.1.0
-description: "Riel — ledger/contract machinery as Hermes tools. Wraps a vendored rielctl (one ledger per worktree). The protocol prose ships as a skill tap, not here."
+version: 0.2.0
+description: "Riel — ledger/contract machinery as Hermes tools plus the pre_verify gate (a turn that edited code in a Riel worktree does not close without a verified checkpoint). The protocol prose ships as a skill tap, not here."
 author: Álvaro Lizama
 license: MIT
 homepage: https://github.com/alvarolizama/riel
@@ -9,3 +9,8 @@ provides_tools:
   - riel_seam
   - riel_resume
   - riel_todo
+provides_hooks:
+  - pre_verify
+config_schema:
+  gate: {type: bool, default: true, description: "Enforce the Riel gate: after a turn that edited code in a Riel worktree, keep going while the ledger has no verified checkpoint."}
+  gate_attempts: {type: int, default: 1, description: "How many times the gate may nudge per turn (Hermes caps pre_verify continues at agent.max_verify_nudges)."}
