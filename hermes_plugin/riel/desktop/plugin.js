@@ -240,7 +240,13 @@ function ContractDialog({ open, onOpenChange, ctx, cwd, sessionId }) {
     }
     return jsx('div', {
       className: 'max-h-[70vh] overflow-y-auto rounded-md border border-(--ui-stroke-secondary) bg-(--ui-background) p-4 text-sm',
-      children: jsx(Streamdown, { children: contract.markdown })
+      children: jsx(Streamdown, {
+        // mermaid is OFF by default in Streamdown (context default `void 0` —
+        // the fence then falls through to a plain code block). Passing the
+        // options object turns the lazy diagram renderer on.
+        mermaid: {},
+        children: contract.markdown
+      })
     })
   }
 

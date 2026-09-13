@@ -104,7 +104,11 @@ export const haptic = () => {
 }
 export const useValue = (atom) => (atom && typeof atom.get === 'function' ? atom.get() : null)
 
-export const Streamdown = makeStub('streamdown')
+export const Streamdown = (props) => {
+  globalThis.__RIEL_STREAMDOWN_PROPS__ = props || {}
+  if (props && props.asChild && props.children) return props.children
+  return { tag: 'streamdown', props: props || {} }
+}
 export const Dialog = makeStub('dialog')
 export const DialogContent = makeStub('dialog-content')
 export const DialogHeader = makeStub('dialog-header')
@@ -339,6 +343,13 @@ console.log(JSON.stringify({
   })(),
   check_class: checkClassOf(current),
   contract_visible: contractVisible,
+  streamdown_mermaid: (() => {
+    // The stub records Streamdown's props whenever it renders. The dialog's
+    // body (with the contract markdown) renders it via instantiate above when
+    // a contract exists — if the dialog passed the option, it is on record.
+    if (process.env.RIEL_TEST_CONTRACT !== '1') return null
+    return Boolean(globalThis.__RIEL_STREAMDOWN_PROPS__ && 'mermaid' in globalThis.__RIEL_STREAMDOWN_PROPS__)
+  })(),
   final_label: labelOf(current),
   final_title: current.button.props.title,
   rest_calls: restCalls,
@@ -639,6 +650,17 @@ class ChipTest(unittest.TestCase):
     def test_contract_chip_appears_when_there_is_one(self):
         result = self.run_chip(ledger=self.LEDGER, extra_env={"RIEL_TEST_CONTRACT": "1"})
         self.assertTrue(result["contract_visible"])
+
+    def test_streamdown_renders_mermaid(self):
+        """Streamdown ships with mermaid OFF (context default void 0) — the
+        contract dialog must pass the mermaid option or the graph stays a
+        plain code block. Asserted at the source level: the option is on the
+        Streamdown call inside the contract dialog."""
+        source = (DESKTOP / "plugin.js").read_text(encoding="utf-8")
+        dialog_body = source.split("function ContractDialog")[1].split("\nfunction ")[0]
+        self.assertIn("mermaid", dialog_body,
+                      "the contract dialog does not pass the mermaid option to Streamdown")
+        self.assertIn("mermaid: {}", dialog_body)
 
     def test_long_next_is_not_dumped_into_the_bar(self):
         """The next action lives in the tooltip now — the bar stays short."""
