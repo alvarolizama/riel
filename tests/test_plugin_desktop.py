@@ -642,7 +642,7 @@ class ChipTest(unittest.TestCase):
 
     def test_idle_chip_shows_counters(self):
         result = self.run_chip(ledger=self.LEDGER)
-        self.assertEqual(result["final_label"], "Riel: Ledger ✓3 ?1")
+        self.assertEqual(result["final_label"], "Riel: Ledger wire the statusbar ✓3 ?1")
         self.assertIn("--ui-text-tertiary", result["activity_class"])
         self.assertIn("text-primary", result["check_class"], "the ✓ carries the color, not the label")
 
@@ -672,15 +672,18 @@ class ChipTest(unittest.TestCase):
         self.assertIn("mermaid: {}", dialog_body)
 
     def test_long_next_is_not_dumped_into_the_bar(self):
-        """The next action lives in the tooltip now — the bar stays short."""
+        """The step shows in the bar but TRUNCATED — a 200-char next stays short."""
         ledger = dict(self.LEDGER, next="x" * 200)
         result = self.run_chip(ledger=ledger)
-        self.assertEqual(result["final_label"], "Riel: Ledger ✓3 ?1")
-        self.assertIn("x" * 60, result["final_title"])
+        self.assertIn("x" * 30, result["final_label"])      # the step is there
+        self.assertTrue(result["final_label"].endswith("?1"))  # counters still last
+        self.assertLessEqual(len(result["final_label"]), 60)   # bar stays short
+        self.assertIn("x" * 60, result["final_title"])         # full text in tooltip
 
     def test_running_turn_pulses(self):
         result = self.run_chip(ledger=self.LEDGER, busy=True, tool="terminal")
         self.assertIn("●", result["activity_label"])
+        self.assertIn("terminal", result["activity_label"], "the live tool names itself in the bar")
         self.assertIn("animate-pulse", result["activity_running_class"], "the running dot pulses")
         self.assertIn("Turno en curso: terminal", result["activity_title"])
 

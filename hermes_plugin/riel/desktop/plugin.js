@@ -30,6 +30,7 @@ import { useEffect, useState } from 'react'
 const POLL_MS = 5000
 const NEXT_MAX_CHARS = 40
 const TOOL_MAX_CHARS = 18
+const STEP_MAX_CHARS = 34
 const CHIP_CLASS = 'px-1.5 text-[0.6875rem] text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) transition-colors'
 const CHECK_CLASS = 'text-primary'
 const OPEN_CLASS = 'text-amber-600'
@@ -132,8 +133,26 @@ function LedgerPanel({ ledger, busy, tool }) {
   })
 }
 
+/** The chip's live segment: what is happening right now / what is next.
+ *
+ *  - turn running: the LIVE tool name (the user's "turno corriendo ¿de qué?")
+ *  - idle with a Next: the ledger's next step, truncated — the plan's cursor
+ *  - idle without Next: the phase, or nothing (the modal carries the detail)
+ */
+function chipStep(ledger, busy, tool) {
+  if (busy) {
+    return tool
+      ? { text: truncate(tool.running ? tool.name : `${tool.name} ✓`, STEP_MAX_CHARS), live: true }
+      : { text: 'pensando', live: true }
+  }
+  if (ledger && ledger.next) return { text: truncate(ledger.next, STEP_MAX_CHARS), live: false }
+  if (ledger && ledger.phase) return { text: truncate(ledger.phase, STEP_MAX_CHARS), live: false }
+  return null
+}
+
 function LedgerChip({ ledger, busy, tool }) {
   const [open, setOpen] = useState(false)
+  const step = chipStep(ledger, busy, tool)
 
   const title = () => {
     const lines = []
@@ -168,6 +187,12 @@ function LedgerChip({ ledger, busy, tool }) {
           children: [
             jsx('span', { children: 'Riel: Ledger' }),
             busy ? jsx('span', { className: RUNNING_CLASS, children: '●' }) : null,
+            step
+              ? jsx('span', {
+                  className: step.live ? 'text-primary' : 'text-(--ui-text-quaternary)',
+                  children: step.text
+                })
+              : null,
             ledger
               ? jsxs('span', {
                   className: 'inline-flex items-center gap-1 tabular-nums',
