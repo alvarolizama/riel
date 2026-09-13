@@ -1,8 +1,17 @@
-// Riel — desktop half: a statusbar chip with the live ledger of the current worktree.
+// Riel — desktop half: a statusbar chip with the live ledger of the current
+// worktree AND what the agent is doing right now.
 //
-// Data path: host.state.cwd (the app's worktree) → ctx.rest('/ledger') → the
-// plugin's own Python backend → the vendored `rielctl todo` mirror. The
-// renderer never reads the filesystem.
+// Two data paths:
+//   * state  — host.state.cwd → ctx.rest('/ledger') → the plugin's own Python
+//     backend → the vendored `rielctl todo` mirror (polled, and refetched the
+//     moment a tool finishes, so the counters catch up fast).
+//   * activity — host.onEvent('tool.start' | 'tool.complete'), the app's
+//     gateway event tap: turn-in-progress comes from host.state.busy.
+// The renderer never reads the filesystem.
+//
+// App-level by design: the chip is one app-wide surface (see the package
+// README), so activity is not filtered per tile — it shows the most recent
+// tool the app saw.
 //
 // Opt-in: `defaultEnabled: false` ships it inventory-only in Capabilities →
 // Plugins, mirroring the agent half's `plugins.enabled` gate in config.yaml.
@@ -13,6 +22,7 @@ import { useEffect, useState } from 'react'
 
 const POLL_MS = 5000
 const NEXT_MAX_CHARS = 34
+const TOOL_MAX_CHARS = 18
 const CHIP_CLASS = 'px-1.5 text-[0.6875rem] tabular-nums'
 
 function truncate(text, max) {
@@ -20,9 +30,64 @@ function truncate(text, max) {
   return clean.length > max ? clean.slice(0, max - 1) + '…' : clean
 }
 
+/** The chip's one-line label: activity wins while a turn is running. */
+function chipLabel(ledger, busy, tool) {
+  const counters = ledger ? `${ledger.verified}✓ ${ledger.open}?` : ''
+  if (busy) {
+    const doing = tool ? (tool.running ? tool.name : `${tool.name} ✓`) : 'pensando'
+    return `riel ● ${truncate(doing, TOOL_MAX_CHARS)}${counters ? ' · ' + counters : ''}`
+  }
+  if (ledger) return `riel ${counters} · ${truncate(ledger.next || ledger.goal, NEXT_MAX_CHARS)}`
+  return tool ? `riel · último: ${truncate(tool.name, TOOL_MAX_CHARS)}` : 'riel · sin ledger'
+}
+
+/** Tooltip: the ledger headlines, then the activity detail. */
+function chipTitle(ledger, busy, tool) {
+  const lines = []
+  if (ledger) {
+    lines.push(ledger.goal || '(sin goal)', `→ ${ledger.next || '(sin next)'}`)
+    const stale = ledger.stale_secs == null ? '' : ` · hace ${Math.round(ledger.stale_secs / 60)} min`
+    lines.push(`${ledger.verified}✓ ${ledger.open}? ${ledger.claims}P${stale}`)
+  } else {
+    lines.push('Este worktree no tiene .riel/ledger.md')
+  }
+  if (busy) lines.push('turno en curso')
+  if (tool) {
+    const took = tool.running ? '' : tool.duration_s == null ? '' : ` (${tool.duration_s}s)`
+    lines.push(`último tool: ${tool.name}${took}${tool.error ? ' — error: ' + truncate(tool.error, 80) : ''}`)
+  }
+  return lines.join('\n')
+}
+
 function RielChip({ ctx }) {
   const cwd = useValue(host.state.cwd)
+  const busy = useValue(host.state.busy)
   const [status, setStatus] = useState(null)
+  const [tool, setTool] = useState(null)
+  const [revision, setRevision] = useState(0)
+
+  // Activity: the app's gateway event tap. Every finished tool bumps `revision`
+  // so the ledger is re-read immediately instead of at the next poll.
+  useEffect(() => {
+    const started = host.onEvent('tool.start', event => {
+      const name = (event && event.payload && event.payload.name) || 'tool'
+      setTool({ name, running: true })
+    })
+    const completed = host.onEvent('tool.complete', event => {
+      const payload = (event && event.payload) || {}
+      setTool({
+        name: payload.name || 'tool',
+        running: false,
+        duration_s: payload.duration_s,
+        error: payload.error
+      })
+      setRevision(current => current + 1)
+    })
+    return () => {
+      started()
+      completed()
+    }
+  }, [])
 
   useEffect(() => {
     let alive = true
@@ -44,33 +109,29 @@ function RielChip({ ctx }) {
       alive = false
       clearInterval(timer)
     }
-  }, [cwd, ctx])
+  }, [cwd, revision, ctx])
 
   const ledger = status && status.present ? status : null
-  const label = ledger
-    ? `riel ${ledger.verified}✓ ${ledger.open}? · ${truncate(ledger.next || ledger.goal, NEXT_MAX_CHARS)}`
-    : 'riel · sin ledger'
-
-  const detail = ledger
-    ? `${ledger.goal || '(sin goal)'}\n→ ${ledger.next || '(sin next)'}`
-    : (status && status.error) || 'Riel: este worktree no tiene .riel/ledger.md'
-
   const onClick = () => {
     haptic('tap')
-    host.notify({
-      kind: ledger ? 'info' : 'warning',
-      message: ledger
-        ? `${truncate(ledger.goal, 120)} → ${truncate(ledger.next, 120)}`
-        : `Sin ledger en ${cwd || '(sin worktree)'}`
-    })
+    const parts = []
+    parts.push(ledger ? `${truncate(ledger.goal, 120)} → ${truncate(ledger.next, 120)}` : `Sin ledger en ${cwd || '(sin worktree)'}`)
+    if (tool) parts.push(`${tool.name}${tool.error ? ' (error: ' + truncate(tool.error, 60) + ')' : ''}`)
+    host.notify({ kind: ledger ? 'info' : 'warning', message: parts.join(' · ') })
   }
+
+  const className = busy
+    ? `${CHIP_CLASS} text-(--ui-accent)`
+    : ledger
+      ? `${CHIP_CLASS} text-(--ui-text-tertiary)`
+      : `${CHIP_CLASS} text-(--ui-text-quaternary)`
 
   return jsx('button', {
     type: 'button',
-    title: detail,
-    className: ledger ? `${CHIP_CLASS} text-(--ui-text-tertiary)` : `${CHIP_CLASS} text-(--ui-text-quaternary)`,
+    title: chipTitle(ledger, busy, tool),
+    className,
     onClick,
-    children: label
+    children: chipLabel(ledger, busy, tool)
   })
 }
 

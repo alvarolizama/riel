@@ -58,15 +58,29 @@ concurrentes (un gateway sirve varias a la vez).
 
 ## Mitad desktop — chip de actividad en el statusbar
 
-`desktop/plugin.js` registra un chip en `statusBar.right` con el ledger del
-worktree actual: `riel 4✓ 2? · next: <acción>`. Un clic dispara un toast con
-`Goal → Next`. Cada 5 s consulta `GET /api/plugins/riel/ledger?worktree=<cwd>`,
-servido por `dashboard/plugin_api.py` (el backend del plugin, montado por el
-gateway en el proceso del agente). Ese backend normaliza el mirror de
-`rielctl todo` vía `dashboard/ledger_status.py`, así que el formato del ledger
-sigue teniendo un solo dueño: el plugin no re-parsea `.riel/ledger.md`, y el
-renderer nunca lee el disco (solo `<worktree>/.riel/ledger.md` puede salir, y
-solo como contadores + los titulares de goal/next).
+`desktop/plugin.js` registra un chip en `statusBar.right` que muestra dos cosas:
+
+- **Estado del ledger** del worktree en foco: `riel 4✓ 2? · next: <acción>`.
+- **Actividad viva**: mientras el turno corre el chip pasa a
+  `riel ● <tool en ejecución> · 4✓ 2?` en color de acento; cuando el tool
+  termina, `riel ● <tool> ✓`; en reposo, `riel · último: <tool>`.
+
+Los dos datos entran por caminos distintos:
+
+| Dato | Camino |
+|---|---|
+| Ledger | `host.state.cwd` → `GET /api/plugins/riel/ledger?worktree=<cwd>` (cada 5 s, y de inmediato al terminar un tool) |
+| Actividad | `host.onEvent('tool.start' \| 'tool.complete')` — el tap del gateway — más `host.state.busy` para el turno en curso |
+
+El endpoint lo sirve `dashboard/plugin_api.py`, el backend del plugin montado por
+el gateway en el proceso del agente, y normaliza el mirror de `rielctl todo` vía
+`dashboard/ledger_status.py`: el formato del ledger sigue teniendo un solo dueño
+(el plugin no re-parsea `.riel/ledger.md`) y el renderer nunca lee el disco —
+solo `<worktree>/.riel/ledger.md` puede salir, y solo como contadores + los
+titulares de goal/next.
+
+Un clic dispara un toast con `Goal → Next` y el último tool; el tooltip lleva el
+goal, el next, los contadores y el detalle del tool (duración, error).
 
 Tres interruptores, todos apagados por defecto:
 

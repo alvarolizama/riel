@@ -193,9 +193,11 @@ unlike skills, which are shared through `skills.external_dirs`.
 `.riel/` state (session cwd, never the Hermes process cwd).
 
 With the plugin active, its desktop half also puts an activity chip in the
-statusbar — `riel 4✓ 2? · next: <acción>` for the worktree in focus, read through
-the plugin's own backend (`GET /api/plugins/riel/ledger`). The desktop half is
-opt-in and app-level; see the plugin README for the three switches.
+statusbar: the ledger of the worktree in focus (`riel 4✓ 2? · next: <acción>`,
+read through the plugin's own backend at `GET /api/plugins/riel/ledger`) plus the
+live activity while a turn runs (`riel ● <tool> · …`, from the gateway's
+`tool.start` / `tool.complete` events). The desktop half is opt-in and
+app-level; see the plugin README for the three switches.
 
 ### Dependencies
 
@@ -295,10 +297,12 @@ riel/
 make test     # or: python3 -m unittest discover -s tests -v
 ```
 
-Stdlib-only, subprocess-driven. 75 tests cover `rielctl note/seam/resume/todo/ship`,
+Stdlib-only, subprocess-driven. 96 tests cover `rielctl note/seam/resume/todo/ship`,
 `brief new/validate/digest`, the graph checks, and `extract-mermaid.py` end-to-end,
 plus the Hermes plugin package: vendoring hashes, manifest/schema/handler
-wiring, and the handlers end-to-end through the vendored copy.
+wiring, the handlers end-to-end through the vendored copy, the statusbar chip
+rendered by node against a stubbed SDK (labels, tooltip, click, and the refetch
+a finished tool triggers) and the backend routes through a real FastAPI app.
 
 The Hermes-side load path (discovery, registration, session-cwd resolution,
 per-session isolation) needs a real Hermes install, so it is probed separately —

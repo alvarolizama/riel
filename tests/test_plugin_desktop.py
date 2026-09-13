@@ -7,9 +7,16 @@ Three layers, each with the cheapest honest check available:
   * `ledger_status.read_status` — stdlib-only, driven by the **vendored**
     rielctl against a real temp worktree;
   * the chip itself — the plugin file is loaded by a real Node process against
-    stubbed `@hermes/plugin-sdk` / `react` modules, `register()` is called and
-    the component is rendered, so a syntax error, a bad import or a broken
-    label fails here instead of silently in the app.
+    stubbed `@hermes/plugin-sdk` / `react` modules, `register()` is called, the
+    gateway events are emitted and the component is rendered, so a syntax
+    error, a bad import, a broken label or a missing refetch fails here instead
+    of silently in the app.
+
+The stub is a tiny stand-in for React's state/effect cells: `useState` keys its
+cells by call order (0 = ledger status, 1 = last tool, 2 = refetch revision) and
+`useEffect` re-runs a cell after its cleanup. Re-rendering is explicit —
+the harness resets the call indexes and invokes the component again — which is
+enough to assert what a render produces without pulling in React itself.
 
 The FastAPI route test needs `fastapi` (present in a Hermes venv, absent from a
 plain interpreter) and skips without it; `node` is skipped when not installed.
@@ -63,7 +70,127 @@ def _node_available():
     return shutil.which("node") is not None
 
 
-def _stub_modules(root: Path) -> Path:
+SDK_STUB = """\
+function map() {
+  return (globalThis.__RIEL_LISTENERS__ ||= new Map())
+}
+
+export const host = {
+  state: {
+    cwd: { get: () => process.env.RIEL_TEST_CWD || '' },
+    busy: { get: () => process.env.RIEL_TEST_BUSY === '1' }
+  },
+  notify: (payload) => {
+    globalThis.__RIEL_NOTIFIED__ = payload
+  },
+  onEvent: (type, listener) => {
+    const listeners = map().get(type) || new Set()
+    listeners.add(listener)
+    map().set(type, listeners)
+    return () => listeners.delete(listener)
+  }
+}
+export const haptic = () => {
+  globalThis.__RIEL_TAPPED__ = true
+}
+export const useValue = (atom) => (atom && typeof atom.get === 'function' ? atom.get() : null)
+"""
+
+REACT_STUB = """\
+// Cells keyed by call order and persisted on globalThis, so a second render pass
+// sees what setState wrote. Good enough to assert render output without React.
+export const useState = (initial) => {
+  const store = (globalThis.__RIEL_STATE__ ||= [])
+  const index = globalThis.__RIEL_INDEX__++
+  if (!(index in store)) store[index] = initial
+  return [store[index], (value) => {
+    store[index] = typeof value === 'function' ? value(store[index]) : value
+  }]
+}
+
+export const useEffect = (run) => {
+  const cleanups = (globalThis.__RIEL_CLEANUPS__ ||= [])
+  const index = globalThis.__RIEL_EFFECT_INDEX__++
+  if (typeof cleanups[index] === 'function') cleanups[index]()
+  const cleanup = run()
+  cleanups[index] = typeof cleanup === 'function' ? cleanup : null
+}
+"""
+
+JSX_STUB = """\
+export const jsx = (type, props) => ({ type, props })
+export const jsxs = jsx
+"""
+
+HARNESS = """\
+import plugin from './plugin.mjs'
+
+const ledger = JSON.parse(process.env.RIEL_TEST_LEDGER || 'null')
+const tool = JSON.parse(process.env.RIEL_TEST_TOOL || 'null')
+let restCalls = 0
+const contributions = []
+const ctx = {
+  rest: async () => {
+    restCalls += 1
+    return ledger
+  },
+  register: (contribution) => contributions.push(contribution)
+}
+
+plugin.register(ctx)
+const chip = contributions.find((c) => c.area === 'statusBar.right')
+if (!chip || typeof chip.render !== 'function') {
+  console.error('FAIL: no statusBar.right contribution with a render')
+  process.exit(2)
+}
+
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
+const emit = (type, event) => {
+  for (const listener of (globalThis.__RIEL_LISTENERS__ || new Map()).get(type) || []) listener(event)
+}
+const render = () => {
+  globalThis.__RIEL_INDEX__ = 0
+  globalThis.__RIEL_EFFECT_INDEX__ = 0
+  const element = chip.render()
+  return element.type(element.props)
+}
+
+const first = render()
+if (tool) emit('tool.start', { payload: { name: tool, tool_id: 't1' }, session_id: 's1' })
+await tick()
+const withActivity = render()
+
+let afterComplete = null
+if (tool && process.env.RIEL_TEST_COMPLETE === '1') {
+  emit('tool.complete', { payload: { name: tool, tool_id: 't1', duration_s: 1.4 }, session_id: 's1' })
+  await tick()
+  afterComplete = render()
+}
+
+const tree = afterComplete || withActivity
+tree.props.onClick()
+
+console.log(JSON.stringify({
+  id: plugin.id,
+  name: plugin.name,
+  defaultEnabled: plugin.defaultEnabled,
+  areas: contributions.map((c) => c.area),
+  order: chip.order,
+  first_label: first.props.children,
+  activity_label: withActivity.props.children,
+  activity_title: withActivity.props.title,
+  activity_class: withActivity.props.className,
+  final_label: tree.props.children,
+  final_title: tree.props.title,
+  rest_calls: restCalls,
+  tapped: globalThis.__RIEL_TAPPED__ === true,
+  notified: globalThis.__RIEL_NOTIFIED__ || null
+}))
+process.exit(0)
+"""
+
+
+def _stub_environment(root: Path) -> Path:
     """A minimal `@hermes/plugin-sdk` + `react` so the chip can run under Node."""
     sdk = root / "node_modules" / "@hermes" / "plugin-sdk"
     react = root / "node_modules" / "react"
@@ -74,15 +201,7 @@ def _stub_modules(root: Path) -> Path:
         json.dumps({"name": "@hermes/plugin-sdk", "version": "0.0.0", "type": "module", "main": "index.mjs"}),
         encoding="utf-8",
     )
-    (sdk / "index.mjs").write_text(
-        "export const host = {\n"
-        "  state: { cwd: { get: () => process.env.RIEL_TEST_CWD || '' } },\n"
-        "  notify: (payload) => { globalThis.__RIEL_NOTIFIED__ = payload },\n"
-        "}\n"
-        "export const haptic = () => { globalThis.__RIEL_TAPPED__ = true }\n"
-        "export const useValue = (atom) => (atom && typeof atom.get === 'function' ? atom.get() : null)\n",
-        encoding="utf-8",
-    )
+    (sdk / "index.mjs").write_text(SDK_STUB, encoding="utf-8")
     (react / "package.json").write_text(
         json.dumps(
             {
@@ -94,44 +213,11 @@ def _stub_modules(root: Path) -> Path:
         ),
         encoding="utf-8",
     )
-    (react / "index.mjs").write_text(
-        "// useState returns the state the harness injected; useEffect does NOT run the\n"
-        "// callback, so no fetch/timer noise — this test targets the render logic.\n"
-        "export const useState = (initial) =>\n"
-        "  [globalThis.__RIEL_STATE__ === undefined ? initial : globalThis.__RIEL_STATE__, () => {}]\n"
-        "export const useEffect = () => {}\n",
-        encoding="utf-8",
-    )
-    (react / "jsx-runtime.mjs").write_text(
-        "export const jsx = (type, props) => ({ type, props })\nexport const jsxs = jsx\n",
-        encoding="utf-8",
-    )
+    (react / "index.mjs").write_text(REACT_STUB, encoding="utf-8")
+    (react / "jsx-runtime.mjs").write_text(JSX_STUB, encoding="utf-8")
 
     (root / "plugin.mjs").write_text((DESKTOP / "plugin.js").read_text(encoding="utf-8"), encoding="utf-8")
-    (root / "harness.mjs").write_text(
-        "import plugin from './plugin.mjs'\n"
-        "\n"
-        "if (process.env.RIEL_TEST_STATE) globalThis.__RIEL_STATE__ = JSON.parse(process.env.RIEL_TEST_STATE)\n"
-        "const contributions = []\n"
-        "const ctx = { rest: async () => ({ present: false }), register: (c) => contributions.push(c) }\n"
-        "plugin.register(ctx)\n"
-        "const chip = contributions.find((c) => c.area === 'statusBar.right')\n"
-        "if (!chip || typeof chip.render !== 'function') {\n"
-        "  console.error('FAIL: no statusBar.right contribution with a render')\n"
-        "  process.exit(2)\n"
-        "}\n"
-        "const element = chip.render()\n"
-        "const tree = element.type(element.props)\n"
-        "tree.props.onClick()\n"
-        "console.log(JSON.stringify({\n"
-        "  id: plugin.id, name: plugin.name, defaultEnabled: plugin.defaultEnabled,\n"
-        "  areas: contributions.map((c) => c.area), order: chip.order,\n"
-        "  label: tree.props.children, title: tree.props.title, className: tree.props.className,\n"
-        "  notified: globalThis.__RIEL_NOTIFIED__ || null, tapped: globalThis.__RIEL_TAPPED__ === true,\n"
-        "}))\n"
-        "process.exit(0)\n",
-        encoding="utf-8",
-    )
+    (root / "harness.mjs").write_text(HARNESS, encoding="utf-8")
     return root / "harness.mjs"
 
 
@@ -245,13 +331,15 @@ class PluginApiRouteTest(unittest.TestCase):
         self.assertIn("/ledger", paths)
         self.assertIn("/health", paths)
 
-    def test_ledger_route_returns_the_summary(self):
+    def _client(self):
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
 
         app = FastAPI()
         app.include_router(self.api.router)
+        return TestClient(app)
 
+    def test_ledger_route_returns_the_summary(self):
         with tempfile.TemporaryDirectory(prefix="riel-route-") as tmp:
             subprocess.run(
                 [sys.executable, str(VENDOR_RIELCTL), "note", "--goal", "route goal"],
@@ -260,7 +348,7 @@ class PluginApiRouteTest(unittest.TestCase):
                 text=True,
                 check=True,
             )
-            client = TestClient(app)
+            client = self._client()
             ok = client.get("/ledger", params={"worktree": tmp})
             self.assertEqual(ok.status_code, 200)
             self.assertTrue(ok.json()["present"])
@@ -271,25 +359,27 @@ class PluginApiRouteTest(unittest.TestCase):
             self.assertFalse(missing.json()["present"])
 
     def test_health_reports_the_vendored_rielctl(self):
-        from fastapi import FastAPI
-        from fastapi.testclient import TestClient
-
-        app = FastAPI()
-        app.include_router(self.api.router)
-        payload = TestClient(app).get("/health").json()
+        payload = self._client().get("/health").json()
         self.assertTrue(payload["ok"], payload)
         self.assertTrue(payload["rielctl"].endswith("rielctl"))
 
 
 @unittest.skipUnless(_node_available(), "node is not installed")
-class ChipRenderTest(unittest.TestCase):
+class ChipTest(unittest.TestCase):
     """The chip loaded and rendered by a real Node process, with a stubbed SDK."""
 
-    def _render(self, state):
+    def run_chip(self, ledger=None, busy=False, tool=None, complete=False):
         with tempfile.TemporaryDirectory(prefix="riel-chip-") as tmp:
             root = Path(tmp)
-            harness = _stub_modules(root)
-            env = dict(os.environ, RIEL_TEST_STATE=json.dumps(state), RIEL_TEST_CWD=CLIENT_CWD)
+            harness = _stub_environment(root)
+            env = dict(
+                os.environ,
+                RIEL_TEST_CWD=CLIENT_CWD,
+                RIEL_TEST_LEDGER=json.dumps(ledger),
+                RIEL_TEST_TOOL=json.dumps(tool),
+                RIEL_TEST_BUSY="1" if busy else "0",
+                RIEL_TEST_COMPLETE="1" if complete else "0",
+            )
             proc = subprocess.run(
                 ["node", str(harness)],
                 cwd=root,
@@ -301,31 +391,58 @@ class ChipRenderTest(unittest.TestCase):
             self.assertEqual(proc.returncode, 0, proc.stderr or proc.stdout)
             return json.loads(proc.stdout)
 
+    LEDGER = {"present": True, "goal": "ship the chip", "next": "wire the statusbar", "verified": 3, "open": 1}
+
     def test_registers_a_statusbar_chip(self):
-        result = self._render({"present": False})
+        result = self.run_chip(ledger=self.LEDGER)
         self.assertEqual(result["id"], "riel")
         self.assertEqual(result["areas"], ["statusBar.right"])
         self.assertFalse(result["defaultEnabled"], "the desktop half ships opt-in")
-        self.assertTrue(result["tapped"])
 
-    def test_label_shows_counters_and_next_action(self):
-        result = self._render(
-            {"present": True, "goal": "ship the chip", "next": "wire the statusbar", "verified": 3, "open": 1}
+    def test_idle_chip_shows_counters_and_next_action(self):
+        result = self.run_chip(ledger=self.LEDGER)
+        self.assertEqual(result["final_label"], "riel 3✓ 1? · wire the statusbar")
+        self.assertIn("--ui-text-tertiary", result["activity_class"])
+
+    def test_chip_without_a_ledger_says_so(self):
+        result = self.run_chip()
+        self.assertEqual(result["final_label"], "riel · sin ledger")
+        self.assertIn("--ui-text-quaternary", result["activity_class"])
+
+    def test_long_next_is_truncated_not_dumped(self):
+        ledger = dict(self.LEDGER, next="x" * 200)
+        result = self.run_chip(ledger=ledger)
+        self.assertIn("…", result["final_label"])
+        self.assertLessEqual(len(result["final_label"]), 60)
+
+    def test_running_turn_names_the_tool(self):
+        result = self.run_chip(ledger=self.LEDGER, busy=True, tool="terminal")
+        self.assertEqual(result["activity_label"], "riel ● terminal · 3✓ 1?")
+        self.assertIn("--ui-accent", result["activity_class"])
+        self.assertIn("turno en curso", result["activity_title"])
+
+    def test_tool_completion_refetches_the_ledger(self):
+        result = self.run_chip(ledger=self.LEDGER, busy=True, tool="terminal", complete=True)
+        self.assertGreaterEqual(
+            result["rest_calls"], 2, "a finished tool must trigger an immediate ledger re-read"
         )
-        self.assertEqual(result["label"], "riel 3✓ 1? · wire the statusbar")
-        self.assertIn("ship the chip", result["title"])
-        self.assertIn("--ui-text-tertiary", result["className"])
+        self.assertEqual(result["final_label"], "riel ● terminal ✓ · 3✓ 1?")
+        self.assertIn("último tool: terminal (1.4s)", result["final_title"])
+
+    def test_tooltip_carries_goal_and_next(self):
+        result = self.run_chip(ledger=self.LEDGER)
+        self.assertIn("ship the chip", result["final_title"])
+        self.assertIn("→ wire the statusbar", result["final_title"])
+
+    def test_idle_without_ledger_still_shows_the_last_tool(self):
+        result = self.run_chip(tool="terminal", complete=True)
+        self.assertEqual(result["final_label"], "riel · último: terminal")
+
+    def test_click_reports_goal_and_tool(self):
+        result = self.run_chip(ledger=self.LEDGER, tool="terminal", complete=True)
+        self.assertTrue(result["tapped"])
         self.assertIn("ship the chip", result["notified"]["message"])
-
-    def test_label_without_a_ledger_says_so(self):
-        result = self._render({"present": False})
-        self.assertEqual(result["label"], "riel · sin ledger")
-        self.assertIn("--ui-text-quaternary", result["className"])
-
-    def test_long_goal_is_truncated_not_dumped(self):
-        result = self._render({"present": True, "goal": "g", "next": "x" * 200, "verified": 0, "open": 0})
-        self.assertLessEqual(len(result["label"]), 60)
-        self.assertIn("…", result["label"])
+        self.assertIn("terminal", result["notified"]["message"])
 
 
 if __name__ == "__main__":
