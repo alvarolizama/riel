@@ -1,7 +1,7 @@
 ---
 name: riel-cli
-description: "Mechanical helper for Riel: writes the ledger with the exact format, instantiates packet templates, validates packets, derives the Hermes session-todo mirror. The agent invokes it in RUN nodes instead of handwriting state files."
-version: 1.1.0
+description: "Use when Riel needs its mechanical helper — writes the ledger with the exact format, instantiates and validates packets, expands a graph digest, derives the session-todo mirror. The agent invokes it in RUN nodes instead of handwriting state files."
+version: 1.3.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -18,7 +18,8 @@ of the framework so the agent doesn't have to remember them:
 - Writing `.riel/ledger.md` with the exact expected format
 - Instantiating packet templates (`rielctl brief new`)
 - Verifying that a packet satisfies the structural constraints
-  (`rielctl brief validate`)
+  (`rielctl brief validate`) — including the closed verb vocabulary
+- Expanding the execution graph into explicit text (`rielctl brief digest`)
 - Deriving the Hermes session-todo mirror from the ledger (`rielctl todo`)
 
 **When to use:** on any `loop`-mode task and on every delegated task, the
@@ -64,6 +65,9 @@ rielctl note --open "does the link survive quote chars?" \
 rielctl note --close 1 --check "it survives" --by "test" --covering "encoding"
 ```
 
+`--close` requires `--check`/`--by`: a question is closed against the
+checkpoint that settled it, never dropped silently.
+
 Numbering (✓NN, ?NN) is assigned by `rielctl` — never hand-edited.
 
 ### Inspections
@@ -72,6 +76,7 @@ Numbering (✓NN, ?NN) is assigned by `rielctl` — never hand-edited.
 rielctl seam     # re-print the ledger + which invariants are due
 rielctl resume   # full post-gap bootstrap (ledger → invariants → mode → next)
 rielctl ship FILE.md   # check FILE for dense-register leakage before delivery
+rielctl digest FILE.md # explicit text digest of any file's mermaid graph
 ```
 
 ### Session todo (Hermes mirror, Spec 6)
@@ -100,6 +105,7 @@ rielctl brief new --type feature --param name="reset flow" \
                   --param one_sentence="add password reset via email" \
                   > .riel/packet.md
 rielctl brief validate .riel/packet.md
+rielctl brief digest   .riel/packet.md     # explicit text expansion of the graph
 ```
 
 `brief new` searches templates in order:
@@ -112,6 +118,20 @@ Double-curly placeholders `{{param}}` are replaced with `--param` values;
 unknown params abort non-zero so typos never silently produce broken
 packets. Fill in the remaining content by hand with `patch` afterwards —
 the template is the skeleton, not the final packet.
+
+`brief validate` checks the structure, the Objective/claims/DO-NOT, and the
+execution graph against `riel-contract` — predictable ids, a RUN + VERIFY
+funnel, labeled decision edges, **every execution node starting with a
+closed verb** (READ/EDIT/CREATE/RUN/VERIFY/ASK), **an `ASK` node naming its
+trigger** (`ASK[irreversible|outside-claims|goal-changing]`), no `<br/>`, no
+`style` in the DAG, no tool names in labels — plus an mmdc parse when
+mermaid-cli is present. Loops without a counter guard (`< 3` / `>= 3`) and
+over-long labels are reported as non-fatal `WARN`s.
+
+`brief digest FILE [-o OUT]` prints the explicit **graph digest** — elements,
+authored edges, branches, entry/terminals and loops, with a "meaning &
+limits" footer. Use it to give an agent the text beside the diagram (the
+diagram stays for humans).
 
 ## The one rule
 

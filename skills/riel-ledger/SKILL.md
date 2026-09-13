@@ -1,7 +1,7 @@
 ---
 name: riel-ledger
 description: "Use when running a loop-mode task — write the local Goal/Core/Verified/Open/Next ledger in the worktree, re-read at every seam, verify before done. No remote dependency."
-version: 1.9.0
+version: 1.10.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -57,15 +57,15 @@ The ledger is local state, not a deliverable. When working inside a repo:
 ## Goal
 <one sentence: what "done" means>
 
-## Claims
-- P1: <what will be true when done> — verify with: <how>
-- P2: <what will be true when done> — verify with: <how>
-
 ## Source
 <optional: remote system + identifier — e.g. todo:<slug>>
 
 ## Phase
 <active phase if the task has phases — e.g. "F2: CREATE router_test.exs">
+
+## Claims
+- P1: <what will be true when done> — verify with: <how>
+- P2: <what will be true when done> — verify with: <how>
 
 ## Core
 - <name> — <defining fact>

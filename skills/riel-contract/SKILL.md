@@ -1,7 +1,7 @@
 ---
 name: riel-contract
 description: "Use when authoring mermaid verb-graph contracts for skills and todos — 3-layer pattern, closed verb vocabulary, verification funnel, ASK escalation, machine-checkable."
-version: 3.4.0
+version: 3.6.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -39,7 +39,7 @@ graph of a dev todo.
 What it does not do: make the model smarter. The graph shapes the exchange,
 not the capability.
 
-## The 3-layer pattern (every skill with mermaid)
+## The 3-layer pattern (skills that route)
 
 ```
 ┌─────────────────────────────────────────┐
@@ -52,6 +52,12 @@ not the capability.
 │ LAYER 2: Work                           │  Procedure (steps, tools, gates)
 └─────────────────────────────────────────┘
 ```
+
+This pattern applies to skills that **route** — that pick a sub-flow or hand
+off to another skill. A skill whose graph is a *lifecycle or protocol*
+(e.g. `riel-ledger`'s seam loop) carries the graph **without** an Entry
+router / Parse contract: there is nothing to route, and an artificial router
+is noise.
 
 Rule: **mermaid complements, never replaces prose.** Prose explains the
 why; the diagram summarizes the flow. A section with >3 sequential bullets
@@ -104,13 +110,16 @@ names — whoever executes translates them to tools:
 | `CREATE` | `write_file` | `path — purpose` | `S3["CREATE test/page_test.exs — meta test"]` |
 | `RUN` | `terminal` | full literal command | `S4["RUN mix test test/page_test.exs"]` |
 | `VERIFY` | `terminal` + assert | condition | `S5["VERIFY git diff --name-only in scope"]` |
-| `ASK` | `clarify` | short question | `S6["ASK confirm the approach?"]` |
+| `ASK` | `clarify` | `[trigger] question` | `S6["ASK[irreversible] confirm the approach?"]` |
 
 **Rules:**
 
 - An execution node not starting with one of these 6 verbs is malformed.
 - Never tool names in labels (`read_file`, `patch`) — mermaid is the WHAT,
   not the HOW. The verb → tool translation lives in this table.
+- **An `ASK` label starts with its trigger in brackets** —
+  `ASK[irreversible|outside-claims|goal-changing]` — so the escalation
+  reason is machine-checkable, not prose.
 - Non-execution nodes (routers, states, narrative decisions) need no verb.
 
 ### Common operations map
@@ -133,15 +142,16 @@ closed set that makes contracts grepeable.
 
 `ASK` is the only verb that leaves the agent loop — every escalation
 interrupts the intent architect, so it is never free. An ASK node is
-well-formed only when the decision meets at least one trigger:
+well-formed only when the decision meets at least one trigger, and the
+label names that trigger in brackets (`ASK[<trigger>] …`):
 
-1. **Irreversible** — cannot be undone by re-execution: sending messages,
-   publishing, deleting durable data, spending money, pushing to shared
-   refs, real-world actions.
-2. **Outside the claims** — the work would exceed or contradict the
-   pre-registered claims or the spec (a scope change).
-3. **Goal-changing** — the outcome would alter the Goal or the meaning of
-   a Claim.
+1. **Irreversible** — `ASK[irreversible]` — cannot be undone by
+   re-execution: sending messages, publishing, deleting durable data,
+   spending money, pushing to shared refs, real-world actions.
+2. **Outside the claims** — `ASK[outside-claims]` — the work would exceed or
+   contradict the pre-registered claims or the spec (a scope change).
+3. **Goal-changing** — `ASK[goal-changing]` — the outcome would alter the
+   Goal or the meaning of a Claim.
 
 Everything else — reversible implementation choices, style, naming,
 alternative paths — is decided by the executor and recorded (a ✓NN with
@@ -169,10 +179,13 @@ flowchart TD
 | Waves / phases | `W1`, `W2`, `W3` | Execution phases |
 | Gates | `G1`, `G2`, `G3` | Criteria between phases |
 | Steps | `S1`, `S2`, `S3` | Steps inside a phase |
+| Terminals / aux | `END`, `ERR`, `START` | Funnel sinks and aborts |
+| Routers | `Q`, `SELF` | Entry routers and narrative flows |
 
 No variable semantic IDs (`setupDB`, `fixBug`) — small models parse by
-regex; fixed IDs are predictable. Routers and narrative flows may use short
-stable IDs (`Q`, `SELF`, `START`, `END`).
+regex; fixed IDs are predictable. `rielctl brief validate` keeps this same
+whitelist (plus `DC`/`APP`/`REC`/`FIX` for lifecycle graphs), so doc and
+tool agree.
 
 ### Fixed-structure labels
 
@@ -231,12 +244,40 @@ flowchart TD
 Loops carry counters: retry `< 3` returns to the failing step; `>= 3`
 escalates (never infinite loops).
 
+## Graph digest — the explicit text beside the diagram
+
+Mermaid alone is not enough. In a frozen paired benchmark (graph2agent,
+330 contracts), **Mermaid-only comprehension was 63.33% exact; adding an
+explicit text expansion of the same graph raised it to 81.82%** (~50% fewer
+failures) — at ~8% more input tokens but ~14% fewer output and ~46% fewer
+reasoning tokens. The diagram stays for humans; the agent reads the
+explicit text.
+
+So every execution graph is paired with a **digest**: the same structure
+spelled out as plain text — elements, authored edges, branch candidates,
+entry/terminals, loops, and a "meaning & limits" footer. Generate it with:
+
+```bash
+rielctl brief digest .riel/packet.md
+```
+
+The digest is best-effort and quote-aware (no parser dependency); it proves
+order, branches and loops — **not** that a command ran, a gate passed, or
+the deliverable exists.
+
 ## Syntax validation
 
 Repo tooling: `scripts/validate-mermaid.sh` extracts every mermaid block
 (`scripts/extract-mermaid.py`, Python regex with `re.DOTALL`) and pipes
 each through `mmdc`. Requires mermaid-cli
 (`npm install -g @mermaid-js/mermaid-cli`).
+
+The verb vocabulary and the graph conventions above are **enforced**, not
+just documented: `rielctl brief validate` rejects an execution node that
+does not start with a closed verb, an `ASK` node that does not name its
+trigger, a `<br/>`, a `style` in the execution DAG, and a tool name in a
+node label; it warns on a loop with no counter guard and on an over-long
+label. (`mmdc` is the parser-level check; the rest are greps in `rielctl`.)
 
 ## Pitfalls
 

@@ -1,10 +1,9 @@
 ---
 name: riel-briefs
-description: "Write self-contained agent briefs on the fly — curated context, verb-graph, gates, anchored opening. Dispatch packets for delegate_task."
-version: 3.4.0
+description: "Use when writing self-contained agent briefs on the fly — curated context, verb-graph, gates, anchored opening. Dispatch packets for delegate_task."
+version: 3.5.0
 author: Álvaro Lizama
 license: MIT
-platforms: [macos, linux]
 metadata:
   hermes:
     tags: [riel, agents, instructions, briefs, mermaid, delegation]
@@ -119,6 +118,10 @@ edge guards, and the verification funnel are all defined there, not here.
 - On complex tasks (3+ phases), the graph prevents skipped steps
 - Use predictable IDs by node kind — `W1/W2` for waves, `S1/S2` for steps,
   `G1` for gates (per riel-contract). The agent's parser keys on them.
+- **Pair the graph with its digest** — a Mermaid-only graph is read less
+  reliably than the same structure spelled out in text. Include the output
+  of `rielctl brief digest` beside the diagram (elements, edges, branches,
+  entry/terminals) so the child gets the structure in plain words too.
 
 ## Step 5: Define verification gates
 
@@ -244,6 +247,7 @@ Graph (validable con `mmdc` / `scripts/validate-mermaid.sh`):
 - [ ] Every decision has labeled edges (`|yes|`, `|no|`)
 - [ ] The flow ends in a VERIFY/Check node before `END`
 - [ ] Loops carry counters (`< 3 attempts`), never unbounded
+- [ ] The graph is paired with its explicit digest (`rielctl brief digest`)
 
 Content:
 

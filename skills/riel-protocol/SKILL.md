@@ -1,7 +1,7 @@
 ---
 name: riel-protocol
 description: "Use when opening or maintaining a conversation with an LLM — functional grammar, persona, minimal-surface protocol. Never rewrites the user's request."
-version: 1.5.0
+version: 1.7.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -64,6 +64,14 @@ Rules:
 4. **Applies in any language:** the function matters more than the literal
    words ("Necesitamos…" / "Veo que…" / "Vamos a…" in Spanish).
 
+**Discharge self-check (the verifiable half):** for every `We need…` you
+write, point — in the same turn or the next — at the action, check, or
+closure that discharged it. If you cannot name one, the sentence is noise:
+complete it or drop it. This is the one part of the protocol observable from
+the outside — when a `we need` discharges, the ledger's `Next` moves. The
+grammar is the durable, model-independent core; the opening conditions below
+are not.
+
 ## Opening conditions (the first turn)
 
 What steers the trajectory is the **complete state of the first turn**,
@@ -80,15 +88,31 @@ not a magic word. Three conditions:
 
 **Priority when the conditions clash: 3 > 2 > 1.**
 
-**When the harness makes them unreachable:** harnesses that inject a skill
-index or environment digest on every turn (by design — discovery needs it),
-or that fix the tool schema, can never see the first turn clean. Drop the
-anchoring expectations — but keep the grammar discipline. `We need…` with
-mandatory discharge still works as functional echo: it orders your own
-statements even when it anchors nothing in the model. The full recipe is
-reachable only where the opener controls the surface — as in delegation
-briefs (below). The ledger/contract machinery never depends on the opening
-conditions.
+Each condition has a concrete move — a vague intention does not change a
+surface:
+
+| Condition | Concrete move |
+|---|---|
+| 1 · short persona | one sentence, role only — no stacked style / format / personality layers |
+| 2 · minimal surface | list only the tools the FIRST action needs; name heavier capabilities only when the task asks |
+| 3 · zero injections | no skill catalog, no environment digest, no "you also have…" preamble on the first turn |
+
+### Evidence status — read before trusting the anchoring claims
+
+The anchoring half of this skill (the three levers above) is **black-box
+and model-specific**. It comes from community DeepSeek-Harness probes run on
+**V4 Pro, a model retired on 2026-09-14**. The successor (V4.1 Flash)
+reports anchoring under every condition in first-round flash probes, and its
+own trajectory was not measured. Treat the levers as a *working hypothesis
+about the API-visible surface*, not a portable law:
+
+- Where a harness fixes the surface (see below), the anchoring half is
+  **inert** — only the functional-echo discipline survives.
+- The levers are **not** a measured score improvement. Do not claim gains
+  from them.
+
+The durable, model-independent part of this skill is the grammar and the
+discharge rule; lean on those.
 
 ### When delegating (subagents)
 
@@ -96,6 +120,23 @@ In `delegate_task` briefs, apply the same conditions in `goal` + `context`:
 - `goal` opens with the shared objective ("We need…")
 - `context` carries only what the first action needs (repo, files, criteria)
 - Do not dump tools or instructions that do not belong to the current phase
+
+## Degraded mode (when the harness owns the surface)
+
+Most real harnesses — this one included — inject a skill index, an
+environment digest, or a fixed tool schema on every turn. There the
+*anchoring* half of this protocol is unreachable, and that is expected. Drop
+it; keep the grammar.
+
+| Lever | Reachable under a fixed surface? | What you keep |
+|---|---|---|
+| 1–2 · persona + minimal surface | usually not | naming the current phase, in your own words |
+| 3 · zero injections | no | — |
+| functional echo (`We need…` + discharge) | **always** | your statements stay ordered and checkable |
+
+The ledger/contract machinery never depends on the opening conditions. When
+the surface is fixed, this skill degenerates to a *writing discipline* — and
+a writing discipline costs nothing to keep.
 
 ## Maintenance (during the conversation)
 
@@ -119,6 +160,12 @@ verification lives in the done-check of `riel-ledger`.
   counting words; one well-discharged `we need` per task is enough.
 - **Claiming it improves results** — it steers the trajectory; verification
   lives in the ledger.
+- **Treating the anchoring levers as a portable law** — they are black-box
+  evidence from a retired model; see "Evidence status".
+- **Cargo-culting the grammar** — opening every sentence with `we need` and
+  discharging none. The check that matters is discharge, not frequency.
+- **Applying it where there is no opening** — a one-shot tool call with no
+  first turn earns nothing from this skill; skip it.
 
 ## Checklist
 
@@ -127,4 +174,5 @@ verification lives in the done-check of `riel-ledger`.
 - [ ] Minimal surface on the first turn (only what the first action needs)
 - [ ] Zero irrelevant injected context at the start
 - [ ] Every functional statement discharged into action/check/closure
+- [ ] Each `We need…` names the action/check/closure that discharged it
 - [ ] The user's request was not rewritten
