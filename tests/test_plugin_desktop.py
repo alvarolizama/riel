@@ -277,11 +277,11 @@ const checkClassOf = (r) => {
   }
   return walk(r.button)
 }
-// Is there a Contrato chip next to the ledger one?
+// Is there a Riel: Contract chip next to the ledger one?
 const contractVisible = (() => {
   const walk = (node) => {
     if (!node || typeof node !== 'object' || !node.props) return false
-    if (textOf(node).includes('Contrato')) return true
+    if (textOf(node).includes('Riel: Contract')) return true
     for (const child of [].concat(node.props.children || [])) if (walk(child)) return true
     return false
   }
@@ -434,6 +434,21 @@ class LedgerStatusTest(unittest.TestCase):
         self.assertIsInstance(status["updated"], int)
         self.assertGreaterEqual(status["stale_secs"], 0)
 
+    def test_detail_carries_the_full_content_of_every_item(self):
+        """The popover shows everything: claims with verify-with, ✓ with evidence, opens."""
+        self._seed("note", "--goal", "g", "--next", "n")
+        self._seed("note", "--claim", "P1: la cosa", "--verify-with", "make test")
+        self._seed("note", "--check", "el gate corrio", "--by", "make test, 3 passed")
+        self._seed("note", "--open", "sobrevive el cambio de sesion?", "--settled-by", "probe")
+        status = self.status.read_status(self.tmp)
+        self.assertEqual(len(status["claims_detail"]), 1)
+        self.assertIn("P1: la cosa", status["claims_detail"][0])
+        self.assertIn("make test", status["claims_detail"][0])          # verify-with viaja
+        self.assertEqual(len(status["verified_detail"]), 1)
+        self.assertIn("verified by: make test, 3 passed", status["verified_detail"][0])
+        self.assertEqual(len(status["open_detail"]), 1)
+        self.assertIn("sobrevive", status["open_detail"][0])
+
     def test_read_contract_returns_verbatim_markdown(self):
         Path(self.tmp, ".riel").mkdir()
         Path(self.tmp, ".riel", "contract.md").write_text(
@@ -581,13 +596,13 @@ class ChipTest(unittest.TestCase):
 
     def test_idle_chip_shows_counters(self):
         result = self.run_chip(ledger=self.LEDGER)
-        self.assertEqual(result["final_label"], "Riel ✓3 ?1")
+        self.assertEqual(result["final_label"], "Riel: Ledger ✓3 ?1")
         self.assertIn("--ui-text-tertiary", result["activity_class"])
         self.assertIn("text-primary", result["check_class"], "the ✓ carries the color, not the label")
 
     def test_chip_without_a_ledger_says_so(self):
         result = self.run_chip()
-        self.assertEqual(result["final_label"], "Riel")
+        self.assertEqual(result["final_label"], "Riel: Ledger")
         self.assertIn("--ui-text-tertiary", result["activity_class"])
 
     def test_no_contract_no_contract_chip(self):
@@ -603,7 +618,7 @@ class ChipTest(unittest.TestCase):
         """The next action lives in the tooltip now — the bar stays short."""
         ledger = dict(self.LEDGER, next="x" * 200)
         result = self.run_chip(ledger=ledger)
-        self.assertEqual(result["final_label"], "Riel ✓3 ?1")
+        self.assertEqual(result["final_label"], "Riel: Ledger ✓3 ?1")
         self.assertIn("x" * 60, result["final_title"])
 
     def test_running_turn_pulses(self):
@@ -626,7 +641,7 @@ class ChipTest(unittest.TestCase):
 
     def test_idle_without_ledger_still_shows_the_last_tool(self):
         result = self.run_chip(tool="terminal", complete=True)
-        self.assertEqual(result["final_label"], "Riel")
+        self.assertEqual(result["final_label"], "Riel: Ledger")
         self.assertIn("Último tool: terminal", result["final_title"])
 
     def test_ledger_click_opens_the_popover(self):
@@ -653,7 +668,7 @@ class ChipTest(unittest.TestCase):
     def test_focus_switch_clears_the_stale_ledger(self):
         """No leftover ledger from the previous conversation after a switch."""
         result = self.run_chip(ledger=self.LEDGER, extra_env={"RIEL_TEST_SWITCH": "1"})
-        self.assertFalse(result["final_label"].startswith("Riel ✓"),
+        self.assertFalse(result["final_label"].startswith("Riel: Ledger ✓"),
                          "the previous session's ledger survived the focus switch")
 
 

@@ -50,8 +50,17 @@ def _strip(content: str, prefix: str) -> str:
 
 
 def summarize(items: list) -> dict:
-    """Fold `rielctl todo` items into the chip's counters and headlines."""
-    summary = {"goal": "", "next": "", "phase": "", "claims": 0, "open": 0, "verified": 0}
+    """Fold `rielctl todo` items into the chip's counters, headlines AND detail.
+
+    The detail lists carry each item's content (claims with their verify-with,
+    verified checkpoints with their evidence, open questions) so the popover can
+    show everything the ledger has — the counters alone are the bar's business.
+    """
+    summary = {
+        "goal": "", "next": "", "phase": "",
+        "claims": 0, "open": 0, "verified": 0,
+        "claims_detail": [], "verified_detail": [], "open_detail": [],
+    }
     for item in items:
         if not isinstance(item, dict):
             continue
@@ -65,10 +74,13 @@ def summarize(items: list) -> dict:
             summary["phase"] = _strip(content, "PHASE: ")
         elif item_id.startswith("open-"):
             summary["open"] += 1
+            summary["open_detail"].append(_strip(content, "OPEN "))
         elif item_id.startswith("claim-"):
             summary["claims"] += 1
+            summary["claims_detail"].append(_strip(content, "CLAIM: "))
         elif item_id.startswith("done-"):
             summary["verified"] += 1
+            summary["verified_detail"].append(_strip(content, "DONE "))
     return summary
 
 

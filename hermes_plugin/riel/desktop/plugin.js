@@ -42,7 +42,32 @@ function truncate(text, max) {
 
 /* ------------------------------------------------------------------ ledger */
 
-/** The ledger's popover body: the same sections `rielctl seam` prints. */
+/** One detail section: heading + bullet list, only when there is content. */
+function DetailSection({ heading, items, mark, markClass }) {
+  if (!items || !items.length) return null
+  return jsxs('div', {
+    className: 'flex flex-col gap-0.5',
+    children: [
+      jsx('div', {
+        className: 'pt-1 text-[0.6875rem] font-medium tracking-wide text-(--ui-text-quaternary)',
+        children: heading
+      }),
+      ...items.map((text, i) =>
+        jsxs('div', {
+          className: 'flex items-baseline gap-1.5 leading-snug',
+          children: [
+            mark
+              ? jsx('span', { className: 'shrink-0 ' + (markClass || ''), children: mark })
+              : null,
+            jsx('span', { className: 'text-(--ui-text-secondary)', children: text })
+          ]
+        }, i)
+      )
+    ]
+  })
+}
+
+/** The ledger's popover body: everything the ledger has, like `rielctl seam`. */
 function LedgerPanel({ ledger, busy, tool }) {
   const row = (label, value, valueClass) =>
     jsxs('div', {
@@ -64,20 +89,43 @@ function LedgerPanel({ ledger, busy, tool }) {
   return jsxs('div', {
     className: 'flex flex-col gap-1.5 px-1 py-0.5 text-xs',
     children: [
+      ledger.phase
+        ? jsx('div', { className: 'text-(--ui-text-quaternary)', children: `Fase: ${ledger.phase}` })
+        : null,
       jsx('div', { className: 'font-medium text-(--ui-text-primary)', children: ledger.goal || '(sin goal)' }),
       jsxs('div', { className: 'flex items-baseline gap-1.5 text-(--ui-text-secondary)', children: [
         jsx('span', { className: 'text-(--ui-text-quaternary)', children: '→' }),
         jsx('span', { children: ledger.next || '(sin next)' })
       ]}),
       jsx('div', { className: 'mt-1 border-t border-(--ui-stroke-secondary) pt-1.5' }),
-      row('Verificados', `${ledger.verified}${stale ? '' : ''}`, 'text-right tabular-nums text-primary'),
+      row('Verificados', ledger.verified, 'text-right tabular-nums text-primary'),
       row('Abiertas', ledger.open, 'text-right tabular-nums ' + (ledger.open > 0 ? OPEN_CLASS : '')),
       row('Claims', ledger.claims, 'text-right tabular-nums'),
       busy
         ? row('Turno', 'en curso' + (tool ? `: ${tool.name}` : ''), 'text-right')
         : tool
           ? row('Último tool', `${tool.name}${tool.duration_s != null ? ` (${tool.duration_s}s)` : ''}${tool.error ? ' — error' : ''}`, 'text-right')
-          : null
+          : null,
+      stale
+        ? jsx('div', { className: 'text-(--ui-text-quaternary)', children: stale.replace(' · ', '') })
+        : null,
+      jsx(DetailSection, {
+        heading: 'Verificados',
+        items: ledger.verified_detail,
+        mark: '✓',
+        markClass: CHECK_CLASS
+      }),
+      jsx(DetailSection, {
+        heading: 'Abiertas',
+        items: ledger.open_detail,
+        mark: '?',
+        markClass: OPEN_CLASS
+      }),
+      jsx(DetailSection, {
+        heading: 'Claims',
+        items: ledger.claims_detail,
+        mark: '·'
+      })
     ]
   })
 }
@@ -117,7 +165,7 @@ function LedgerChip({ ledger, busy, tool }) {
           children: jsxs('span', {
             className: 'inline-flex items-center gap-1',
             children: [
-              jsx('span', { children: 'Riel' }),
+              jsx('span', { children: 'Riel: Ledger' }),
               busy ? jsx('span', { className: RUNNING_CLASS, children: '●' }) : null,
               ledger
                 ? jsxs('span', {
@@ -203,7 +251,7 @@ function ContractDialog({ open, onOpenChange, ctx, cwd, sessionId }) {
         jsx(DialogHeader, {
           key: 'head',
           children: [
-            jsx(DialogTitle, { key: 't', children: 'Contrato' }),
+            jsx(DialogTitle, { key: 't', children: 'Riel · Contract' }),
             jsx(DialogDescription, {
               key: 'd',
               className: 'truncate text-(--ui-text-tertiary)',
@@ -255,7 +303,7 @@ function ContractChip({ ctx, cwd, sessionId }) {
         title: 'Ver el contrato de esta tarea (secciones + grafo)',
         className: CHIP_CLASS,
         onClick: () => setOpen(true),
-        children: 'Contrato'
+        children: 'Riel: Contract'
       }),
       jsx(ContractDialog, {
         key: 'dialog',
