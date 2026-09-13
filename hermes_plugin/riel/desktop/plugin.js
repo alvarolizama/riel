@@ -3,17 +3,12 @@
 // task's contract.md, rendered as Markdown (Streamdown draws the sections and
 // the mermaid graph — the same pipeline core chat surfaces use).
 //
-// Data paths:
-//   * state  — host.state.cwd → ctx.rest('/ledger') → the plugin's own Python
-//     backend → the vendored `rielctl todo` mirror (polled, and refetched the
-//     moment a tool finishes, so the counters catch up fast).
-//   * activity — host.onEvent('tool.start' | 'tool.complete'), the app's
-//     gateway event tap: turn-in-progress comes from host.state.busy.
-//   * contract — the same backend, GET /contract, verbatim markdown.
-// The renderer never reads the filesystem.
-//
-// App-level by design: the chip is one app-wide surface, so activity is not
-// filtered per tile — it shows the most recent tool the app saw.
+// Session-awareness: the chip follows the FOCUSED chat. `host.state.cwd` is a
+// workspace-global that can still hold the previous conversation's folder right
+// after a switch (session.ts: "…the PREVIOUS conversation's folder"), and
+// background sessions can move it. So every read is gated on
+// `focusedSessionId`, activity events are filtered by `session_id`, and a
+// focus switch clears the stale state before refetching.
 //
 // Opt-in: `defaultEnabled: false` ships it inventory-only in Capabilities →
 // Plugins, mirroring the agent half's `plugins.enabled` gate in config.yaml.
@@ -64,7 +59,7 @@ function chipTitle(ledger, busy, tool) {
   return lines.join('\n')
 }
 
-function ContractDialog({ open, onOpenChange, cwd }) {
+function ContractDialog({ open, onOpenChange, ctx, cwd, sessionId }) {
   const [contract, setContract] = useState(null)
   const [loading, setLoading] = useState(false)
 
@@ -75,9 +70,7 @@ function ContractDialog({ open, onOpenChange, cwd }) {
     setContract(null)
     const load = async () => {
       try {
-        const data = await globalThis.__rielCtx.rest(
-          '/contract?worktree=' + encodeURIComponent(cwd || '')
-        )
+        const data = await ctx.rest('/contract?worktree=' + encodeURIComponent(cwd || ''))
         if (alive) setContract(data)
       } catch (error) {
         if (alive) {
@@ -91,7 +84,7 @@ function ContractDialog({ open, onOpenChange, cwd }) {
     return () => {
       alive = false
     }
-  }, [open, cwd])
+  }, [open, cwd, sessionId, ctx])
 
   const body = () => {
     if (loading) return jsx('div', { className: 'py-8 text-center text-sm text-(--ui-text-tertiary)', children: 'cargando contrato…' })
@@ -134,22 +127,28 @@ function ContractDialog({ open, onOpenChange, cwd }) {
 function RielChip({ ctx }) {
   const cwd = useValue(host.state.cwd)
   const busy = useValue(host.state.busy)
+  const focusedId = useValue(host.state.focusedSessionId)
   const [status, setStatus] = useState(null)
   const [tool, setTool] = useState(null)
   const [revision, setRevision] = useState(0)
   const [dialogOpen, setDialogOpen] = useState(false)
 
-  // The dialog fetches through the plugin context; reach it from its effect.
-  globalThis.__rielCtx = ctx
-
-  // Activity: the app's gateway event tap. Every finished tool bumps `revision`
-  // so the ledger is re-read immediately instead of at the next poll.
+  // Activity: the app's gateway event tap, FILTERED to the focused session —
+  // tools in background tiles must not move this chip. Handlers read the atom
+  // imperatively (never from render closures). Events without a session_id are
+  // kept: some surfaces still emit them unscoped.
   useEffect(() => {
+    const belongs = event => {
+      const sid = event && event.session_id
+      return !sid || sid === host.state.focusedSessionId.get()
+    }
     const started = host.onEvent('tool.start', event => {
+      if (!belongs(event)) return
       const name = (event && event.payload && event.payload.name) || 'tool'
       setTool({ name, running: true })
     })
     const completed = host.onEvent('tool.complete', event => {
+      if (!belongs(event)) return
       const payload = (event && event.payload) || {}
       setTool({
         name: payload.name || 'tool',
@@ -164,6 +163,14 @@ function RielChip({ ctx }) {
       completed()
     }
   }, [])
+
+  // Ledger state, keyed to the focused session: a focus switch clears the
+  // stale chip immediately (the previous conversation's folder may still be in
+  // `cwd`) and refetches once the atom catches up.
+  useEffect(() => {
+    setTool(null)
+    setStatus(null)
+  }, [focusedId])
 
   useEffect(() => {
     let alive = true
@@ -185,7 +192,7 @@ function RielChip({ ctx }) {
       alive = false
       clearInterval(timer)
     }
-  }, [cwd, revision, ctx])
+  }, [cwd, focusedId, revision, ctx])
 
   const ledger = status && status.present ? status : null
   const onClick = () => setDialogOpen(true)
@@ -211,7 +218,9 @@ function RielChip({ ctx }) {
         key: 'dialog',
         open: dialogOpen,
         onOpenChange: setDialogOpen,
-        cwd
+        ctx,
+        cwd,
+        sessionId: focusedId
       })
     ]
   })

@@ -82,7 +82,8 @@ const makeStub = (tag) => (props) => ({ tag, props: props || {} })
 export const host = {
   state: {
     cwd: { get: () => process.env.RIEL_TEST_CWD || '' },
-    busy: { get: () => process.env.RIEL_TEST_BUSY === '1' }
+    busy: { get: () => process.env.RIEL_TEST_BUSY === '1' },
+    focusedSessionId: { get: () => (globalThis.__RIEL_FOCUS__ ||= process.env.RIEL_TEST_FOCUS || 's1') }
   },
   notify: (payload) => {
     globalThis.__RIEL_NOTIFIED__ = payload
@@ -172,6 +173,8 @@ const render = () => {
 }
 
 const first = render()
+await tick()   // let the ledger effect's first fetch land before asserting
+const firstAfterFetch = render()
 if (tool) emit('tool.start', { payload: { name: tool, tool_id: 't1' }, session_id: 's1' })
 await tick()
 const withActivity = render()
@@ -183,7 +186,22 @@ if (tool && process.env.RIEL_TEST_COMPLETE === '1') {
   afterComplete = render()
 }
 
-const current = afterComplete || withActivity
+// Optional mid-run focus switch: the atom changes, effects re-run (cleanup +
+// fetch), and the NEXT render must not carry the previous session's state.
+let switched = null
+if (process.env.RIEL_TEST_SWITCH === '1') {
+  globalThis.__RIEL_FOCUS__ = 's2'
+  const current = globalThis.__RIEL_INDEX__   // preserve state cells across renders
+  const cleanups = globalThis.__RIEL_CLEANUPS__ || []
+  // run the focus-change cleanups (the clear effect), then re-render
+  for (const cleanup of cleanups) if (typeof cleanup === 'function') cleanup()
+  globalThis.__RIEL_CLEANUPS__ = []
+  globalThis.__RIEL_INDEX__ = current
+  await tick()
+  switched = render()
+}
+
+const current = switched || afterComplete || withActivity
 current.button.props.onClick()
 
 console.log(JSON.stringify({
@@ -192,7 +210,7 @@ console.log(JSON.stringify({
   defaultEnabled: plugin.defaultEnabled,
   areas: contributions.map((c) => c.area),
   order: chip.order,
-  first_label: first.button.props.children,
+  first_label: firstAfterFetch.button.props.children,
   activity_label: withActivity.button.props.children,
   activity_title: withActivity.button.props.title,
   activity_class: withActivity.button.props.className,
@@ -430,7 +448,7 @@ class PluginApiRouteTest(unittest.TestCase):
 class ChipTest(unittest.TestCase):
     """The chip loaded and rendered by a real Node process, with a stubbed SDK."""
 
-    def run_chip(self, ledger=None, busy=False, tool=None, complete=False):
+    def run_chip(self, ledger=None, busy=False, tool=None, complete=False, extra_env=None):
         with tempfile.TemporaryDirectory(prefix="riel-chip-") as tmp:
             root = Path(tmp)
             harness = _stub_environment(root)
@@ -442,6 +460,7 @@ class ChipTest(unittest.TestCase):
                 RIEL_TEST_BUSY="1" if busy else "0",
                 RIEL_TEST_COMPLETE="1" if complete else "0",
             )
+            env.update(extra_env or {})
             proc = subprocess.run(
                 ["node", str(harness)],
                 cwd=root,
@@ -505,6 +524,24 @@ class ChipTest(unittest.TestCase):
         result = self.run_chip(ledger=self.LEDGER, tool="terminal", complete=True)
         self.assertFalse(result["tapped"], "the click belongs to the dialog now")
         self.assertIsNone(result["notified"])
+
+    def test_background_session_tools_do_not_move_the_chip(self):
+        """A tool in ANOTHER tile must not reach the focused chip's label."""
+        result = self.run_chip(ledger=self.LEDGER, busy=True, tool="terminal")
+        # the harness emits events with session_id 's1'; focus another session
+        # and the same event is ignored — asserted by re-running with a
+        # different focus and no activity label change.
+        other = self.run_chip(ledger=self.LEDGER, busy=True, tool="terminal",
+                              extra_env={"RIEL_TEST_FOCUS": "s2"})
+        self.assertEqual(other["activity_label"], "riel ● pensando · 3✓ 1?",
+                         "a background tile's tool leaked into the focused chip")
+
+    def test_focus_switch_clears_the_stale_ledger(self):
+        """No leftover contract from the previous conversation after a switch."""
+        result = self.run_chip(ledger=self.LEDGER, extra_env={"RIEL_TEST_SWITCH": "1"})
+        self.assertFalse(result["final_label"].startswith("riel 3✓"),
+                         "the previous session's ledger survived the focus switch")
+        self.assertEqual(result["final_label"], "riel · sin ledger")
 
 
 if __name__ == "__main__":
