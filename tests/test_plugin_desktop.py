@@ -737,12 +737,12 @@ class ChipTest(unittest.TestCase):
                         "the DB fallback did not override the stale global cwd")
 
     def test_ledger_popover_body_scrolls(self):
-        """The popover clips with a scrollable body — no invisible overflow."""
+        """The ledger dialog clips with a scrollable body — no invisible overflow."""
         source = (DESKTOP / "plugin.js").read_text(encoding="utf-8")
-        popover = source.split("jsxs(PopoverContent")[1].split("})")[0]
-        self.assertIn("max-h-[60vh]", popover, "the popover has no bounded height")
+        dialog = source.split("jsx(DialogContent, {")[1].split("})")[0]
+        self.assertIn("max-h-[85vh]", dialog, "the dialog has no bounded height")
         self.assertIn("overflow-y-auto", source,
-                      "the ledger body must scroll when it exceeds the popover")
+                      "the ledger body must scroll when it exceeds the dialog")
 
     def test_detail_lines_wrap_instead_of_truncating(self):
         """A ✓ line carries the whole checkpoint — it must wrap, not clip."""

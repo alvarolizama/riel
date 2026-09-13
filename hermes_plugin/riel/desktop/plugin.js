@@ -24,8 +24,6 @@
 import { host, haptic, useValue } from '@hermes/plugin-sdk'
 import { Streamdown } from '@hermes/plugin-sdk'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@hermes/plugin-sdk'
-import { Popover, PopoverContent, PopoverTrigger } from '@hermes/plugin-sdk'
-import { ScrollArea } from '@hermes/plugin-sdk'
 import { jsx, jsxs } from 'react/jsx-runtime'
 import { useEffect, useState } from 'react'
 
@@ -155,51 +153,55 @@ function LedgerChip({ ledger, busy, tool }) {
     return lines.join('\n')
   }
 
-  return jsxs(Popover, {
+  return jsxs(Dialog, {
     open,
     onOpenChange: setOpen,
     children: [
-      jsx(PopoverTrigger, {
+      jsx('button', {
         key: 'trigger',
-        asChild: true,
-        children: jsx('button', {
-          type: 'button',
-          title: title(),
-          className: CHIP_CLASS,
-          children: jsxs('span', {
-            className: 'inline-flex items-center gap-1',
-            children: [
-              jsx('span', { children: 'Riel: Ledger' }),
-              busy ? jsx('span', { className: RUNNING_CLASS, children: '●' }) : null,
-              ledger
-                ? jsxs('span', {
-                    className: 'inline-flex items-center gap-1 tabular-nums',
-                    children: [
-                      jsx('span', { className: CHECK_CLASS, children: `✓${ledger.verified}` }),
-                      ledger.open > 0
-                        ? jsx('span', { className: OPEN_CLASS, children: `?${ledger.open}` })
-                        : null
-                    ]
-                  })
-                : null
-            ]
-          })
+        type: 'button',
+        title: title(),
+        className: CHIP_CLASS,
+        onClick: () => setOpen(true),
+        children: jsxs('span', {
+          className: 'inline-flex items-center gap-1',
+          children: [
+            jsx('span', { children: 'Riel: Ledger' }),
+            busy ? jsx('span', { className: RUNNING_CLASS, children: '●' }) : null,
+            ledger
+              ? jsxs('span', {
+                  className: 'inline-flex items-center gap-1 tabular-nums',
+                  children: [
+                    jsx('span', { className: CHECK_CLASS, children: `✓${ledger.verified}` }),
+                    ledger.open > 0
+                      ? jsx('span', { className: OPEN_CLASS, children: `?${ledger.open}` })
+                      : null
+                  ]
+                })
+              : null
+          ]
         })
       }),
-      jsxs(PopoverContent, {
+      jsx(DialogContent, {
         key: 'content',
-        align: 'end',
-        // Fixed height + native overflow: ScrollArea's viewport is size-full,
-        // which needs a bounded parent height — with only max-h the content
-        // overflowed invisible (the "ledger incompleto" bug).
-        className: 'flex max-h-[60vh] w-[22rem] flex-col overflow-hidden p-2',
+        className: 'flex max-h-[85vh] max-w-2xl flex-col overflow-hidden',
         children: [
-          jsx('div', {
-            className: 'px-1 pb-1 text-[0.6875rem] font-medium tracking-wide text-(--ui-text-quaternary)',
-            children: 'Ledger'
+          jsx(DialogHeader, {
+            key: 'head',
+            children: [
+              jsx(DialogTitle, { key: 't', children: 'Riel · Ledger' }),
+              jsx(DialogDescription, {
+                key: 'd',
+                className: 'text-(--ui-text-tertiary)',
+                children: ledger
+                  ? `${ledger.verified}✓ ${ledger.open}? ${ledger.claims} claims`
+                  : 'sin ledger en este worktree'
+              })
+            ]
           }),
           jsx('div', {
-            className: 'min-h-0 flex-1 overflow-y-auto',
+            key: 'body',
+            className: 'min-h-0 flex-1 overflow-y-auto pr-1',
             children: jsx(LedgerPanel, { ledger, busy, tool })
           })
         ]
