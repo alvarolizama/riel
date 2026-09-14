@@ -191,20 +191,22 @@ class TodoTests(TempDirTest):
         self.assertEqual(rc, 1)
         self.assertIn("no ledger", err)
 
-    def test_todo_full_mirror(self):
+    def test_status_is_the_full_ledger_mirror(self):
+        """`rielctl status` carries the ledger's own facts (chip + gate)."""
         run("note", "--goal", "ship login", "--phase", "F1",
             "--next", "wire controller")
         run("note", "--claim", "login works", "--verify-with", "mix test")
         run("note", "--open", "link encodes?", "--settled-by", "property test")
         run("note", "--check", "compiles", "--by", "mix compile",
             "--covering", "lib")
-        rc, out, _ = run("todo")
+        rc, out, _ = run("status")
         self.assertEqual(rc, 0, out)
         items = json.loads(out)
         by_id = {i["id"]: i for i in items}
         self.assertEqual(by_id["goal"]["status"], "pending")
         self.assertIn("ship login", by_id["goal"]["content"])
         self.assertEqual(by_id["phase"]["parent"], "goal")
+        self.assertIn("F1", by_id["phase"]["content"])
         self.assertEqual(by_id["next"]["status"], "in_progress")
         self.assertEqual(by_id["open-1"]["status"], "pending")
         self.assertTrue(by_id["open-1"]["content"].startswith("OPEN 01"))
@@ -214,6 +216,11 @@ class TodoTests(TempDirTest):
         self.assertTrue(by_id["done-1"]["content"].startswith("DONE 01"))
         self.assertEqual(
             sum(1 for i in items if i["status"] == "in_progress"), 1)
+
+    def test_status_without_ledger_errors(self):
+        rc, _, err = run("status")
+        self.assertEqual(rc, 1)
+        self.assertIn("no ledger", err)
 
     def test_todo_next_empty_warns(self):
         run("note", "--goal", "g")
@@ -263,14 +270,19 @@ d
         with open(os.path.join(d, "contract.md"), "w", encoding="utf-8") as fh:
             fh.write(self.CONTRACT_V2)
 
-    def test_todo_with_contract_carries_phases_and_steps(self):
-        """Spec 6 v2: the todo shows the plan — phases as rows, steps nested."""
+    def test_todo_with_contract_is_the_plan_only(self):
+        """Spec 6 v3: the todo is the plan — no ledger row leaks into it."""
         self._write_contract()
         run("note", "--goal", "probar", "--next", "EDIT plugin.js")
+        run("note", "--claim", "P1: la cosa", "--verify-with", "make test")
+        run("note", "--open", "sobrevive?", "--settled-by", "probe")
+        run("note", "--check", "algo", "--by", "make test")
         rc, out, _ = run("todo")
         self.assertEqual(rc, 0, out)
         items = json.loads(out)
         by_id = {i["id"]: i for i in items}
+        # the root is the CONTRACT's goal, not the ledger's
+        self.assertEqual(by_id["goal"]["content"], "GOAL: We need probar el todo v2")
         # phases as rows, in authored order
         self.assertIn("phase-F1", by_id)
         self.assertIn("phase-F2", by_id)
@@ -284,9 +296,24 @@ d
         # gates and terminals are NOT steps
         self.assertNotIn("step-F1-G1", by_id)
         self.assertNotIn("step-F2-END", by_id)
-        # exactly one in_progress: the Next
+        # no ledger rows: next, claims, opens and ✓ stay out of the plan
+        self.assertFalse([i for i in by_id
+                          if i == "next" or i.startswith(("claim-", "open-", "done-"))])
+        # exactly one in_progress: the step the Next points at
         self.assertEqual(sum(1 for i in items if i["status"] == "in_progress"), 1)
-        self.assertEqual(by_id["next"]["status"], "in_progress")
+        self.assertEqual(by_id["step-F1-S1"]["status"], "in_progress")
+
+    def test_todo_marks_the_current_step_and_closes_the_earlier_ones(self):
+        self._write_contract()
+        run("note", "--goal", "probar", "--next", "RUN make test")
+        rc, out, _ = run("todo")
+        items = json.loads(out)
+        by_id = {i["id"]: i for i in items}
+        self.assertEqual(by_id["step-F1-S1"]["status"], "completed")
+        self.assertEqual(by_id["step-F1-S2"]["status"], "in_progress")
+        self.assertEqual(by_id["phase-F1"]["status"], "pending")
+        self.assertEqual(by_id["step-F2-S3"]["status"], "pending")
+        self.assertEqual(sum(1 for i in items if i["status"] == "in_progress"), 1)
 
     def test_todo_phase_completed_when_its_gate_is_verified(self):
         self._write_contract()
@@ -299,17 +326,32 @@ d
         # its steps completed too (the gate covers the phase)
         self.assertEqual(by_id["step-F1-S1"]["status"], "completed")
         self.assertEqual(by_id["step-F1-S2"]["status"], "completed")
-        # the active phase (owns the Next) stays pending
+        # the active phase (owns the Next) stays pending; its step is in_progress
         self.assertEqual(by_id["phase-F2"]["status"], "pending")
-        self.assertEqual(by_id["step-F2-S3"]["status"], "pending")
+        self.assertEqual(by_id["step-F2-S3"]["status"], "in_progress")
 
-    def test_todo_degrades_to_v1_without_contract(self):
+    def test_todo_goal_carries_in_progress_when_every_phase_is_gated(self):
+        self._write_contract()
+        run("note", "--goal", "probar", "--next", "cerrar")
+        run("note", "--check", "F1 gate", "--by", "make test")
+        run("note", "--check", "F2 gate", "--by", "make test")
+        rc, out, _ = run("todo")
+        items = json.loads(out)
+        by_id = {i["id"]: i for i in items}
+        self.assertEqual(by_id["phase-F1"]["status"], "completed")
+        self.assertEqual(by_id["phase-F2"]["status"], "completed")
+        # the plan is fully gated: the done-check (the goal) is in_progress
+        self.assertEqual(by_id["goal"]["status"], "in_progress")
+        self.assertEqual(sum(1 for i in items if i["status"] == "in_progress"), 1)
+
+    def test_todo_without_contract_is_goal_and_the_ledger_phase(self):
         run("note", "--goal", "g", "--phase", "F1 algo", "--next", "n")
         rc, out, _ = run("todo")
         items = json.loads(out)
-        ids = [i["id"] for i in items]
-        self.assertIn("phase", ids)          # v1 single phase row
-        self.assertNotIn("phase-F1", ids)    # no DAG-derived rows
+        self.assertEqual([i["id"] for i in items], ["goal", "phase"])
+        by_id = {i["id"]: i for i in items}
+        self.assertIn("F1 algo", by_id["phase"]["content"])
+        self.assertEqual(by_id["phase"]["status"], "in_progress")
 
 
 class SeamResumeShipTests(TempDirTest):

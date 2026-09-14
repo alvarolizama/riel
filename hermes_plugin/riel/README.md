@@ -73,7 +73,7 @@ Los dos datos entran por caminos distintos:
 | Actividad | `host.onEvent('tool.start' \| 'tool.complete')` — el tap del gateway — más `host.state.busy` para el turno en curso |
 
 El endpoint lo sirve `dashboard/plugin_api.py`, el backend del plugin montado por
-el gateway en el proceso del agente, y normaliza el mirror de `rielctl todo` vía
+el gateway en el proceso del agente, y normaliza el mirror de `rielctl status` vía
 `dashboard/ledger_status.py`: el formato del ledger sigue teniendo un solo dueño
 (el plugin no re-parsea `.riel/ledger.md`) y el renderer nunca lee el disco —
 solo `<worktree>/.riel/ledger.md` puede salir, y solo como contadores + los

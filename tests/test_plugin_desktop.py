@@ -480,6 +480,19 @@ class LedgerStatusTest(unittest.TestCase):
         self.assertIsInstance(status["updated"], int)
         self.assertGreaterEqual(status["stale_secs"], 0)
 
+    def test_chip_reads_status_not_the_plan(self):
+        """With a contract in the worktree the chip still gets the ledger facts."""
+        Path(self.tmp, ".riel").mkdir()
+        Path(self.tmp, ".riel", "contract.md").write_text(
+            "# Task: probe\n\n## Objective\nWe need x\n", encoding="utf-8")
+        self._seed("note", "--goal", "g", "--phase", "F1", "--next", "n")
+        self._seed("note", "--check", "ok", "--by", "make test")
+        status = self.status.read_status(self.tmp)
+        self.assertTrue(status["present"])
+        self.assertEqual(status["phase"], "F1")
+        self.assertEqual(status["next"], "n")
+        self.assertEqual(status["verified"], 1)
+
     def test_detail_carries_the_full_content_of_every_item(self):
         """The popover shows everything: claims with verify-with, ✓ with evidence, opens."""
         self._seed("note", "--goal", "g", "--next", "n")

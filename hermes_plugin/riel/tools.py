@@ -184,7 +184,8 @@ riel_resume = _passthrough("resume")
 riel_todo = _passthrough(
     "todo",
     "Inject this into the session todo: pass the items array (stdout) to the "
-    "todo_list tool (todos=<array>) so the UI mirrors the ledger.",
+    "todo_list tool (todos=<array>) so the UI shows the plan — the contract's "
+    "goal, its phases and their steps.",
 )
 
 # ------------------------------------------------------------------ context ---

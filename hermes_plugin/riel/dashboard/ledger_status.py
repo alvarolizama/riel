@@ -1,9 +1,10 @@
 """Normalize a worktree's Riel ledger into the small summary the statusbar chip shows.
 
 Stdlib only, and importable without FastAPI so the repo suite can test it
-directly. It shells out to the **vendored** `rielctl todo` — the same JSON
-mirror the `riel_todo` tool returns — instead of re-parsing `.riel/ledger.md`
-here, so the ledger format keeps exactly one owner (`rielctl`).
+directly. It shells out to the **vendored** `rielctl status` — the ledger's own
+facts as JSON — instead of re-parsing `.riel/ledger.md` here, so the ledger
+format keeps exactly one owner (`rielctl`). The plan the session todo mirrors
+(phases and their steps) is `rielctl todo`'s business, not the chip's.
 
 Never raises: the caller is an HTTP route and the panel must degrade to
 "no ledger" instead of a 500.
@@ -50,7 +51,7 @@ def _strip(content: str, prefix: str) -> str:
 
 
 def summarize(items: list) -> dict:
-    """Fold `rielctl todo` items into the chip's counters, headlines AND detail.
+    """Fold `rielctl status` items into the chip's counters, headlines AND detail.
 
     The detail lists carry each item's content (claims with their verify-with,
     verified checkpoints with their evidence, open questions) so the popover can
@@ -116,7 +117,7 @@ def read_status(worktree: str, rielctl: Path = RIELCTL, timeout: int = TIMEOUT_S
         return status
     try:
         proc = subprocess.run(
-            [sys.executable, str(rielctl), "todo"],
+            [sys.executable, str(rielctl), "status"],
             cwd=root,
             capture_output=True,
             text=True,

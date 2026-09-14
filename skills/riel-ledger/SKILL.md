@@ -1,7 +1,7 @@
 ---
 name: riel-ledger
 description: "Use when running a loop-mode task — write the local Goal/Core/Verified/Open/Next ledger in the worktree, re-read at every seam, verify before done. No remote dependency."
-version: 1.12.0
+version: 1.13.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -292,8 +292,9 @@ your own result, not just in favor.
 **Mirror:** regenerate the session todo right after — and **inject it**:
 `rielctl todo` prints the JSON array; pass it to the `todo_list` tool
 (`todo_list(todos=<that array>)`, or `riel_todo` then `todo_list` where the
-Hermes plugin is installed). The new checkpoint shows as `DONE NN` in the UI
-without hand-editing the todo.
+Hermes plugin is installed). A ✓ that closes a phase's gate flips that phase
+(and its steps) to `completed` in the UI without hand-editing the todo; the
+checkpoint itself shows in the desktop chip, which reads `rielctl status`.
 
 Re-verifying a **critical** checkpoint is allowed — but only with *variation*
 (a different angle, order, or question), never the same check repeated.
@@ -311,7 +312,7 @@ belonging to future phases migrate with their numbers. Then regenerate the
 session-todo mirror (`rielctl todo` — the contract's phases and their
 steps enter as nested rows): regenerate it. Then **inject it into the
 session todo**:
-pass the JSON array to the `todo_list` tool so the UI mirrors the ledger
+pass the JSON array to the `todo_list` tool so the UI shows the plan
 (`todo_list(todos=<array>)` — the mirror is the tool call, not just the file).
 
 ### Done-check (before declaring done)

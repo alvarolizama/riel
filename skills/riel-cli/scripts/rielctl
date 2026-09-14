@@ -427,30 +427,61 @@ def _phase_order(nodes, edges):
     return [nid for nid in nodes if re.match(r"^[FW]\d+$", nid)]
 
 
+def _phase_steps(nodes, edges, phase_id):
+    """Step node ids of a phase, in authored order.
+
+    A step is a member of the phase's subgraph that is not the phase itself,
+    not a gate (`G#`) or another phase, and not a shape milestone
+    (START/END/DONE) — those are not work.
+    """
+    sub = _phase_subgraph(nodes, edges, phase_id)
+    steps = []
+    for member in nodes:                      # authored order, not a set
+        if member not in sub or member == phase_id:
+            continue
+        if re.match(r"^[FWG]\d+$", member):
+            continue
+        if member.upper() in ("END", "START", "DONE"):
+            continue
+        if not (nodes.get(member, ("", ""))[1] or "").strip():
+            continue
+        steps.append(member)
+    return steps
+
+
+def _label_matches(label, needle):
+    label = (label or "").strip()
+    return bool(label) and (label in needle or needle in label)
+
+
 def _phase_of_next(nodes, edges, next_text):
     """Best-effort: which phase does the ledger's Next step belong to?"""
     needle = (next_text or "").strip()
     if not needle:
         return None
     for nid in _phase_order(nodes, edges):
-        if nid in _phase_subgraph(nodes, edges, nid):
-            for member in _phase_subgraph(nodes, edges, nid):
-                label = nodes.get(member, ("", ""))[1]
-                if label and label.strip() and label.strip() in needle:
-                    return nid
-                if member != nid and needle in label:
-                    return nid
+        if _label_matches(nodes.get(nid, ("", ""))[1], needle):
+            return nid
+        for member in _phase_steps(nodes, edges, nid):
+            if _label_matches(nodes.get(member, ("", ""))[1], needle):
+                return nid
     return None
 
 
-def contract_to_todo_items(text, st):
-    """Phase and step items from the contract's DAG (Spec 6 v2).
+def _contract_goal(text):
+    """The plan's goal: the contract's `## Objective`, first paragraph."""
+    return _first_paragraph(_section(text, "Objective"))
 
-    Phases are rows; steps are nested subtasks (parent = the phase). Statuses
-    come from the ledger's position: a phase with its gate's ✓ in Verified is
-    completed, the phase owning the Next is the active one (still pending —
-    the Next owns in_progress), the rest pending. Gate/decision nodes are not
-    steps.
+
+def contract_to_todo_items(text, st):
+    """Phase and step items from the contract's DAG (Spec 6 v3).
+
+    The todo IS the plan: phases are rows, steps are nested subtasks
+    (`parent` = the phase). The ledger only decides statuses — a phase whose
+    gate has a ✓ is completed; the active phase (the one owning the Next)
+    carries the current step as `in_progress`, its earlier steps completed and
+    the rest pending. No ledger fact (Next, claim, open, ✓) becomes a row;
+    those are served by `rielctl status`.
     """
     items = []
     block = _graph_block(text)
@@ -460,60 +491,116 @@ def contract_to_todo_items(text, st):
     if not nodes:
         return items
 
+    phase_ids = _phase_order(nodes, edges)
     active = _phase_of_next(nodes, edges, st.get("next") or "")
     if not active and st.get("phase"):
         # fall back: match the ledger's Phase text against node labels
-        for nid in _phase_order(nodes, edges):
-            label = nodes[nid][1]
-            if label and st["phase"].strip() in label:
+        for nid in phase_ids:
+            if _label_matches(nodes.get(nid, ("", ""))[1], st["phase"].strip()):
                 active = nid
                 break
-
-    # how many ✓ exist (order of Verified == order of phases when they map)
     verified_count = len(st.get("verified") or [])
+    if not active and (st.get("next") or "").strip() and verified_count < len(phase_ids):
+        # a Next that matches no label: the plan's cursor is the first phase
+        # still without its gate ✓ — best-effort, so the mirror keeps exactly
+        # one in_progress instead of going malformed
+        active = phase_ids[verified_count]
 
-    phase_ids = _phase_order(nodes, edges)
+    # the current step: the step the Next points at (label match), else the
+    # first step of the active phase
+    current_step = None
+    if active:
+        steps = _phase_steps(nodes, edges, active)
+        needle = (st.get("next") or "").strip()
+        for member in steps:
+            if _label_matches(nodes.get(member, ("", ""))[1], needle):
+                current_step = member
+                break
+        if current_step is None and steps:
+            current_step = steps[0]
+
     for idx, nid in enumerate(phase_ids):
         label = nodes[nid][1]
-        # a phase is completed when its position has a ✓ (phases complete in
-        # order; idx-th phase ↔ idx-th verified entry when they correspond)
+        steps = _phase_steps(nodes, edges, nid)
         completed = (idx + 1) <= verified_count and active != nid
-        if active == nid:
-            completed = False
+        current_pos = (
+            steps.index(current_step)
+            if (active == nid and current_step in steps) else -1
+        )
+        # a phase with no steps cannot carry in_progress on a step, so the row
+        # itself does (the single-in_progress rule still holds)
+        phase_status = "completed" if completed else "pending"
+        if active == nid and not steps:
+            phase_status = "in_progress"
         items.append({
             "id": "phase-{}".format(nid),
             "content": "PHASE {}: {}".format(nid, label),
-            "status": "completed" if completed else "pending",
+            "status": phase_status,
             "parent": "goal",
         })
-        # steps: members of the phase's subgraph that are not phases, gates
-        # or terminal markers (START/END are shape milestones, not work)
-        sub = _phase_subgraph(nodes, edges, nid)
-        for member in sub:
-            if member == nid:
-                continue
-            if re.match(r"^[FWG]\d+$", member):
-                continue
-            if member.upper() in ("END", "START", "DONE"):
-                continue
-            m_label = nodes.get(member, ("", ""))[1]
-            if not m_label:
-                continue
+        for pos, member in enumerate(steps):
+            if completed:
+                step_status = "completed"
+            elif active == nid:
+                if pos == current_pos:
+                    step_status = "in_progress"
+                elif 0 <= pos < current_pos:
+                    step_status = "completed"
+                else:
+                    step_status = "pending"
+            else:
+                step_status = "pending"
             items.append({
                 "id": "step-{}-{}".format(nid, member),
-                "content": m_label,
-                "status": "completed" if completed else "pending",
+                "content": nodes[member][1],
+                "status": step_status,
                 "parent": "phase-{}".format(nid),
             })
     return items
 
 
 def ledger_to_todo(st, contract_text=None):
-    """Derive the session-todo mirror items from ledger state (Spec 6).
+    """Derive the session-todo mirror from the plan (Spec 6 v3).
 
-    v2: with `contract_text`, the contract's phases become rows and their
-    steps nested subtasks — the todo shows the whole plan; the ledger decides
-    the statuses.
+    The todo is the PLAN: the goal (the contract's Objective) as the root, the
+    contract's phases as rows and each phase's steps as nested subtasks. The
+    ledger only decides statuses (`contract_to_todo_items`). The ledger's own
+    facts — Next, claims, opens, ✓ — are NOT rows here; `rielctl status`
+    serves them to the chip and the gate. Without a contract the todo degrades
+    to goal + the ledger's single Phase row.
+    """
+    items = []
+
+    def add(iid, content, status, parent=None):
+        item = {"id": iid, "content": content, "status": status}
+        if parent:
+            item["parent"] = parent
+        items.append(item)
+
+    goal = _contract_goal(contract_text) if contract_text else ""
+    if not goal:
+        goal = st["goal"] or ""
+    add("goal", "GOAL: {}".format(goal or "<empty>"), "pending")
+
+    if contract_text:
+        items.extend(contract_to_todo_items(contract_text, st))
+        if (st.get("next") or "").strip() and not any(
+                i["status"] == "in_progress" for i in items):
+            # every phase is gated but the ledger still has a Next: the
+            # done-check is what remains — the goal carries in_progress
+            items[0]["status"] = "in_progress"
+    elif st["phase"]:
+        # no contract: the ledger's Phase row is the plan's only row
+        add("phase", "PHASE: {}".format(st["phase"]), "in_progress", "goal")
+    return items
+
+
+def ledger_to_status(st):
+    """The ledger's facts as the item list the chip and the gate fold (Spec 6).
+
+    This is the ledger mirror the plugin consumes — goal, phase, next, open
+    questions, claims and verified checkpoints — kept separate from the plan
+    (`rielctl todo`). Same item shape, so the consumers keep one fold.
     """
     items = []
 
@@ -524,9 +611,7 @@ def ledger_to_todo(st, contract_text=None):
         items.append(item)
 
     add("goal", "GOAL: {}".format(st["goal"] or "<empty>"), "pending")
-    if contract_text:
-        items.extend(contract_to_todo_items(contract_text, st))
-    if st["phase"] and not contract_text:
+    if st["phase"]:
         add("phase", "PHASE: {}".format(st["phase"]), "pending", "goal")
     if st["next"]:
         add("next", "NEXT: {}".format(st["next"]), "in_progress", "goal")
@@ -545,7 +630,7 @@ def cmd_todo(args):
         print("no ledger found at {}; run rielctl note --goal --next first".format(
             args.ledger), file=sys.stderr)
         return 1
-    # Spec 6 v2: with a contract, the todo carries the plan's phases and steps
+    # Spec 6 v3: the todo is the plan — the contract's phases and steps
     contract_text = None
     contract_path = os.path.join(os.path.dirname(args.ledger) or ".", "contract.md")
     if os.path.isfile(contract_path):
@@ -558,10 +643,21 @@ def cmd_todo(args):
     print(json.dumps(items, indent=2, ensure_ascii=False))
     if not any(i["status"] == "in_progress" for i in items):
         print(
-            "[!] Next is empty — the mirror has no in_progress item; "
-            "fix the ledger, not the todo.",
+            "[!] no in_progress item in the mirror — the Next points at no "
+            "step; fix the ledger, not the todo.",
             file=sys.stderr,
         )
+    return 0
+
+
+def cmd_status(args):
+    """Print the ledger's own facts — the mirror the chip and the gate fold."""
+    st = read_ledger(args.ledger)
+    if not st["goal"] and not st["verified"] and not st["next"]:
+        print("no ledger found at {}; run rielctl note --goal --next first".format(
+            args.ledger), file=sys.stderr)
+        return 1
+    print(json.dumps(ledger_to_status(st), indent=2, ensure_ascii=False))
     return 0
 
 
@@ -1297,8 +1393,14 @@ def main(argv=None):
     r.set_defaults(fn=cmd_resume)
 
     t = sub.add_parser("todo",
-                       help="derive the Hermes session-todo mirror (JSON)")
+                       help="derive the Hermes session-todo mirror (JSON): "
+                            "the plan — goal, phases and their steps")
     t.set_defaults(fn=cmd_todo)
+
+    ss = sub.add_parser("status",
+                        help="the ledger's own facts (JSON) for the chip and "
+                             "the gate: goal, phase, next, opens, claims, ✓")
+    ss.set_defaults(fn=cmd_status)
 
     cx = sub.add_parser("context",
                         help="context-fetch keywords from a contract (JSON)")

@@ -1,5 +1,5 @@
 name: riel
-version: 0.3.0
+version: 0.4.0
 description: "Riel — ledger/contract machinery as Hermes tools plus the pre_verify gate (a turn that edited code in a Riel worktree does not close without a verified checkpoint). The protocol prose ships as a skill tap, not here."
 author: Álvaro Lizama
 license: MIT

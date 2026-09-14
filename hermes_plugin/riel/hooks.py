@@ -14,8 +14,8 @@ Bounds that keep it honest:
   * **Self-throttled.** At most `gate_attempts` nudges per turn (default 1), on
     top of Hermes' own cap (`agent.max_verify_nudges`, 3 by default).
   * **Never blocks.** Every failure path — no ledger, missing vendored rielctl,
-    unparseable mirror, subprocess timeout — returns `None` and lets the turn
-    finish. A gate that jams is worse than no gate.
+    unparseable `status` JSON, subprocess timeout — returns `None` and lets
+    the turn finish. A gate that jams is worse than no gate.
 
 Stdlib only and importable without Hermes: the only Hermes touch is the lazy
 session-cwd lookup, and it is optional (the edited paths are the primary hint).
@@ -118,7 +118,7 @@ def assess(worktree, rielctl: Path = RIELCTL, timeout: int = TIMEOUT_SECS) -> di
         return facts
     try:
         proc = subprocess.run(
-            [sys.executable, str(rielctl), "todo"],
+            [sys.executable, str(rielctl), "status"],
             cwd=str(root),
             capture_output=True,
             text=True,
@@ -128,12 +128,12 @@ def assess(worktree, rielctl: Path = RIELCTL, timeout: int = TIMEOUT_SECS) -> di
         facts["error"] = f"rielctl could not run: {exc}"
         return facts
     if proc.returncode != 0:
-        facts["error"] = (proc.stderr or "").strip() or "rielctl todo failed"
+        facts["error"] = (proc.stderr or "").strip() or "rielctl status failed"
         return facts
     try:
         items = json.loads(proc.stdout)
     except ValueError:
-        facts["error"] = "rielctl todo did not return JSON"
+        facts["error"] = "rielctl status did not return JSON"
         return facts
     for item in items if isinstance(items, list) else []:
         if not isinstance(item, dict):

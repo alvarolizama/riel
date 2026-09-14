@@ -1,7 +1,7 @@
 ---
 name: riel-cli
 description: "Use when Riel needs its mechanical helper — writes the ledger with the exact format, instantiates and validates packets, expands a graph digest, derives the session-todo mirror. The agent invokes it in RUN nodes instead of handwriting state files."
-version: 1.7.0
+version: 1.8.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -20,7 +20,8 @@ of the framework so the agent doesn't have to remember them:
 - Verifying that a packet satisfies the structural constraints
   (`rielctl brief validate`) — including the closed verb vocabulary
 - Expanding the execution graph into explicit text (`rielctl brief digest`)
-- Deriving the Hermes session-todo mirror from the ledger (`rielctl todo`)
+- Deriving the Hermes session-todo mirror from the plan (`rielctl todo`)
+  and the ledger mirror the chip and the gate fold (`rielctl status`)
 - Emitting a contract's context keywords as JSON (`rielctl context`) so the
   memory search has one authoritative index to read instead of re-parsing
   the contract
@@ -98,19 +99,27 @@ when the contract is missing.
 ### Session todo (Hermes mirror, Spec 6)
 
 ```bash
-rielctl todo    # JSON array for the todo tool, derived from the ledger
+rielctl todo    # JSON array for the todo tool — the PLAN (goal + phases + steps)
+rielctl status  # JSON array — the LEDGER's facts (chip + gate consume this)
 ```
 
-Reads the ledger AND the contract (when present) and prints the
-session-todo items: Goal → root item; **each contract phase → a row
+`rielctl todo` reads the ledger AND the contract and prints the **plan**:
+the contract's `## Objective` → root `goal`; **each contract phase → a row
 (`PHASE F1: …`) and each phase's steps → nested subtasks** (`parent` = the
-phase — the todo tool's own nesting); Next → the only `in_progress`;
-?NN → `OPEN NN` pending; P# → `CLAIM:` pending; ✓NN → `DONE NN` completed.
-A phase is completed when its gate's ✓ exists; the phase owning the Next
-stays pending (the Next owns in_progress). Tasks without a contract mirror
-the ledger alone (single `PHASE:` row). The todo is a projection — fix the
-ledger (or the contract) and regenerate the mirror; never hand-edit the todo
-into a divergent plan. Spec: `riel/specs/spec-todo-hermes.md`.
+phase — the todo tool's own nesting). The ledger only sets the statuses: a
+phase whose gate has a ✓ is completed; in the active phase (the one owning
+the Next) the step the Next points at is the only `in_progress`, the earlier
+steps completed, the rest pending (the `goal` row carries it once every phase
+is gated). **No ledger fact is a row here.** Without
+a contract the todo degrades to `goal` + the ledger's single `PHASE:` row.
+
+`rielctl status` prints the **ledger's own facts** as items (goal, phase,
+next, `OPEN NN`, `CLAIM:`, `DONE NN`) — the mirror the desktop chip and the
+`pre_verify` gate fold. Keep the two apart: `todo` = plan, `status` = state.
+
+The todo is a projection — fix the ledger (or the contract) and regenerate
+the mirror; never hand-edit the todo into a divergent plan. Spec:
+`riel/specs/spec-todo-hermes.md`.
 
 **Injecting it (Hermes):** the mirror is complete only when the array reaches
 the session todo UI — pass it to the `todo_list` tool as
@@ -121,8 +130,8 @@ the current ledger.
 
 Exit codes:
 
-- `note` / `seam` / `resume` / `todo`: 0 unless arguments invalid or the
-  ledger is missing (1).
+- `note` / `seam` / `resume` / `todo` / `status`: 0 unless arguments invalid
+  or the ledger is missing (1).
 - `ship`: exit 0 if the file is clean; exit 1 if it finds dense markers
   (the agent should fix before delivery).
 

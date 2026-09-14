@@ -111,13 +111,15 @@ RIEL_RESUME = {
 RIEL_TODO = {
     "name": "riel_todo",
     "description": (
-        "Derive the session-todo mirror from the Riel ledger: Goal is the root item, Next is the "
-        "only in_progress, open questions and pending claims are pending, verified checkpoints are "
-        "completed. THEN INJECT IT: pass the returned items array to the todo_list tool "
-        "(todo_list with todos=<the array>) so the session's todo UI mirrors the ledger — "
+        "Derive the session-todo mirror from the PLAN: the contract's Objective is the root "
+        "item, its phases are rows and each phase's steps are nested subtasks; the ledger "
+        "only sets the statuses (the step the Next points at is the only in_progress). The "
+        "ledger's own facts — next, claims, open questions, verified checkpoints — are NOT "
+        "rows here. THEN INJECT IT: pass the returned items array to the todo_list tool "
+        "(todo_list with todos=<the array>) so the session's todo UI shows the plan — "
         "generating the mirror without injecting it shows nothing. The todo is a projection: "
-        "when the ledger moves, call this again and re-inject; never hand-edit the list into a "
-        "divergent plan."
+        "when the ledger or the contract moves, call this again and re-inject; never "
+        "hand-edit the list into a divergent plan."
     ),
     "parameters": {"type": "object", "properties": {"worktree": _WORKTREE}},
 }
