@@ -1,18 +1,22 @@
 <div align="center">
 
-# 🛤️ Riel
+<img src="assets/riel-header.png" width="96" height="96" alt="Riel" />
 
-### Steering Layer for Harness/LLM
+# Riel
 
-**Riel does not create capability in the model: it prevents capability from being lost.**
+### *Riel* — the rail a runaway train needs. Steering, not horsepower.
+
+### Steering layer for harness/LLM
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-
-![Riel](assets/riel-header.png)
+[![Version](https://img.shields.io/badge/version-1.0.0-8B5CF6.svg)](./skills/riel-cli/SKILL.md)
+[![Python](https://img.shields.io/badge/Python-3-3776AB?logo=python&logoColor=white)](https://www.python.org)
+[![Hermes](https://img.shields.io/badge/Hermes-plugin-5B8DEF)](https://www.nousresearch.com)
 
 </div>
 
-A model can have a capability and still fail to deliver it: unstable
+**Riel does not create capability in the model: it prevents capability from being
+lost.** A model can have a capability and still fail to deliver it: unstable
 trajectory, drifting state, missing verification. That gap — having it vs.
 delivering it — is what Riel steers. It operates on the surfaces a harness
 exposes (first turn, task structure, between-turn state), never on weights.
@@ -331,3 +335,11 @@ hermes_dir="$(dirname "$(sed -n 's/^exec "\(.*\)\/hermes".*/\1/p' "$(command -v 
 ```
 
 Any Python that can `import hermes_cli` works as well.
+
+## License
+
+Released under the [MIT License](LICENSE) — Copyright (c) 2026 Álvaro Lizama.
+The license covers the whole repository: the skills (`skills/`), `rielctl`
+(`skills/riel-cli/scripts/`), the repo tooling (`scripts/`, `tests/`,
+`Makefile`) and the Hermes plugin package (`hermes_plugin/riel/`).
+Third-party dependencies keep their own licenses.
