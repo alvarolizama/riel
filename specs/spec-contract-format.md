@@ -72,7 +72,7 @@ nowhere else, so no tool call pays for a search the task does not need:
 | Moment | What happens |
 |---|---|
 | Opening the task (`resume`, `seam`, `note --from-contract`) | the keywords are searched and the answers seed `Core` (max 2) |
-| Advancing a phase (spec-phase-advance, step 3) | the incoming phase's `Core` comes from the same search |
+| Advancing a phase (spec-ledger-format, Phase advance) | the incoming phase's `Core` comes from the same search |
 | Slicing a packet for a child | `brief slice` carries the keywords into the packet, so the child searches the same index with its own budget |
 
 Missing keywords are a `WARN`, never an error: a contract without them still
@@ -92,7 +92,7 @@ hits it did not obtain.
 | Ledger | `.riel/ledger.md` | the state (✓NN evidence, Next) | the task |
 
 - Each phase of the contract's graph = one mini-ledger
-  (spec-phase-advance). Only the active phase's ledger is live.
+  (spec-ledger-format, Phase advance). Only the active phase's ledger is live.
 - The ✓NN evidence lives in the ledger, **never in the contract**.
 - The contract is written once and re-read as the plan; the ledger is
   re-read at every seam.
@@ -131,7 +131,6 @@ leave a non-delegating task without its contract.
 ## Cross-references
 
 - Ledger format: `spec-ledger-format.md` (Spec 1)
-- Per-phase ledger: `spec-phase-advance.md` (Spec 4)
 - Session-todo mirror: `spec-todo-hermes.md` (Spec 6)
 - Packet skeleton + templates: skill `riel-briefs`
 - Graph conventions: skill `riel-contract`

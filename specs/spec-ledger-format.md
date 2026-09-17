@@ -61,7 +61,7 @@ order.
 |---|---|
 | Goal | One sentence; updated only if the goal changes |
 | Source | Optional; present when the task came from a tracked item |
-| Phase | Derived from the DAG (spec-phase-advance); pointer to the active mini-ledger |
+| Phase | Derived from the DAG (Phase advance, below); pointer to the active mini-ledger |
 | Claims | Pre-registered before the first action; P-ids; never edited after execution begins — a failed claim is refuted, not reinterpreted |
 | Core | Max 2 live items; change only via explicit swap; each with its defining fact |
 | Verified | Numbered ✓NN, append-only; never deleted or renumbered |
@@ -88,6 +88,47 @@ order.
 `?NN <question> — settled by: <the cheapest test that would refute it>`
 
 - Without a settled-by it is not opened (it could never be closed).
+
+## Phase advance (multi-phase tasks)
+
+The contract's graph (`spec-contract-format`) defines how many mini-ledgers
+exist: **one per phase**, in DAG order, each closing with its VERIFY gate.
+**N phases = N sequential mini-ledgers**, only one live at a time — the
+`Phase` pointer above. Previous phases are already ✓NN here; future ones do
+not exist yet.
+
+The pointer is never set by hand.
+
+### The gate is the fusion point
+
+| Face | Component | Meaning |
+|---|---|---|
+| Contract | riel-contract | "The phase's VERIFY node passed" |
+| Ledger | riel-ledger | "Append this phase's ✓NN to the LOCAL ledger" |
+
+Gate content (verifiers + coverage):
+
+- compile without warnings
+- scope tests green
+- format with no extra diffs
+- diff ⊆ phase scope
+- **coverage statement:** what was verified and what it covered (without this there is no ✓NN)
+
+### Advancing
+
+1. Gate passes → append this phase's ✓NN.
+2. `Phase` ← next phase enabled by the DAG.
+3. `Core` ← swap to the new phase's items (searched from the contract's
+   `### Context keywords` — spec-contract-format, "Context fetch").
+4. `Next` ← first action of the new phase.
+5. `Open` items belonging to future phases migrate with their numbers.
+
+### Parallelism
+
+- **Disjoint** phases (different files, no DAG edge) may run in parallel: each
+  with its own worktree + its own local ledger (Git hygiene, above).
+- Phases touching the same file → serialize.
+- The parent coordinates the merges (same lesson as git index races).
 
 ## Stall detection
 

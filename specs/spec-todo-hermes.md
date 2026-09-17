@@ -147,5 +147,4 @@ ledger = state, session todo = display.
 ## Cross-references
 
 - Local contract (the plan): `spec-contract-format.md` (Spec 2)
-- Ledger format: `spec-ledger-format.md` (Spec 1)
-- Per-phase ledger: `spec-phase-advance.md` (Spec 4)
+- Ledger format: `spec-ledger-format.md` (Spec 1) + phase advance

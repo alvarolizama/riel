@@ -1,7 +1,7 @@
 ---
 name: riel-ledger
 description: "Use when running a loop-mode task — write the local Goal/Core/Verified/Open/Next ledger in the worktree, re-read at every seam, verify before done. No remote dependency."
-version: 1.14.0
+version: 1.14.1
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -382,7 +382,7 @@ session needs to pick up exactly here.
 The ledger is **state**; the **plan** it navigates lives in
 `.riel/contract.md` — the phases graph, pre-registered claims and gates,
 written first (spec-contract-format). The ledger's `Phase` pointer selects
-which of the contract's phases is live (spec-phase-advance).
+which of the contract's phases is live (spec-ledger-format, Phase advance).
 
 This skill is local-only: `Goal` / `Core` / `Verified` / `Open` / `Next`
 live in `.riel/ledger.md`. Remote task systems are out of scope.
@@ -425,5 +425,5 @@ live in `.riel/ledger.md`. Remote task systems are out of scope.
 - Local contract (the plan): `riel/specs/spec-contract-format.md`
 - Local format and rules: `riel/specs/spec-ledger-format.md`
 - Session-todo mirror (Spec 6, `rielctl todo`): `riel/specs/spec-todo-hermes.md`
-- Phase advancement: `riel/specs/spec-phase-advance.md`
+- Phase advancement: `riel/specs/spec-ledger-format.md` (Phase advance)
 - The phases graph the ledger navigates: `riel-contract`

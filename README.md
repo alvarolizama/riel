@@ -46,7 +46,7 @@ artifact regenerated from `skills/` and pinned by hash in the test suite.
 
 | Component | What it steers | Status |
 |---|---|---|
-| `riel-ledger` | **State** — Goal/Claims/Core/Verified/Open/Next, re-read at every seam, recovery via checkpoints, opening rules over an existing `.riel/`, mirrors to the session todo | ✅ skill v1.14 |
+| `riel-ledger` | **State** — Goal/Claims/Core/Verified/Open/Next, re-read at every seam, recovery via checkpoints, opening rules over an existing `.riel/`, mirrors to the session todo | ✅ skill v1.14.1 |
 | `riel-contract` | **Structure** — mermaid as contract: closed verb vocabulary, verification funnel, graph digest, machine-checkable | ✅ skill v3.6.1 |
 | `riel-protocol` | **Trajectory** — functional grammar, persona, minimal surface on the first turn | ✅ skill v1.7 |
 | `riel-briefs` | **Delegation briefs** — self-contained packets: curated context + the `### Why` rationale and context-keyword index, verb-graph, pre-registered claims, executable gates, templates | ✅ skill v3.7 |
@@ -374,10 +374,9 @@ riel/
 │   │   └── desktop/       ← statusbar activity chip (opt-in)
 │   └── probe-session-cwd.py ← live probe of the Hermes load path (needs Hermes)
 ├── specs/             ← design contracts
-│   ├── spec-ledger-format.md    ← .riel/ledger.md format + rules
+│   ├── spec-ledger-format.md    ← .riel/ledger.md format + rules + phase advance
 │   ├── spec-contract-format.md  ← .riel/contract.md format (the plan) + intent
-│   ├── spec-todo-hermes.md      ← session-todo mirror (the plan) + ledger mirror (status)
-│   └── spec-phase-advance.md    ← per-phase ledger
+│   └── spec-todo-hermes.md      ← session-todo mirror (the plan) + ledger mirror (status)
 ├── scripts/           ← repo tooling
 │   ├── validate-mermaid.sh   ← validates every mermaid block with mmdc
 │   └── extract-mermaid.py    ← extracts mermaid blocks (regex, re.DOTALL)
