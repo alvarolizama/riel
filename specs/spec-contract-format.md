@@ -34,7 +34,8 @@ The nine sections, in order:
    `### Why` rationale and the `### Context keywords` index (see "Context
    fetch")
 4. `## Constraints` — hard rules
-5. `## Pre-registered claims` — P-ids with a verify-with
+5. `## Pre-registered claims` — P-ids with a verify-with and their anchor
+   (see "Claim anchors")
 6. `## Execution graph` — the mermaid DAG (riel-contract)
 7. `## Verification gates` — command / expected / on failure, per phase
 8. `## Deliverable`
@@ -42,6 +43,29 @@ The nine sections, in order:
 
 Validate it mechanically: `rielctl brief validate .riel/contract.md` (the
 validator keys on this exact section set and order).
+
+## Claim anchors
+
+A `P#` claim may close its line with the anchor to the region of this contract
+that supports it, after the verify-with:
+
+```
+- P1: the token verifies for ≤1h — verify with: `mix test token_test.exs` — anchor: §Constraints#2
+- P2: no query escapes the scope — verify with: `mix test scope_test.exs` — anchor: G2
+- P3: the finding still holds — verify with: `mix test` — anchor: shaping:F1
+```
+
+Three forms and only three: `§<Section>[#<n>]` (the whole section, or its n-th
+bullet), a node id of this contract's execution graph, and `shaping:<F#>`
+(a finding of `.riel/shaping.md`, Spec 7). Canonical syntax and its
+enforcement: `riel-contract`, "Claim anchors".
+
+Two mechanical facts bind the form: **the claim stays on ONE line** — the
+ledger seed reads line by line — and `brief slice` copies the section
+verbatim, so an anchor written here reaches the child for free. `rielctl
+anchor` resolves a claim's anchor into its excerpt, which is what a seam
+re-reads; a missing anchor is a `WARN` (the shipped templates carry none),
+never a hard failure.
 
 ## Intent (the `### Why` subsection)
 

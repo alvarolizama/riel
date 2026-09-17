@@ -18,6 +18,9 @@ Usage:
     rielctl clean   [--all] [--purge]            # limpia .riel/ con backup plano
     rielctl ship    FILE...
     rielctl digest  FILE [-o OUT]
+    rielctl anchor  [P#] [--contract PATH] [--shaping PATH]  # claim + su región
+    rielctl shaping validate [PATH]              # valida .riel/shaping.md (Spec 7)
+    rielctl shaping new [-o PATH] [--force] [--param k=v ...]
     rielctl brief new [--type T] [--param k=v ...] [--list]
     rielctl brief validate FILE
     rielctl brief digest FILE [-o OUT]
@@ -38,10 +41,11 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-VERSION = "1.5.0"
+VERSION = "1.6.0"
 LEDGER_DIR = ".riel"
 LEDGER_PATH = os.path.join(LEDGER_DIR, "ledger.md")
 CONTRACT_PATH = os.path.join(LEDGER_DIR, "contract.md")
+SHAPING_PATH = os.path.join(LEDGER_DIR, "shaping.md")
 VERIFY_CMD = os.environ.get("RIEL_MMDC", "mmdc")
 
 DENSE_RE = re.compile(r"[✓?]\d+|↔|⇒|⊕|λ|Σ")
@@ -210,6 +214,119 @@ def context_keywords(text):
             continue
         found.append({"term": term, "source": source.strip().strip("`").lower()})
     return found
+
+
+# ------------------------------------------------- anchors / shaping ----
+
+CLAUSE_RE = re.compile(r"\s+—\s+")
+CLAIM_LINE_RE = re.compile(r"^-+\s*(P\d+)\s*:?\s*(.*)$")
+SECTION_ANCHOR_RE = re.compile(r"^§\s*([^#]+?)\s*(?:#(\d+))?$")
+SHAPING_ANCHOR_RE = re.compile(r"^shaping:F(\d+)$", re.I)
+NODE_ANCHOR_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+SHAPING_SECTIONS = [
+    "Question", "Findings", "Facts", "Alternatives bounced", "Open", "Verdict",
+]
+
+
+def claim_anchors(text):
+    """[{id, claim, verify_with, anchor}] from '## Pre-registered claims'.
+
+    One claim per LINE (the rule the seed already follows), parsed by em-dash
+    CLAUSES: the anchor is the line's LAST clause (`— anchor: …`), so a claim
+    whose prose merely MENTIONS the syntax (``— anchor:` ``) is not mistaken
+    for one. Because the anchor rides the claim's own line, `brief slice`
+    copies it verbatim into a child packet — provenance without new plumbing.
+    """
+    out = []
+    for raw in _section(text, "Pre-registered claims").splitlines():
+        line = raw.strip()
+        m = CLAIM_LINE_RE.match(line)
+        if not m:
+            continue
+        cid, rest = m.group(1), m.group(2)
+        clauses = [c.strip() for c in CLAUSE_RE.split(rest) if c.strip()]
+        anchor, verify, prose = "", "", []
+        for i, clause in enumerate(clauses):
+            low = clause.lower()
+            if low.startswith("anchor:") and i == len(clauses) - 1:
+                anchor = clause[len("anchor:"):].strip().strip("`")
+            elif low.startswith("verify with:"):
+                verify = clause[len("verify with:"):].strip().strip("`")
+            else:
+                prose.append(clause)
+        out.append({"id": cid, "claim": " — ".join(prose).strip(),
+                    "verify_with": verify, "anchor": anchor})
+    return out
+
+
+def _bullets(body):
+    """List items of a section body, in order (bullets or numbered)."""
+    items = []
+    for raw in body.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("<!--"):
+            continue
+        m = re.match(r"^(?:[-*]|\d+\.)\s+(.+)$", line)
+        if m:
+            items.append(m.group(1).strip())
+    return items
+
+
+def shaping_findings(path):
+    """{n: text} for every F# line of a shaping file ({} when unreadable)."""
+    if not path or not os.path.isfile(path):
+        return {}
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    found = {}
+    for raw in _section(text, "Findings").splitlines():
+        m = re.match(r"^-+\s*F(\d+)\b[:\s]*(.*)$", raw.strip())
+        if m:
+            found[int(m.group(1))] = m.group(2).strip()
+    return found
+
+
+def resolve_anchor(anchor, text, graph_nodes=None, shaping_path=None):
+    """Resolve one claim anchor against a contract (and its graph).
+
+    Returns (kind, detail): kind in {'section', 'node', 'shaping', 'unknown'};
+    detail is the excerpt when the anchor resolved, None when it did not.
+    Forms: `§<Section>[#<n>]`, `<NodeId>`, `shaping:F<n>`.
+    """
+    if not anchor:
+        return "none", None
+    m = SECTION_ANCHOR_RE.match(anchor)
+    if m:
+        name, idx = m.group(1).strip(), m.group(2)
+        body = _section(text, name)
+        if not body:
+            return "section", None
+        if idx is None:
+            return "section", body
+        items = _bullets(body)
+        n = int(idx)
+        if 1 <= n <= len(items):
+            return "section", items[n - 1]
+        return "section", None
+    m = SHAPING_ANCHOR_RE.match(anchor)
+    if m:
+        return "shaping", shaping_findings(shaping_path).get(int(m.group(1)))
+    if NODE_ANCHOR_RE.match(anchor):
+        if graph_nodes is None or anchor not in graph_nodes:
+            return "node", None
+        return "node", graph_nodes[anchor][1]
+    return "unknown", None
+
+
+def _excerpt(body, limit=4):
+    """The lines of a resolved region, trimmed for a seam's glance."""
+    lines = [l.strip() for l in body.splitlines()
+             if l.strip() and not l.strip().startswith("<!--")]
+    out = ["| " + l for l in lines[:limit]]
+    if len(lines) > limit:
+        out.append("| …")
+    return out
 
 
 def seed_from_contract(path):
@@ -397,6 +514,13 @@ def cmd_seam(args):
         print("\n[!] Core has {} live items; re-park to at most 2.".format(len(st["core"])))
     if st["next"] == "":
         print("\n[!] Next is empty — the ledger stops being state. Fill it.")
+    anchored = []
+    if os.path.isfile(CONTRACT_PATH):
+        with open(CONTRACT_PATH, encoding="utf-8") as fh:
+            anchored = [c for c in claim_anchors(fh.read()) if c["anchor"]]
+    if anchored:
+        print("\n[anchor] {} of the claims carry an anchor — `rielctl anchor` "
+              "re-reads each one beside its region.".format(len(anchored)))
     return 0
 
 
@@ -714,7 +838,7 @@ def cmd_clean(args):
     """
     targets = [LEDGER_PATH]
     if args.all:
-        targets.append(CONTRACT_PATH)
+        targets.extend([CONTRACT_PATH, SHAPING_PATH])
 
     present = [p for p in targets if os.path.isfile(p)]
     if not present:
@@ -740,6 +864,184 @@ def cmd_clean(args):
         else:
             os.remove(path)
             print("purged {}".format(path))
+    return 0
+
+
+def cmd_shaping_validate(args):
+    """Validate a .riel/shaping.md against Spec 7.
+
+    Errors: a missing section, an empty Question, a Findings section with no F#
+    line. WARNs (never fatal): a finding without source or confidence, an
+    alternative without a verdict, an open question without its settling test,
+    a Verdict with no Objective line, and a contract claim anchored to a
+    finding this shaping does not have.
+    """
+    path = args.file or SHAPING_PATH
+    try:
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError:
+        print("no shaping found at {}".format(path), file=sys.stderr)
+        return 1
+
+    issues, warnings = [], []
+    titles = [t.strip() for _lvl, t in re.findall(r"^(#{1,2})\s+(.+)$", text, re.M)]
+    for name in SHAPING_SECTIONS:
+        if not any(t.startswith(name) for t in titles):
+            issues.append("missing section: {!r}".format(name))
+    positions = []
+    for name in SHAPING_SECTIONS:
+        for i, t in enumerate(titles):
+            if t.startswith(name):
+                positions.append(i)
+                break
+    if positions != sorted(positions):
+        issues.append("sections out of order; expected: "
+                      + " -> ".join(SHAPING_SECTIONS))
+
+    if not _first_paragraph(_section(text, "Question")):
+        issues.append("## Question is empty — no decision to close")
+
+    findings = shaping_findings(path)
+    if not findings:
+        issues.append("## Findings has no F# line — a shaping without a "
+                      "finding is a guess, not research")
+    for n in sorted(findings):
+        body = findings[n]
+        if "source:" not in body:
+            warnings.append("F{} has no 'source:' — an unsourced finding is a "
+                            "hypothesis".format(n))
+        if "confidence" not in body:
+            warnings.append("F{} has no confidence (high|med|low)".format(n))
+
+    for i, item in enumerate(_bullets(_section(text, "Alternatives bounced")), 1):
+        if "verdict:" not in item:
+            warnings.append("A{} has no 'verdict:' (kept|discarded)".format(i))
+    for i, item in enumerate(_bullets(_section(text, "Open")), 1):
+        if "settled by:" not in item:
+            warnings.append("Q{} has no 'settled by:' — name the cheapest test "
+                            "that would settle it".format(i))
+
+    verdict = _section(text, "Verdict")
+    if not _first_paragraph(verdict):
+        issues.append("## Verdict is empty — the contract has nothing to seed from")
+    elif "We need" not in verdict and "Necesitamos" not in verdict:
+        warnings.append("## Verdict has no Objective line ('We need …')")
+
+    contract = args.contract or CONTRACT_PATH
+    if os.path.isfile(contract):
+        with open(contract, encoding="utf-8") as fh:
+            ctext = fh.read()
+        for claim in claim_anchors(ctext):
+            m = SHAPING_ANCHOR_RE.match(claim["anchor"] or "")
+            if m and int(m.group(1)) not in findings:
+                warnings.append(
+                    "{} anchors shaping:F{} — this shaping has no such finding"
+                    .format(claim["id"], m.group(1)))
+
+    for warning in warnings:
+        print("WARN: {}".format(warning), file=sys.stderr)
+    if issues:
+        print("INVALID shaping {}:".format(path))
+        for issue in issues:
+            print("  - " + issue)
+        return 1
+    print("valid: {}".format(path))
+    return 0
+
+
+def cmd_shaping_new(args):
+    """Instantiate the shaping skeleton — never over an existing shaping."""
+    typename = args.type or "shaping"
+    template_path = find_template(typename, args.template_dir)
+    if not template_path:
+        print("no template for type {!r}; searched: {}".format(
+            typename, ", ".join(args.template_dir or DEFAULT_TEMPLATE_DIRS)),
+            file=sys.stderr)
+        return 2
+    with open(template_path, encoding="utf-8") as fh:
+        text = fh.read()
+    params = dict(p.split("=", 1) for p in args.param)
+    try:
+        result = render_template(text, params, strict=args.strict)
+    except KeyError as exc:
+        print(exc.args[0] if exc.args else str(exc), file=sys.stderr)
+        return 2
+    if args.output == "-":
+        print(result)
+        return 0
+    out = args.output or SHAPING_PATH
+    if os.path.exists(out) and not args.force:
+        print("{} already exists — a shaping is research, not a template drop; "
+              "pass --force to overwrite".format(out), file=sys.stderr)
+        return 3
+    parent = os.path.dirname(out)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    with open(out, "w", encoding="utf-8") as fh:
+        fh.write(result if result.endswith("\n") else result + "\n")
+    print("wrote {}".format(out))
+    leftover = _PARAM_RE.findall(result)
+    if leftover:
+        print("note: {} placeholder(s) left — fill with patch/edit: {}".format(
+            len(set(leftover)), ", ".join(sorted(set(leftover))[:5])))
+    return 0
+
+
+def cmd_anchor(args):
+    """Print each claim beside the contract region that supports it.
+
+    The seam's own re-read surface: `— anchor:` names a section, a graph node
+    or a shaping finding, and this resolves it, so a claim's support can be
+    re-read without re-reading the whole contract.
+    """
+    contract = args.contract
+    if not os.path.isfile(contract):
+        print("no contract found at {} — nothing to anchor".format(contract),
+              file=sys.stderr)
+        return 1
+    with open(contract, encoding="utf-8") as fh:
+        text = fh.read()
+    claims = claim_anchors(text)
+    if not claims:
+        print("no P# claims in {}".format(contract), file=sys.stderr)
+        return 2
+    if args.claim:
+        wanted = args.claim.strip().upper().lstrip("P")
+        claims = [c for c in claims
+                  if c["id"].upper().lstrip("P") == wanted]
+        if not claims:
+            print("no claim {!r} in {}".format(args.claim, contract),
+                  file=sys.stderr)
+            return 2
+
+    block = _graph_block(text)
+    nodes = mermaid_graph(block)[0] if block else {}
+    shaping = args.shaping
+    if not os.path.isfile(shaping):
+        shaping = os.path.join(os.path.dirname(os.path.abspath(contract)),
+                               os.path.basename(SHAPING_PATH))
+
+    print("ANCHORED CLAIMS — each claim re-read beside the region that "
+          "supports it")
+    print("contract: {}   shaping: {}".format(
+        contract, shaping if os.path.isfile(shaping) else "none"))
+    for claim in claims:
+        print("")
+        print("{}: {}".format(claim["id"], claim["claim"]))
+        if claim["verify_with"]:
+            print("    verify with: {}".format(claim["verify_with"]))
+        if not claim["anchor"]:
+            print("    anchor: <none> — no region to re-read at a seam")
+            continue
+        kind, detail = resolve_anchor(claim["anchor"], text, nodes, shaping)
+        print("    anchor: {} ({})".format(claim["anchor"], kind))
+        if detail:
+            for line in _excerpt(detail):
+                print("      " + line)
+        else:
+            print("      [!] does not resolve — the support this claim names "
+                  "is not here")
     return 0
 
 
@@ -1222,6 +1524,7 @@ def cmd_brief_validate(args):
             "(nothing for the context fetch to search)")
 
     # Graph conventions
+    parsed_nodes = {}
     mermaid_blocks = re.findall(r"```mermaid\n(.*?)```", text, re.S)
     if not mermaid_blocks:
         issues.append("no mermaid execution graph found")
@@ -1320,6 +1623,42 @@ def cmd_brief_validate(args):
                     )
         finally:
             shutil.rmtree(out_dir, ignore_errors=True)
+
+    # Claim anchors (Spec 2 + Spec 7). A claim with no anchor cannot be
+    # re-read at a seam — a WARN, never fatal: the shipped templates carry
+    # none. An anchor whose support is missing IS a failure (the section
+    # forms); a node the local graph lacks is the inherited-on-a-slice case.
+    shaping_path = os.path.join(
+        os.path.dirname(os.path.abspath(args.file)),
+        os.path.basename(SHAPING_PATH))
+    for claim in claim_anchors(text):
+        if not claim["anchor"]:
+            warnings.append(
+                "{} has no anchor — a seam cannot re-read its support: add "
+                "'— anchor: §Section#n', a node id, or 'shaping:F#'".format(
+                    claim["id"]))
+            continue
+        kind, detail = resolve_anchor(claim["anchor"], text, parsed_nodes,
+                                      shaping_path)
+        if kind == "unknown":
+            issues.append(
+                "{} anchor {!r} is not a valid form: §<Section>[#<n>] | "
+                "<NodeId> | shaping:F<n>".format(claim["id"], claim["anchor"]))
+        elif kind == "section" and detail is None:
+            issues.append(
+                "{} anchor {!r} does not resolve — no such section or bullet "
+                "in this contract".format(claim["id"], claim["anchor"]))
+        elif kind == "node" and detail is None:
+            warnings.append(
+                "{} anchor {!r} is not a node of this graph — on a slice that "
+                "is inherited from the parent contract".format(
+                    claim["id"], claim["anchor"]))
+        elif kind == "shaping" and detail is None:
+            warnings.append(
+                "{} anchors {} — {}".format(
+                    claim["id"], claim["anchor"],
+                    "no such finding in {}".format(shaping_path)
+                    if os.path.isfile(shaping_path) else "no shaping file to check"))
 
     for w in warnings:
         print("WARN: {}".format(w), file=sys.stderr)
@@ -1463,6 +1802,35 @@ def main(argv=None):
     s = sub.add_parser("seam", help="re-print ledger + due reminders")
     s.set_defaults(fn=cmd_seam)
 
+    an = sub.add_parser("anchor",
+                        help="re-read each claim beside its contract region "
+                             "(sections, graph nodes, shaping findings)")
+    an.add_argument("claim", nargs="?", default=None,
+                    help="only this claim (P1 or 1; default: all)")
+    an.add_argument("--contract", default=CONTRACT_PATH)
+    an.add_argument("--shaping", default=SHAPING_PATH)
+    an.set_defaults(fn=cmd_anchor)
+
+    sh = sub.add_parser("shaping", help="work with .riel/shaping.md (Spec 7)")
+    shsub = sh.add_subparsers(dest="shcmd", required=True)
+    shv = shsub.add_parser("validate", help="validate a shaping file")
+    shv.add_argument("file", nargs="?", default=None,
+                     help="path (default: .riel/shaping.md)")
+    shv.add_argument("--contract", default=CONTRACT_PATH,
+                     help="contract to check the shaping:F# anchors against")
+    shv.set_defaults(fn=cmd_shaping_validate)
+    shn = shsub.add_parser("new", help="instantiate the shaping template")
+    shn.add_argument("--type", default="shaping")
+    shn.add_argument("--param", action="append", default=[],
+                     help="template parameter key=value (repeatable)")
+    shn.add_argument("--template-dir", action="append", default=None)
+    shn.add_argument("--output", "-o", default=None,
+                     help="destination (default: .riel/shaping.md; '-' = stdout)")
+    shn.add_argument("--force", action="store_true",
+                     help="overwrite an existing shaping")
+    shn.add_argument("--strict", action="store_true")
+    shn.set_defaults(fn=cmd_shaping_new)
+
     r = sub.add_parser("resume", help="post-gap bootstrap")
     r.set_defaults(fn=cmd_resume)
 
@@ -1487,7 +1855,8 @@ def main(argv=None):
                         help="clear .riel/ state — flat timestamped backups "
                              "inside .riel/, never a subdirectory")
     cl.add_argument("--all", action="store_true",
-                    help="also clean contract.md (default: ledger only)")
+                    help="also clean contract.md and shaping.md "
+                         "(default: ledger only)")
     cl.add_argument("--purge", action="store_true",
                     help="remove without backing up")
     cl.set_defaults(fn=cmd_clean)

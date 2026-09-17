@@ -44,7 +44,17 @@
 
 ## Pre-registered claims
 <!-- What will be TRUE when done, declared BEFORE executing. Once created,
-     never edited: a failed claim is refuted, never reinterpreted. -->
+     never edited: a failed claim is refuted, never reinterpreted.
+     A claim may end with its ANCHOR: the region of this contract that
+     supports it, re-read at every seam with `rielctl anchor` (distinct from
+     the "anchored opening" of riel-protocol). Three forms only:
+       '— anchor: §Constraints#2'  the n-th bullet of that section
+       '— anchor: G2'              a node of the execution graph
+       '— anchor: shaping:F1'      a finding of .riel/shaping.md
+     The anchor is the LAST clause of the claim's line and the claim stays on
+     ONE line (the ledger seed reads line by line). No anchor is a WARN; an
+     anchor that does not resolve is an error; a node missing from a sliced
+     graph is the inherited-from-the-parent case. -->
 - P1: {{claim}} — verify with: {{how}}
 - P2: {{claim}} — verify with: {{how}}
 
