@@ -1,6 +1,6 @@
 # Spec 6 — Hermes session todo (the plan) + the ledger mirror (`status`)
 
-Status: draft v3 · Riel phase 2
+Status: draft v4 · Riel phase 2
 The Hermes `todo` tool keeps a session-scoped task list: items
 `{id, content, status: pending|in_progress|completed|cancelled}`, optional
 `parent` (nested subtasks), at most one `in_progress` at a time, gone when
@@ -57,6 +57,34 @@ No ledger fact becomes a row here. Without a contract the todo degrades to
   is `in_progress` (best-effort, so the single-in_progress rule holds).
 - **A phase with no steps** that is active carries `in_progress` on its own
   row — there is no step to hold it.
+
+## The desktop surfaces the mirror feeds
+
+Injecting the mirror (`todo_list(todos=<array>)`) is not a bookkeeping
+formality — the Hermes desktop renders that exact list in three places, and
+Riel's re-derivation at every seam is what keeps them honest:
+
+| Surface | What it shows | What Riel feeds it |
+|---|---|---|
+| **Composer status stack** | the live task list above the input: a `todos` group with a header counting `completed/total`, one row per item, `parent` nesting rendered as indented subtask rows, a status glyph per row (`in_progress` spins) | the plan's goal → phases → steps hierarchy maps 1:1 onto the stack's two indent levels |
+| **Sidebar inbox card** | a live `X/Y` progress fraction per session, projected through the stored-session id (survives resume/lineage); `cancelled` items count toward neither side | phase/step completions move the fraction without any extra write |
+| **`todo.updated` gateway event** | a full revisioned snapshot the UI applies on every `todo_list` write; `merge: true` writes send status-only patches by id | re-injecting the regenerated mirror at each seam bumps the revision, so the UI never shows a stale plan |
+
+Two facts that shape the derivation:
+
+- **Writes are revisioned** — every change bumps a monotonic revision and
+  the UI rejects older snapshots; a re-derivation that produces the same
+  list is a no-op on screen. Regenerate freely at every seam.
+- **Stored-session hydration only re-shows a list still in flight** —
+  reopening a finished chat does not pin its completed plan above the
+  composer. A Riel task's plan is visible exactly while it has
+  `pending`/`in_progress` items, which is the window where tracking it
+  matters; after the done-check flips the goal row to `completed`, the
+  surface retires on its own.
+
+What the desktop does NOT show: the ledger's own facts (✓ evidence, opens,
+claims). Those live in the Riel statusbar chip (`rielctl status` fold) —
+the todo surfaces track plan progress, the chip tracks verified state.
 
 ## The ledger mirror (`rielctl status`)
 

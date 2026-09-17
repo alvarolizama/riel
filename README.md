@@ -46,12 +46,12 @@ artifact regenerated from `skills/` and pinned by hash in the test suite.
 
 | Component | What it steers | Status |
 |---|---|---|
-| `riel-ledger` | **State** — Goal/Claims/Core/Verified/Open/Next, re-read at every seam, recovery via checkpoints, mirrors to the session todo | ✅ skill v1.13 |
+| `riel-ledger` | **State** — Goal/Claims/Core/Verified/Open/Next, re-read at every seam, recovery via checkpoints, opening rules over an existing `.riel/`, mirrors to the session todo | ✅ skill v1.14 |
 | `riel-contract` | **Structure** — mermaid as contract: closed verb vocabulary, verification funnel, graph digest, machine-checkable | ✅ skill v3.6 |
 | `riel-protocol` | **Trajectory** — functional grammar, persona, minimal surface on the first turn | ✅ skill v1.7 |
 | `riel-briefs` | **Delegation briefs** — self-contained packets: curated context + the `### Why` rationale and context-keyword index, verb-graph, pre-registered claims, executable gates, templates | ✅ skill v3.7 |
 | `riel-delegate` | **Delegation router** — plan, dispatch waves, JSON-schema'd returns, parent verifies | ✅ skill v1.3 |
-| `riel-cli` | **Tooling** — `rielctl` writes the ledger mechanically, instantiates/validates packets, slices a phase into a child packet (inheriting the Objective, the `### Why` rationale and the keywords), expands the graph digest, derives the session-todo mirror (the plan: the contract's goal, phases and steps) and the ledger mirror the chip and the gate fold (`rielctl status`), emits the context keywords, and fetches a remote contract to disk (HTTPS, atomic, sha256-verified) | ✅ skill v1.9 |
+| `riel-cli` | **Tooling** — `rielctl` writes the ledger mechanically, cleans the worktree state with flat in-`.riel/` backups, instantiates/validates packets, slices a phase into a child packet (inheriting the Objective, the `### Why` rationale and the keywords), expands the graph digest, derives the session-todo mirror (the plan: the contract's goal, phases and steps) and the ledger mirror the chip and the gate fold (`rielctl status`), emits the context keywords, and fetches a remote contract to disk (HTTPS, atomic, sha256-verified) | ✅ skill v1.10 |
 
 Each component is independent and optional: a short task uses zero; a long
 loop may use all six. Use only the machinery the task earns.
@@ -216,6 +216,7 @@ reads/writes `.riel/` under the current directory.
 | `rielctl todo` | session-todo mirror (JSON) — the PLAN: the contract's goal (its Objective), its phases as rows and their steps as nested subtasks; the ledger sets the statuses (the current step is the only in_progress) |
 | `rielctl status` | ledger mirror (JSON) — the ledger's own facts for the desktop chip and the `pre_verify` gate: goal, phase, next, opens, claims, verified checkpoints |
 | `rielctl context` | context keywords of a contract (JSON) — the index the memory search reads |
+| `rielctl clean` | clear the worktree's `.riel/` state — flat timestamped backups inside `.riel/` (`ledger-<ts>.bak.md`, never a subdirectory); `--all` includes the contract, `--purge` removes without backup; ask the user before cleaning (rule in `riel-ledger`) |
 | `rielctl ship FILE` | dense-register check before delivery |
 | `rielctl brief new` / `validate` / `slice` | instantiate / structurally check / slice a phase into a mini packet |
 | `rielctl brief digest` · `rielctl digest` | explicit text digest of a graph |
@@ -268,6 +269,10 @@ protocol is enforced by the runtime:
   stops — memory backends live in the agent's memory manager, not in the
   tool registry, so the search is the agent's, with whatever backend it has
   configured.
+- **The injected plan is visible app-wide**: `riel_todo`'s mirror lands in
+  the desktop's composer status stack (goal → phases → steps as nested
+  rows with live glyphs) and in the sidebar card's `X/Y` progress — the
+  surfaces the mirror feeds are documented in `specs/spec-todo-hermes.md`.
 
 `hermes_plugin/riel/README.md` documents the plugin in depth (worktree
 resolution, chip wiring, gate limits).
@@ -312,7 +317,7 @@ hermes plugins enable riel
 # the desktop half, app-level (ONE symlink for all profiles):
 ln -sfn "$(pwd)/hermes_plugin/riel/desktop" ~/.hermes/desktop-plugins/riel
 
-make test        # the regression suite (169 tests)
+make test        # the regression suite (176 tests)
 ```
 
 Both destinations are make variables, overridable per call:
@@ -397,7 +402,7 @@ riel/
 make test     # or: python3 -m unittest discover -s tests -v
 ```
 
-Stdlib-only, subprocess-driven. 169 tests cover `rielctl note/seam/resume/todo/ship`,
+Stdlib-only, subprocess-driven. 176 tests cover `rielctl note/seam/resume/todo/clean/ship`,
 `brief new/validate/digest/slice`, the graph checks, and `extract-mermaid.py`
 end-to-end, plus the Hermes plugin package: vendoring hashes,
 manifest/schema/handler wiring, the handlers end-to-end through the vendored

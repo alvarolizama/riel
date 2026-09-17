@@ -1,7 +1,7 @@
 ---
 name: riel-ledger
 description: "Use when running a loop-mode task — write the local Goal/Core/Verified/Open/Next ledger in the worktree, re-read at every seam, verify before done. No remote dependency."
-version: 1.13.0
+version: 1.14.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -38,10 +38,31 @@ verified; hours passed and you cannot remember where you left off.
 - Lives at the worktree root; goes in `.gitignore`.
 - **One workstream = one worktree = one ledger** — parallel sessions never
   share a ledger (same lesson as git index races).
-- Ephemeral: after the done-check it may be deleted.
+- Ephemeral: after the done-check it is cleared with `rielctl clean` (flat
+  timestamped backups inside `.riel/`).
 - **Before using the ledger, read `.riel/contract.md`** — the contract is
   the plan; the ledger is state. Never execute from the ledger or from
   memory alone (spec-contract-format).
+
+### Opening over an existing `.riel/` — ask first
+
+Starting a task in a worktree whose `.riel/` already holds a ledger or a
+contract is a decision about SOMEONE ELSE'S state — never take it silently.
+Ask the user (in Hermes: `clarify`, all options in one call) with the three
+ways out, the recommended one first:
+
+1. **Back up and start clean** — `rielctl clean` (ledger) or
+   `rielctl clean --all` (also the contract): flat timestamped backups stay
+   INSIDE `.riel/` (`ledger-<ts>.bak.md`), never a new directory.
+2. **Delete without backup** — `rielctl clean --purge`: the previous task is
+   done and pushed, or it was a throwaway.
+3. **Continue the existing ledger** — the state in `.riel/` IS this task's:
+   run `rielctl resume` and pick up from the last ✓NN.
+
+Headless runs (no question mechanism available): the agent decides and
+REPORTS the choice — a finished-and-pushed previous task defaults to
+back up + clean; a ledger whose Goal matches the task at hand defaults to
+continue.
 
 ### Git hygiene — the ledger must never be committed
 
