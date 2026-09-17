@@ -1075,17 +1075,18 @@ class CleanTests(TempDirTest):
     LEDGER = "# Riel ledger\n\n## Goal\ng\n\n## Next\nn\n"
     CONTRACT = "# Task: t\n\n## Objective\nWe need t\n"
 
-    def _riel(self, ledger=True, contract=False):
+    SHAPING = "# Shaping: t\n\n## Findings\n- F1: f — source: a:1\n"
+
+    def _riel(self, ledger=True, contract=False, shaping=False):
         d = os.path.join(self.tmp, ".riel")
         os.makedirs(d, exist_ok=True)
-        if ledger:
-            with open(os.path.join(d, "ledger.md"), "w",
-                      encoding="utf-8") as fh:
-                fh.write(self.LEDGER)
-        if contract:
-            with open(os.path.join(d, "contract.md"), "w",
-                      encoding="utf-8") as fh:
-                fh.write(self.CONTRACT)
+        for flag, name, body in ((ledger, "ledger.md", self.LEDGER),
+                                 (contract, "contract.md", self.CONTRACT),
+                                 (shaping, "shaping.md", self.SHAPING)):
+            if flag:
+                with open(os.path.join(d, name), "w",
+                          encoding="utf-8") as fh:
+                    fh.write(body)
         return d
 
     def _files(self, d):
@@ -1124,6 +1125,23 @@ class CleanTests(TempDirTest):
         self.assertNotIn("contract.md", names)
         self.assertTrue(any(n.startswith("ledger-") for n in names))
         self.assertTrue(any(n.startswith("contract-") for n in names))
+
+    def test_clean_keeps_the_shaping_by_default(self):
+        d = self._riel(ledger=True, shaping=True)
+        rc, _, _ = run("clean")
+        self.assertEqual(rc, 0)
+        names = self._files(d)
+        self.assertIn("shaping.md", names)
+        self.assertNotIn("ledger.md", names)
+
+    def test_clean_all_includes_the_shaping_with_a_flat_backup(self):
+        d = self._riel(ledger=True, contract=True, shaping=True)
+        rc, out, _ = run("clean", "--all")
+        self.assertEqual(rc, 0, out)
+        names = self._files(d)
+        self.assertNotIn("shaping.md", names)
+        self.assertTrue(any(n.startswith("shaping-") and n.endswith(".bak.md")
+                            for n in names), names)
 
     def test_clean_purge_removes_without_backup(self):
         d = self._riel()
@@ -1232,6 +1250,418 @@ class FetchTests(TempDirTest):
         self.assertEqual(rc, 3)
         self.assertIn("exceeds", err)
         self.assertFalse(os.path.exists(out))
+
+
+class ShapingValidateTests(TempDirTest):
+    """Spec 7 — .riel/shaping.md: its sections, its sources, its verdict."""
+
+    VALID = """# Shaping: x
+
+## Question
+¿qué decisión cierra este shaping?
+
+## Findings
+- F1: hay un helper de secciones — source: rielctl:145, confidence high
+- F2: el slice hereda los claims — source: `make test`, confidence med
+
+## Facts
+- el prefijo F# del grafo se solapa con el de las fases
+
+## Alternatives bounced
+- A1: spec propio y validado — pro: tiene dientes / contra: más superficie — verdict: kept
+
+## Open
+- Q1: ¿bullet o párrafo? — settled by: un test con las dos formas
+
+## Verdict (→ contract)
+- We need que exista el shaping antes del contrato
+- Decision: escribirlo — because el contrato no puede portar la evidencia
+"""
+
+    def _write(self, content, relpath="shaping.md"):
+        path = os.path.join(self.tmp, relpath)
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        return path
+
+    def test_accepts_a_shaping_with_every_section(self):
+        rc, out, err = run("shaping", "validate", self._write(self.VALID))
+        self.assertEqual(rc, 0, out + err)
+        self.assertIn("valid", out)
+
+    def test_validates_the_default_path_with_no_argument(self):
+        self._write(self.VALID, os.path.join(".riel", "shaping.md"))
+        rc, out, _ = run("shaping", "validate")
+        self.assertEqual(rc, 0, out)
+        self.assertIn(".riel/shaping.md", out)
+
+    def test_missing_file_is_an_error(self):
+        rc, _, err = run("shaping", "validate")
+        self.assertEqual(rc, 1)
+        self.assertIn("no shaping found", err)
+
+    def test_missing_section_is_an_issue(self):
+        bad = self.VALID.replace("## Question\n", "")
+        rc, out, _ = run("shaping", "validate", self._write(bad))
+        self.assertEqual(rc, 1)
+        self.assertIn("missing section", out)
+        self.assertIn("'Question'", out)
+
+    def test_empty_question_is_an_issue(self):
+        bad = self.VALID.replace(
+            "## Question\n¿qué decisión cierra este shaping?\n", "## Question\n\n")
+        rc, out, _ = run("shaping", "validate", self._write(bad))
+        self.assertEqual(rc, 1)
+        self.assertIn("Question is empty", out)
+
+    def test_the_optional_diagrams_section_does_not_break_validation(self):
+        with_diagrams = self.VALID.replace("## Alternatives bounced", """## Diagrams
+<!-- OPTIONAL -->
+```mermaid
+flowchart LR
+  A["hoy"] --> B["propuesto"]
+```
+
+## Alternatives bounced""")
+        rc, out, err = run("shaping", "validate", self._write(with_diagrams))
+        self.assertEqual(rc, 0, out + err)
+        self.assertNotIn("WARN", err)
+
+    def test_findings_without_a_single_f_is_an_issue(self):
+        bad = re.sub(r"## Findings\n(.*?)\n\n## Facts", "## Findings\n\n## Facts",
+                     self.VALID, flags=re.S)
+        rc, out, _ = run("shaping", "validate", self._write(bad))
+        self.assertEqual(rc, 1)
+        self.assertIn("no F# line", out)
+
+    def test_empty_verdict_is_an_issue(self):
+        bad = re.sub(r"## Verdict \(→ contract\)\n.*$", "## Verdict (→ contract)\n",
+                     self.VALID, flags=re.S)
+        rc, out, _ = run("shaping", "validate", self._write(bad))
+        self.assertEqual(rc, 1)
+        self.assertIn("Verdict is empty", out)
+
+    def test_sections_out_of_order_is_an_issue(self):
+        bad = self.VALID.replace("""## Findings
+- F1: hay un helper de secciones — source: rielctl:145, confidence high
+- F2: el slice hereda los claims — source: `make test`, confidence med
+
+""", "").replace("""## Facts
+- el prefijo F# del grafo se solapa con el de las fases
+""", """## Facts
+- el prefijo F# del grafo se solapa con el de las fases
+
+## Findings
+- F1: hay un helper de secciones — source: rielctl:145, confidence high
+""")
+        rc, out, _ = run("shaping", "validate", self._write(bad))
+        self.assertEqual(rc, 1)
+        self.assertIn("out of order", out)
+
+    def test_a_finding_without_source_warns_but_validates(self):
+        bad = self.VALID.replace(" — source: rielctl:145, confidence high", "")
+        rc, _, err = run("shaping", "validate", self._write(bad))
+        self.assertEqual(rc, 0)
+        self.assertIn("WARN", err)
+        self.assertIn("no 'source:'", err)
+
+    def test_a_finding_without_confidence_warns(self):
+        bad = self.VALID.replace(", confidence high", "")
+        rc, _, err = run("shaping", "validate", self._write(bad))
+        self.assertEqual(rc, 0)
+        self.assertIn("confidence", err)
+
+    def test_an_alternative_without_verdict_warns(self):
+        bad = self.VALID.replace(" — verdict: kept", "")
+        rc, _, err = run("shaping", "validate", self._write(bad))
+        self.assertEqual(rc, 0)
+        self.assertIn("no 'verdict:'", err)
+
+    def test_an_open_question_without_its_test_warns(self):
+        bad = self.VALID.replace(" — settled by: un test con las dos formas", "")
+        rc, _, err = run("shaping", "validate", self._write(bad))
+        self.assertEqual(rc, 0)
+        self.assertIn("settled by:", err)
+
+    def test_a_verdict_without_an_objective_line_warns(self):
+        bad = self.VALID.replace(
+            "- We need que exista el shaping antes del contrato\n", "")
+        rc, _, err = run("shaping", "validate", self._write(bad))
+        self.assertEqual(rc, 0)
+        self.assertIn("Objective line", err)
+
+    def test_a_contract_anchored_to_a_missing_finding_warns(self):
+        self._write(self.VALID, os.path.join(".riel", "shaping.md"))
+        self._write("# Task: x\n\n## Pre-registered claims\n"
+                    "- P1: c — verify with: true — anchor: shaping:F9\n",
+                    os.path.join(".riel", "contract.md"))
+        rc, _, err = run("shaping", "validate", os.path.join(".riel", "shaping.md"),
+                         "--contract", os.path.join(".riel", "contract.md"))
+        self.assertEqual(rc, 0)
+        self.assertIn("no such finding", err)
+
+
+class ShapingNewTests(TempDirTest):
+    """`shaping new` drops the skeleton; it never clobbers research."""
+
+    def test_instantiates_the_skeleton_into_riel(self):
+        rc, out, _ = run("shaping", "new", "--param", "name=x")
+        self.assertEqual(rc, 0, out)
+        path = os.path.join(self.tmp, ".riel", "shaping.md")
+        self.assertTrue(os.path.exists(path))
+        with open(path, encoding="utf-8") as fh:
+            body = fh.read()
+        for heading in ("## Question", "## Findings", "## Facts",
+                        "## Alternatives bounced", "## Open", "## Verdict"):
+            self.assertIn(heading, body)
+        self.assertIn("# Shaping: x", body)
+
+    def test_the_skeleton_validates_like_any_shipped_fixture(self):
+        # Every rule must clear the shipped fixtures: the template carries one
+        # placeholder F1 line (with its source/confidence slots), so a fresh
+        # shaping validates — the research is missing, not the structure.
+        run("shaping", "new")
+        rc, out, err = run("shaping", "validate")
+        self.assertEqual(rc, 0, out + err)
+        self.assertNotIn("WARN", err)
+
+    def test_refuses_to_overwrite_an_existing_shaping(self):
+        run("shaping", "new")
+        rc, _, err = run("shaping", "new")
+        self.assertEqual(rc, 3)
+        self.assertIn("already exists", err)
+
+    def test_force_overwrites(self):
+        run("shaping", "new")
+        path = os.path.join(self.tmp, ".riel", "shaping.md")
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write("\nresearch\n")
+        rc, _, _ = run("shaping", "new", "--force")
+        self.assertEqual(rc, 0)
+        with open(path, encoding="utf-8") as fh:
+            self.assertNotIn("research", fh.read())
+
+    def test_dash_writes_to_stdout(self):
+        rc, out, _ = run("shaping", "new", "-o", "-")
+        self.assertEqual(rc, 0)
+        self.assertIn("# Shaping:", out)
+
+
+class ClaimAnchorTests(TempDirTest):
+    """Spec 2 + Spec 7 — a claim's anchor: declared, resolved, re-read."""
+
+    CONTRACT = """# Task: x
+
+## Objective
+We need x
+
+## Context
+c
+
+### Context keywords
+- una keyword
+
+## Constraints
+- r1
+- r2
+
+## Pre-registered claims
+- P1: la sección lo sostiene — verify with: true — anchor: §Constraints#2
+- P2: el nodo lo sostiene — verify with: true — anchor: S1
+- P3: el hallazgo lo sostiene — verify with: true — anchor: shaping:F1
+
+## Execution graph
+
+```mermaid
+flowchart TD
+  S1["RUN ls"] --> G1{"ok?"}
+  G1 -->|"no (< 3)"| S1
+  G1 -->|yes| END([Done])
+```
+
+## Verification gates
+g
+
+## Deliverable
+d
+
+## DO NOT
+- x
+"""
+
+    SHAPING = """# Shaping: x
+
+## Question
+¿q?
+
+## Findings
+- F1: el hallazgo que sostiene P3 — source: a.py:1, confidence high
+
+## Facts
+- f
+
+## Alternatives bounced
+- A1: a — pro: p / contra: c — verdict: kept
+
+## Open
+- Q1: q — settled by: t
+
+## Verdict (→ contract)
+- We need x
+"""
+
+    SLICEABLE = """# Task: x
+
+## Objective
+We need x
+
+## Context
+c
+
+## Constraints
+- r
+
+## Pre-registered claims
+- P1: la sección lo sostiene — verify with: true — anchor: §Constraints#1
+
+## Execution graph
+
+```mermaid
+flowchart TD
+  W1{"Wave 1: primera"} -->|"open"| S1["RUN ls"]
+  S1 --> G1{"ok?"}
+  G1 -->|"no (< 3)"| W1
+  G1 -->|yes| W2{"Wave 2: segunda"}
+  W2 -->|"open"| S2["RUN ls"]
+  S2 --> G2{"ok?"}
+  G2 -->|"no (< 3)"| W2
+  G2 -->|yes| END([Done])
+```
+
+## Verification gates
+g
+
+## Deliverable
+d
+
+## DO NOT
+- x
+"""
+
+    def _write(self, content, relpath="contract.md"):
+        path = os.path.join(self.tmp, relpath)
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        return path
+
+    def _riel(self, contract=None, shaping=True):
+        self._write(contract if contract is not None else self.CONTRACT,
+                    os.path.join(".riel", "contract.md"))
+        if shaping:
+            self._write(self.SHAPING, os.path.join(".riel", "shaping.md"))
+        return os.path.join(".riel", "contract.md")
+
+    def test_a_contract_with_resolvable_anchors_validates_quietly(self):
+        rc, out, err = run("brief", "validate", self._riel())
+        self.assertEqual(rc, 0, out + "|" + err)
+        self.assertNotIn("WARN", err)
+
+    def test_a_claim_without_an_anchor_warns_but_validates(self):
+        c = self.CONTRACT.replace(" — anchor: S1", "")
+        rc, _, err = run("brief", "validate", self._riel(c))
+        self.assertEqual(rc, 0)
+        self.assertIn("P2 has no anchor", err)
+
+    def test_a_section_anchor_that_does_not_resolve_is_an_issue(self):
+        for bad in ("§Nope#1", "§Constraints#9"):
+            c = self.CONTRACT.replace("§Constraints#2", bad)
+            rc, out, _ = run("brief", "validate", self._riel(c))
+            self.assertEqual(rc, 1, bad)
+            self.assertIn("does not resolve", out)
+
+    def test_a_node_outside_the_graph_warns(self):
+        c = self.CONTRACT.replace(" — anchor: S1", " — anchor: S9")
+        rc, _, err = run("brief", "validate", self._riel(c))
+        self.assertEqual(rc, 0)
+        self.assertIn("not a node of this graph", err)
+
+    def test_a_malformed_anchor_is_an_issue(self):
+        c = self.CONTRACT.replace(" — anchor: S1", " — anchor: ¿esto?")
+        rc, out, _ = run("brief", "validate", self._riel(c))
+        self.assertEqual(rc, 1)
+        self.assertIn("not a valid form", out)
+
+    def test_a_shaping_anchor_without_the_finding_warns(self):
+        c = self.CONTRACT.replace("shaping:F1", "shaping:F9")
+        rc, _, err = run("brief", "validate", self._riel(c))
+        self.assertEqual(rc, 0)
+        self.assertIn("no such finding", err)
+
+    def test_a_shaping_anchor_with_no_shaping_file_only_warns(self):
+        rc, _, err = run("brief", "validate", self._riel(shaping=False))
+        self.assertEqual(rc, 0)
+        self.assertIn("no shaping file", err)
+
+    def test_prose_mentioning_the_syntax_is_not_taken_for_an_anchor(self):
+        c = self.CONTRACT.replace(
+            "- P2: el nodo lo sostiene — verify with: true — anchor: S1",
+            "- P2: el nodo lo sostiene, no su sintaxis `— anchor:`"
+            " — verify with: true")
+        rc, _, err = run("brief", "validate", self._riel(c))
+        self.assertEqual(rc, 0)
+        self.assertIn("P2 has no anchor", err)
+
+    def test_the_ledger_seed_keeps_the_anchor(self):
+        self._riel()
+        rc, _, _ = run("note", "--from-contract",
+                       os.path.join(".riel", "contract.md"))
+        self.assertEqual(rc, 0)
+        with open(os.path.join(".riel", "ledger.md"), encoding="utf-8") as fh:
+            self.assertIn("— anchor: §Constraints#2", fh.read())
+
+    def test_a_slice_inherits_the_anchors_verbatim(self):
+        path = self._write(self.SLICEABLE)
+        rc, out, _ = run("brief", "slice", path, "--phase", "W1")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("— anchor: §Constraints#1", out)
+
+    def test_anchor_prints_every_claim_with_its_region(self):
+        path = self._riel()
+        rc, out, _ = run("anchor", "--contract", path)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("P1:", out)
+        self.assertIn("§Constraints#2", out)
+        self.assertIn("| r2", out)
+        self.assertIn("| RUN ls", out)
+        self.assertIn("el hallazgo que sostiene P3", out)
+
+    def test_anchor_filters_a_single_claim(self):
+        rc, out, _ = run("anchor", "P2", "--contract", self._riel())
+        self.assertEqual(rc, 0)
+        self.assertIn("P2:", out)
+        self.assertNotIn("P1:", out)
+
+    def test_anchor_reports_an_unresolvable_one(self):
+        c = self.CONTRACT.replace(" — anchor: S1", " — anchor: S9")
+        rc, out, _ = run("anchor", "--contract", self._riel(c))
+        self.assertEqual(rc, 0)
+        self.assertIn("does not resolve", out)
+
+    def test_anchor_without_a_contract_errors(self):
+        rc, _, err = run("anchor")
+        self.assertEqual(rc, 1)
+        self.assertIn("no contract found", err)
+
+    def test_anchor_of_an_unknown_claim_errors(self):
+        rc, _, err = run("anchor", "P9", "--contract", self._riel())
+        self.assertEqual(rc, 2)
+        self.assertIn("no claim", err)
 
 
 if __name__ == "__main__":
