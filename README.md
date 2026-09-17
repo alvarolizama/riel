@@ -46,12 +46,12 @@ artifact regenerated from `skills/` and pinned by hash in the test suite.
 
 | Component | What it steers | Status |
 |---|---|---|
-| `riel-ledger` | **State** — Goal/Claims/Core/Verified/Open/Next, re-read at every seam, recovery via checkpoints, opening rules over an existing `.riel/`, mirrors to the session todo | ✅ skill v1.14.1 |
-| `riel-contract` | **Structure** — mermaid as contract: closed verb vocabulary, verification funnel, graph digest, machine-checkable | ✅ skill v3.6.1 |
+| `riel-ledger` | **State** — Goal/Claims/Core/Verified/Open/Next, re-read at every seam, recovery via checkpoints, opening rules over an existing `.riel/`, mirrors to the session todo | ✅ skill v1.15.0 |
+| `riel-contract` | **Structure** — mermaid as contract: closed verb vocabulary, verification funnel, graph digest, machine-checkable | ✅ skill v3.7.0 |
 | `riel-protocol` | **Trajectory** — functional grammar, persona, minimal surface on the first turn | ✅ skill v1.7 |
-| `riel-briefs` | **Delegation briefs** — self-contained packets: curated context + the `### Why` rationale and context-keyword index, verb-graph, pre-registered claims, executable gates, templates | ✅ skill v3.7 |
+| `riel-briefs` | **Delegation briefs** — self-contained packets: curated context + the `### Why` rationale and context-keyword index, verb-graph, pre-registered claims (with their anchors), executable gates, the shaping step before the plan, templates | ✅ skill v3.8 |
 | `riel-delegate` | **Delegation router** — plan, dispatch waves, JSON-schema'd returns, parent verifies | ✅ skill v1.3 |
-| `riel-cli` | **Tooling** — `rielctl` writes the ledger mechanically, cleans the worktree state with flat in-`.riel/` backups, instantiates/validates packets, slices a phase into a child packet (inheriting the Objective, the `### Why` rationale and the keywords), expands the graph digest, derives the session-todo mirror (the plan: the contract's goal, phases and steps) and the ledger mirror the chip and the gate fold (`rielctl status`), emits the context keywords, and fetches a remote contract to disk (HTTPS, atomic, sha256-verified) | ✅ skill v1.10 |
+| `riel-cli` | **Tooling** — `rielctl` writes the ledger mechanically, cleans the worktree state with flat in-`.riel/` backups, instantiates/validates packets, slices a phase into a child packet (inheriting the Objective, the `### Why` rationale and the keywords), expands the graph digest, derives the session-todo mirror (the plan: the contract's goal, phases and steps) and the ledger mirror the chip and the gate fold (`rielctl status`), emits the context keywords, fetches a remote contract to disk (HTTPS, atomic, sha256-verified), validates a shaping (Spec 7) and re-reads each claim beside the anchored region that supports it | ✅ skill v1.11 |
 
 Each component is independent and optional: a short task uses zero; a long
 loop may use all six. Use only the machinery the task earns.
@@ -79,6 +79,13 @@ versions across skills is unsupported.
   constraints, pre-registered claims, a mermaid execution graph with a
   verification funnel, executable gates, deliverable, DO NOT. A parser
   accepts or rejects it (`rielctl brief validate`).
+- **The evidence before the plan.** A task that researches first writes
+  `.riel/shaping.md` — findings with their sources and a confidence,
+  alternatives with their verdicts, the questions still open — and each claim
+  can point back at its support (`— anchor: §Constraints#2`, a node of the
+  graph, or `shaping:F1`). `rielctl anchor` re-reads a claim beside the
+  region that holds it up, at every seam, so a support that moved is noticed
+  while the claim is still refutable.
 - **Recovery from degraded runs.** A ✓NN that took 3+ failed attempts
   leaves the context contaminated with its own error history; the ledger's
   checkpoints let you restart clean from the last verified state instead
@@ -365,7 +372,7 @@ riel/
 │   ├── riel-ledger/     ← state: the heart of the framework
 │   ├── riel-contract/   ← structure: mermaid contract + funnel + digest
 │   ├── riel-protocol/   ← trajectory: grammar, persona, minimal surface
-│   ├── riel-briefs/     ← delegation briefs + pre-registered claims + templates/
+│   ├── riel-briefs/     ← delegation briefs + claims + shaping/packet templates/
 │   ├── riel-delegate/   ← delegation router + JSON output_schema
 │   └── riel-cli/        ← rielctl: ledger writer, packet + digest tooling
 ├── hermes_plugin/     ← Hermes plugin package (machinery only, optional)
@@ -375,7 +382,8 @@ riel/
 │   └── probe-session-cwd.py ← live probe of the Hermes load path (needs Hermes)
 ├── specs/             ← design contracts
 │   ├── spec-ledger-format.md    ← .riel/ledger.md format + rules + phase advance
-│   ├── spec-contract-format.md  ← .riel/contract.md format (the plan) + intent
+│   ├── spec-contract-format.md  ← .riel/contract.md format (the plan) + intent + claim anchors
+│   ├── spec-shaping-format.md   ← .riel/shaping.md format (the evidence before the plan)
 │   └── spec-todo-hermes.md      ← session-todo mirror (the plan) + ledger mirror (status)
 ├── scripts/           ← repo tooling
 │   ├── validate-mermaid.sh   ← validates every mermaid block with mmdc
@@ -390,9 +398,10 @@ riel/
 make test     # or: python3 -m unittest discover -s tests -v
 ```
 
-Stdlib-only, subprocess-driven. 176 tests cover `rielctl note/seam/resume/todo/clean/ship`,
-`brief new/validate/digest/slice`, the graph checks, and `extract-mermaid.py`
-end-to-end, plus the Hermes plugin package: vendoring hashes,
+Stdlib-only, subprocess-driven. 213 tests cover `rielctl note/seam/resume/todo/clean/ship`,
+`brief new/validate/digest/slice`, `shaping new/validate`, `anchor`, the graph
+and claim-anchor checks, and `extract-mermaid.py` end-to-end, plus the Hermes
+plugin package: vendoring hashes,
 manifest/schema/handler wiring, the handlers end-to-end through the vendored
 copy, the statusbar chip rendered by node against a stubbed SDK (labels,
 tooltip, click, and the refetch a finished tool triggers), the backend

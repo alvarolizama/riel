@@ -1,7 +1,7 @@
 ---
 name: riel-briefs
 description: "Use when writing self-contained agent briefs on the fly — curated context, verb-graph, gates, anchored opening. Dispatch packets for delegate_task."
-version: 3.7.0
+version: 3.8.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -28,6 +28,25 @@ skill is for one-shot instructions.
 **Agents have no memory of your conversation.** Every packet must be a
 standalone document. If the agent needs to ask "what do you mean?" — the
 packet is incomplete.
+
+## Shape before you plan
+
+The contract is the plan; the **shaping** is the evidence it rests on. When the
+decision is not settled yet — codebase to read, sources to check, alternatives
+to weigh — write `.riel/shaping.md` **before** the contract: Question,
+Findings (each with its `source:` and a `confidence`), Facts, the optional
+Diagrams (the system as it is vs as it would be), Alternatives bounced (with
+verdicts), Open (each with the cheapest test that would settle it) and the
+Verdict that seeds the contract. `rielctl shaping new` drops the
+skeleton; `rielctl shaping validate` runs the rules
+(`riel/specs/spec-shaping-format.md`, Spec 7).
+
+A task whose decision is already settled skips it — the shaping is the
+on-ramp, never a second plan. It buys two things the contract cannot: rejected
+alternatives keep a home (the contract's `### Why` holds only the surviving
+one) and every claim can carry its **claim anchor** back to its support
+(`— anchor: §Constraints#2`, a graph node, or `shaping:F1`), re-read at every
+seam with `rielctl anchor`.
 
 ## The contract comes first — solo or delegated
 
@@ -80,7 +99,8 @@ executes it.
 
 ```mermaid
 flowchart TD
-  START([Spec or idea]) --> P1["Step 1: read the spec\ninternalize what and why"]
+  START([Spec or idea]) --> P0["Step 0 (when unsettled): shape\nfindings, alternatives, verdict"]
+  P0 --> P1["Step 1: read the spec\ninternalize what and why"]
   P1 --> P2["Step 2: curate context\nfiles, patterns, snippets"]
   P2 --> P3["Step 3: classify the task\ncode / fix / refactor / research / writing"]
   P3 --> G1["Step 4: build the graph\nmermaid DAG per riel-contract"]
@@ -283,6 +303,9 @@ Structure:
 - [ ] `## Context` fits the budget: 3-5 snippets, each < 30 lines
 - [ ] `## Pre-registered claims` has ≥1 claim, each with a verify-with that
       refers to a command or explicit check
+- [ ] Each claim carries its anchor (`— anchor: §Section#n` | a node id |
+      `shaping:F#`) — validate WARNs a claim with none and fails one that
+      does not resolve
 - [ ] `## DO NOT` is present and non-empty
 
 Graph (validable con `mmdc` / `scripts/validate-mermaid.sh`):
@@ -309,6 +332,7 @@ Content:
 ## Cross-references
 
 - Format skeleton (contract + packet): `templates/packet.md`
+- Shaping skeleton (the evidence before the plan): `templates/shaping.md`
 - Worked example: `templates/example-password-reset.md`
 - Verb-graph syntax conventions (canonical): `riel-contract`
 - Opening conditions and functional grammar: `riel-protocol`

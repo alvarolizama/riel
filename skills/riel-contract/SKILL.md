@@ -1,7 +1,7 @@
 ---
 name: riel-contract
 description: "Use when authoring mermaid verb-graph contracts for skills and todos — 3-layer pattern, closed verb vocabulary, verification funnel, ASK escalation, machine-checkable."
-version: 3.6.1
+version: 3.7.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -221,6 +221,33 @@ flowchart TD
 Loops carry counters: retry `< 3` returns to the failing step; `>= 3`
 escalates (never infinite loops).
 
+## Claim anchors
+
+A pre-registered claim can be re-read against its support. The claim carries
+the anchor as the LAST clause of its own line:
+
+```
+- P1: the token verifies for ≤1h — verify with: `mix test token_test.exs` — anchor: §Constraints#2
+- P2: no query escapes the scope — verify with: `mix test scope_test.exs` — anchor: G2
+- P3: the finding still holds — verify with: `mix test` — anchor: shaping:F1
+```
+
+Three forms and only three: `§<Section>[#<n>]` (the whole section, or its n-th
+bullet), `<NodeId>` (a node of THIS contract's graph) and `shaping:<F#>` (a
+finding of `.riel/shaping.md`, Spec 7). The anchor is provenance: the contract
+keeps pointing at what it rests on, so a support that moved is noticed while
+the claim is still refutable.
+
+The claim stays on ONE line — the ledger seed reads line by line, and
+`brief slice` copies the section verbatim, so an anchor written there travels
+to the child for free.
+
+`rielctl brief validate` enforces it: no anchor is a `WARN` (never fatal — the
+shipped templates carry none); an unresolvable `§` anchor or an anchor in no
+known form is an `ISSUE`; a node absent from the local graph is the
+inherited-on-a-slice case (`WARN`), and so is a `shaping:F#` the shaping does
+not have. `rielctl anchor` prints each claim beside the region it names.
+
 ## Graph digest — the explicit text beside the diagram
 
 Mermaid alone is not enough. In a frozen paired benchmark (graph2agent,
@@ -285,6 +312,8 @@ label. (`mmdc` is the parser-level check; the rest are greps in `rielctl`.)
 - [ ] Execution nodes start with a verb from the closed vocabulary
 - [ ] Every ASK node carries one of the three escalation triggers
       (irreversible / outside the claims / Goal-changing)
+- [ ] Claims carry their anchor (`§Section#n` | node id | `shaping:F#`), one
+      line per claim
 - [ ] Verification funnel before End; loops with counters
 - [ ] Mermaid parses: `scripts/validate-mermaid.sh`
 - [ ] The why-prose intact (mermaid adds, does not replace)
@@ -292,4 +321,5 @@ label. (`mmdc` is the parser-level check; the rest are greps in `rielctl`.)
 ## Cross-references
 
 - One-shot agent instructions with the same vocabulary: `riel-briefs`
+- The evidence the claims point back into: `riel/specs/spec-shaping-format.md`
 - The ledger that the VERIFY nodes feed: `riel-ledger`

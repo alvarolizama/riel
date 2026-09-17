@@ -1,7 +1,7 @@
 ---
 name: riel-cli
 description: "Use when Riel needs its mechanical helper — writes the ledger with the exact format, instantiates and validates packets, expands a graph digest, derives the session-todo mirror. The agent invokes it in RUN nodes instead of handwriting state files."
-version: 1.10.0
+version: 1.11.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -27,6 +27,10 @@ of the framework so the agent doesn't have to remember them:
   the contract
 - Downloading a remote contract to disk without routing it through the
   agent's context (`rielctl fetch`) — HTTPS-only, atomic, sha256-verified
+- Instantiating the shaping skeleton and checking it against Spec 7
+  (`rielctl shaping new` / `shaping validate`)
+- Re-reading each claim beside the region that supports it
+  (`rielctl anchor`) — the anchor surface of a seam
 
 **When to use:** on any `loop`-mode task and on every delegated task, the
 agent invokes `rielctl` in `RUN` nodes instead of handwriting ledger files.
@@ -89,7 +93,7 @@ rielctl digest FILE.md # explicit text digest of any file's mermaid graph
 
 ```bash
 rielctl clean           # back up .riel/ledger.md, then remove it
-rielctl clean --all     # also the contract.md
+rielctl clean --all     # also the contract.md and the shaping.md
 rielctl clean --purge   # remove without backing up
 ```
 
@@ -102,6 +106,40 @@ clean it exits 0 and says so.
 opening holds another task's state, and the choice (back up / purge /
 continue the existing ledger via `resume`) is the user's, not a silent
 default (rule in `riel-ledger`, "Opening over an existing `.riel/`").
+
+### Shaping (Spec 7)
+
+```bash
+rielctl shaping new [--param name="reset flow"] [-o PATH] [--force]   # skeleton
+rielctl shaping validate [PATH] [--contract PATH]                     # the rules
+```
+
+`shaping new` drops `riel-briefs/templates/shaping.md` into
+`.riel/shaping.md`; it refuses to overwrite an existing shaping (exit 3) — a
+shaping is research, not a template drop — unless `--force` is passed, and
+`-o -` writes to stdout instead. The shipped skeleton carries one placeholder
+`F#` line with its `source:`/`confidence` slots, so it validates like every
+other fixture: the structure is there, the research is not.
+
+`shaping validate` errors on a missing section, an empty `## Question` and a
+`## Findings` with no `F#` line; it WARNs on a finding without `source:` or
+`confidence`, an alternative without a `verdict:`, an open question without
+`settled by:`, a Verdict with no `We need …` line, and a contract claim
+anchored to a finding this shaping does not have.
+
+### Claim anchors (Spec 2 + Spec 7)
+
+```bash
+rielctl anchor          # every claim beside the region that supports it
+rielctl anchor P2       # only that one
+```
+
+A claim may end its line with `— anchor: <ref>`: `§<Section>[#<n>]` (the n-th
+bullet of that section), a graph node id, or `shaping:F<n>` (a finding of
+`.riel/shaping.md`). `anchor` resolves it and prints the excerpt — the seam's
+own re-read surface, so a claim's support is re-read without re-reading the
+whole contract. A claim with no anchor or an unresolvable one is reported; a
+`shaping:` anchor falls back to the shaping beside the contract.
 
 ### Context keywords (Spec 2)
 
@@ -151,6 +189,9 @@ Exit codes:
 - `note` / `seam` / `resume` / `todo` / `status`: 0 unless arguments invalid
   or the ledger is missing (1).
 - `clean`: always 0 — "nothing to clean" is a message, not an error.
+- `shaping validate`: 0 with WARNs only; 1 with an `ISSUE` or a missing file.
+- `shaping new`: 0; 3 when the destination already exists (pass `--force`).
+- `anchor`: 0; 1 with no contract; 2 with no claims (or an unknown claim id).
 - `ship`: exit 0 if the file is clean; exit 1 if it finds dense markers
   (the agent should fix before delivery).
 
@@ -188,7 +229,10 @@ trigger** (`ASK[irreversible|outside-claims|goal-changing]`), no `<br/>`, no
 mermaid-cli is present. Loops without a counter guard (`< 3` / `>= 3`),
 over-long labels and an Objective that runs past one sentence (the spec
 asks for one — rationale goes in `### Why`) are reported as non-fatal
-`WARN`s.
+`WARN`s. **Claim anchors** are checked too: a claim with no anchor is a
+`WARN`; a `§Section#n` that does not resolve, or an anchor in no known form,
+is an `ISSUE`; a node the local graph lacks (the inherited-on-a-slice case)
+and a `shaping:F#` the shaping does not have are `WARN`s.
 
 `brief slice FILE [--phase F#]` extracts one phase's subgraph as a mini
 packet. It inherits mechanically — never as FILL — the Objective, the
