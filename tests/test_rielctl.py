@@ -642,6 +642,35 @@ d
         self.assertEqual(rc, 1)
         self.assertIn("We need", out)
 
+    def test_brief_validate_warns_on_multi_sentence_objective(self):
+        multi = self.MINIMAL_VALID.replace(
+            "We need x",
+            "We need x. It matters because y. And also z.")
+        path = self._write("multi.md", multi)
+        rc, out, err = run("brief", "validate", path)
+        self.assertEqual(rc, 0, out)              # non-fatal: a warn, not a gate
+        self.assertIn("more than one sentence", err)
+        self.assertIn("### Why", err)            # points at the rationale home
+
+    def test_brief_validate_quiet_on_single_wrapped_sentence(self):
+        wrapped = self.MINIMAL_VALID.replace(
+            "We need x",
+            "We need a password-reset flow that emails a signed link and\n"
+            "accepts the new password through that link.")
+        path = self._write("wrapped.md", wrapped)
+        rc, out, err = run("brief", "validate", path)
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn("more than one sentence", err)
+
+    def test_brief_validate_warns_on_multi_paragraph_objective(self):
+        paras = self.MINIMAL_VALID.replace(
+            "We need x",
+            "We need x.\n\nSecond paragraph with more intent.")
+        path = self._write("paras.md", paras)
+        rc, out, err = run("brief", "validate", path)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("more than one sentence", err)
+
     def test_brief_validate_rejects_out_of_order_sections(self):
         bad = self.MINIMAL_VALID.replace(
             "\n## Context\nc\n\n## Constraints\n- r\n",
@@ -848,6 +877,26 @@ d
         rc, out, _ = run("brief", "slice", ".riel/contract.md", "--phase", "F1")
         self.assertEqual(rc, 0)
         self.assertIn("## Constraints\n- no new deps", out)
+
+    def test_slice_inherits_the_why_subsection(self):
+        self.CONTRACT = self.CONTRACT.replace(
+            "## Context\nc\n",
+            "## Context\n\n### Why\nSin el racional el hijo reinterpreta.\n\n"
+            "### Project\n- c\n")
+        self._contract()
+        rc, out, _ = run("brief", "slice", ".riel/contract.md", "--phase", "F1")
+        self.assertEqual(rc, 0)
+        self.assertIn("### Why", out)
+        self.assertIn("Sin el racional el hijo reinterpreta.", out)
+        # the inherited copy carries the do-not-reinterpret guidance
+        self.assertIn("ASK[goal-changing]", out)
+
+    def test_slice_without_why_keeps_the_plain_context(self):
+        self._contract()
+        rc, out, _ = run("brief", "slice", ".riel/contract.md", "--phase", "F1")
+        self.assertEqual(rc, 0)
+        self.assertNotIn("### Why", out)
+        self.assertIn("<!-- FILL: only what this phase needs -->", out)
 
     def test_graph_prefers_execution_graph_section(self):
         doc = (

@@ -1,7 +1,7 @@
 ---
 name: riel-briefs
 description: "Use when writing self-contained agent briefs on the fly — curated context, verb-graph, gates, anchored opening. Dispatch packets for delegate_task."
-version: 3.6.0
+version: 3.7.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -40,7 +40,8 @@ needs neither.)
 - **Solo:** work the contract phase by phase; the ledger tracks state.
 - **Delegated:** the contract stays with the parent; each child receives a
   **mini contract** — the contract narrowed to that child's phase (its
-  subgraph, gates, Deliverable, DO NOT) — as its packet. The **parent** keeps
+  subgraph, gates, Deliverable, DO NOT, plus the inherited Objective,
+  `### Why` and context keywords) — as its packet. The **parent** keeps
   and validates the ledger; the child never does. Slice it mechanically with
   `rielctl brief slice .riel/contract.md --phase F#` (subgraph + FILL sections),
   then complete the FILLs by hand.
@@ -202,8 +203,14 @@ it and fill the `{{placeholders}}`. It is the skeleton of the **contract**
 The packet is a markdown document with these sections, in this order:
 
 1. `# Task:` — the name.
-2. `## Objective` — one sentence, opens with "We need…".
-3. `## Context` — Project (path, stack, conventions), existing code to
+2. `## Objective` — one sentence, opens with "We need…". `brief validate`
+   WARNs when it runs past one sentence — move the rationale to `### Why`.
+3. `## Context` — **starting with `### Why`**: one or two sentences of
+   rationale (what triggers this objective, which alternative was
+   discarded). `brief slice` inherits it into every child packet, so the
+   delegated agent knows *why*, not only *what* — and escalates
+   (`ASK[goal-changing]`) instead of reinterpreting on a conflict. Then
+   Project (path, stack, conventions), existing code to
    read, code to modify/create, reference snippets, **and the
    `### Context keywords` subsection**: the contract's index into memory
    (one term per line, an optional `→ dran|memory|code` hint). It is not
@@ -269,7 +276,10 @@ Structure:
 
 - [ ] The nine sections are present, in the order of `templates/packet.md`
 - [ ] `# Task:` names the deliverable, not the journey
-- [ ] `## Objective` is one sentence opens with "We need…"
+- [ ] `## Objective` is one sentence opens with "We need…" (validate WARNs
+      past one sentence)
+- [ ] `## Context` opens with `### Why`: the rationale travels to every
+      slice — a child without it knows what but not why
 - [ ] `## Context` fits the budget: 3-5 snippets, each < 30 lines
 - [ ] `## Pre-registered claims` has ≥1 claim, each with a verify-with that
       refers to a command or explicit check

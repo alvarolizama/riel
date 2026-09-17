@@ -27,9 +27,12 @@ the plan artifact and its relationship to the ledger.
 The nine sections, in order:
 
 1. `# Task:` — the name
-2. `## Objective` — one sentence, opens with "We need…"
+2. `## Objective` — one sentence, opens with "We need…"; `brief validate`
+   WARNs (non-fatal) when it runs past one sentence — rationale belongs in
+   `### Why`, not here
 3. `## Context` — project, code to read/modify, reference snippets, plus the
-   `### Context keywords` index (see "Context fetch")
+   `### Why` rationale and the `### Context keywords` index (see "Context
+   fetch")
 4. `## Constraints` — hard rules
 5. `## Pre-registered claims` — P-ids with a verify-with
 6. `## Execution graph` — the mermaid DAG (riel-contract)
@@ -39,6 +42,25 @@ The nine sections, in order:
 
 Validate it mechanically: `rielctl brief validate .riel/contract.md` (the
 validator keys on this exact section set and order).
+
+## Intent (the `### Why` subsection)
+
+`## Context` opens with `### Why`: one or two sentences of rationale — what
+triggers this objective, which alternative was discarded. The Objective says
+*what done looks like*; the claims make it falsifiable; `### Why` is the only
+home for *why this and not something else*.
+
+It is a `###` subsection on purpose: `brief validate` pins the nine `##`
+sections and ignores `###`, so the format stays stable. It is **inherited
+mechanically by `rielctl brief slice`** (like `### Context keywords` and the
+Objective itself), so a delegated child receives the rationale instead of a
+FILL — and the inherited copy carries the rule: on a conflict with the
+execution, the child escalates (`ASK[goal-changing]`), it never
+reinterprets the intent.
+
+Missing `### Why` is not an error and not a WARN: a hand-driven task whose
+author holds the rationale needs no section for it. It earns its place when
+the contract travels — a remote `fetch`, a slice, a resumed session.
 
 ## Context fetch (the keywords)
 
@@ -79,9 +101,11 @@ hits it did not obtain.
 
 When the task delegates, the child receives a **packet**: the contract
 narrowed to the child's phase — its subgraph, its gates, its Deliverable,
-its DO NOT. Same format, fewer phases. The child **never opens a ledger**:
-it returns JSON and the **parent** — the sole writer of `.riel/ledger.md` —
-turns that into ✓NN. The parent keeps the full contract and the ledger.
+its DO NOT — plus the inherited intent (the Objective and the `### Why`
+rationale travel in every slice). Same format, fewer phases. The child
+**never opens a ledger**: it returns JSON and the **parent** — the sole
+writer of `.riel/ledger.md` — turns that into ✓NN. The parent keeps the full
+contract and the ledger.
 
 ## Remote contracts (fetch)
 

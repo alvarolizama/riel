@@ -168,6 +168,24 @@ def _subsection(text, section, sub):
     return m.group(1).strip() if m else ""
 
 
+def _sentence_count(body):
+    """Sentences in a section body: comments stripped, lines joined.
+
+    Best-effort — a wrapped single sentence counts as one (fixtures wrap),
+    several paragraphs count as multi. Used for the Objective one-sentence
+    WARN, never as a hard gate.
+    """
+    text = re.sub(r"<!--.*?-->", "", body, flags=re.S)
+    paras = [p for p in (re.sub(r"\s+", " ", chunk).strip()
+                         for chunk in re.split(r"\n\s*\n", text)) if p]
+    if not paras:
+        return 0
+    if len(paras) > 1:
+        return len(paras) + 1  # more than one paragraph: already multi
+    parts = [s for s in re.split(r"(?<=[.!?])\s+", paras[0]) if s.strip()]
+    return max(len(parts), 1)
+
+
 def context_keywords(text):
     """Context-fetch keywords from '### Context keywords' inside '## Context'.
 
@@ -1028,6 +1046,16 @@ def cmd_brief_slice(args):
         "## Context",
     ]
     keywords = context_keywords(text)
+    why = _subsection(text, "Context", "Why")
+    if why:
+        body += [
+            "",
+            "### Why",
+            "<!-- Heredado del contrato: el racional de la tarea — por qué este\n"
+            "     objetivo y no otro. No lo reinterpretes ante un conflicto:\n"
+            "     escálalo (ASK[goal-changing]). -->",
+            why,
+        ]
     if keywords:
         body += [
             "",
@@ -1118,6 +1146,10 @@ def cmd_brief_validate(args):
         first_line = mo.group(1).strip().splitlines()[0] if mo.group(1).strip() else ""
         if "We need" not in first_line and "Necesitamos" not in first_line:
             issues.append("Objective does not open with \"We need…\"")
+        if _sentence_count(mo.group(1)) > 1:
+            warnings.append(
+                "Objective is more than one sentence — the spec asks for one "
+                "(what \"done\" produces); move rationale to '### Why'")
     elif text:
         issues.append("no ## Objective section found")
 

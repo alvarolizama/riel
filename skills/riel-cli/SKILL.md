@@ -1,7 +1,7 @@
 ---
 name: riel-cli
 description: "Use when Riel needs its mechanical helper — writes the ledger with the exact format, instantiates and validates packets, expands a graph digest, derives the session-todo mirror. The agent invokes it in RUN nodes instead of handwriting state files."
-version: 1.8.0
+version: 1.9.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -166,8 +166,16 @@ funnel, labeled decision edges, **every execution node starting with a
 closed verb** (READ/EDIT/CREATE/RUN/VERIFY/ASK), **an `ASK` node naming its
 trigger** (`ASK[irreversible|outside-claims|goal-changing]`), no `<br/>`, no
 `style` in the DAG, no tool names in labels — plus an mmdc parse when
-mermaid-cli is present. Loops without a counter guard (`< 3` / `>= 3`) and
-over-long labels are reported as non-fatal `WARN`s.
+mermaid-cli is present. Loops without a counter guard (`< 3` / `>= 3`),
+over-long labels and an Objective that runs past one sentence (the spec
+asks for one — rationale goes in `### Why`) are reported as non-fatal
+`WARN`s.
+
+`brief slice FILE [--phase F#]` extracts one phase's subgraph as a mini
+packet. It inherits mechanically — never as FILL — the Objective, the
+`### Why` rationale (with the rule: the child escalates
+`ASK[goal-changing]` on a conflict instead of reinterpreting) and the
+`### Context keywords`; the rest of the sections stay FILL for the parent.
 
 `brief digest FILE [-o OUT]` prints the explicit **graph digest** — elements,
 authored edges, branches, entry/terminals and loops, with a "meaning &

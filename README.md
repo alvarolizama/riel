@@ -105,9 +105,9 @@ Four load-bearing defenses against execution error:
 | `riel-ledger` | **State** — Goal/Claims/Core/Verified/Open/Next, re-read at every seam, recovery via checkpoints, mirrors to the session todo | ✅ skill v1.13 |
 | `riel-contract` | **Structure** — mermaid as contract: closed verb vocabulary, verification funnel, graph digest, machine-checkable | ✅ skill v3.6 |
 | `riel-protocol` | **Trajectory** — functional grammar, persona, minimal surface on the first turn | ✅ skill v1.7 |
-| `riel-briefs` | **Delegation briefs** — self-contained packets: curated context + context-keyword index, verb-graph, pre-registered claims, executable gates, templates | ✅ skill v3.6 |
+| `riel-briefs` | **Delegation briefs** — self-contained packets: curated context + the `### Why` rationale and context-keyword index, verb-graph, pre-registered claims, executable gates, templates | ✅ skill v3.7 |
 | `riel-delegate` | **Delegation router** — plan, dispatch waves, JSON-schema'd returns, parent verifies | ✅ skill v1.3 |
-| `riel-cli` | **Tooling** — `rielctl` writes the ledger mechanically, instantiates/validates packets, expands the graph digest, derives the session-todo mirror (the plan: the contract's goal, phases and steps) and the ledger mirror the chip and the gate fold (`rielctl status`), emits the context keywords, and fetches a remote contract to disk (HTTPS, atomic, sha256-verified) | ✅ skill v1.8 |
+| `riel-cli` | **Tooling** — `rielctl` writes the ledger mechanically, instantiates/validates packets, slices a phase into a child packet (inheriting the Objective, the `### Why` rationale and the keywords), expands the graph digest, derives the session-todo mirror (the plan: the contract's goal, phases and steps) and the ledger mirror the chip and the gate fold (`rielctl status`), emits the context keywords, and fetches a remote contract to disk (HTTPS, atomic, sha256-verified) | ✅ skill v1.9 |
 
 Each component is independent and optional: a short task uses zero; a long
 loop may use all six. Use only the machinery the task earns.
@@ -315,7 +315,7 @@ riel/
 make test     # or: python3 -m unittest discover -s tests -v
 ```
 
-Stdlib-only, subprocess-driven. 153 tests cover `rielctl note/seam/resume/todo/ship`,
+Stdlib-only, subprocess-driven. 169 tests cover `rielctl note/seam/resume/todo/ship`,
 `brief new/validate/digest`, the graph checks, and `extract-mermaid.py` end-to-end,
 plus the Hermes plugin package: vendoring hashes, manifest/schema/handler
 wiring, the handlers end-to-end through the vendored copy, the statusbar chip
