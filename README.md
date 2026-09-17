@@ -47,7 +47,7 @@ artifact regenerated from `skills/` and pinned by hash in the test suite.
 | Component | What it steers | Status |
 |---|---|---|
 | `riel-ledger` | **State** — Goal/Claims/Core/Verified/Open/Next, re-read at every seam, recovery via checkpoints, opening rules over an existing `.riel/`, mirrors to the session todo | ✅ skill v1.14 |
-| `riel-contract` | **Structure** — mermaid as contract: closed verb vocabulary, verification funnel, graph digest, machine-checkable | ✅ skill v3.6 |
+| `riel-contract` | **Structure** — mermaid as contract: closed verb vocabulary, verification funnel, graph digest, machine-checkable | ✅ skill v3.6.1 |
 | `riel-protocol` | **Trajectory** — functional grammar, persona, minimal surface on the first turn | ✅ skill v1.7 |
 | `riel-briefs` | **Delegation briefs** — self-contained packets: curated context + the `### Why` rationale and context-keyword index, verb-graph, pre-registered claims, executable gates, templates | ✅ skill v3.7 |
 | `riel-delegate` | **Delegation router** — plan, dispatch waves, JSON-schema'd returns, parent verifies | ✅ skill v1.3 |
@@ -228,20 +228,9 @@ directly: `python3 <skills-root>/riel-cli/scripts/rielctl ...`.
 
 ### System prompt initialization
 
-Paste this block into `soul.md` or an injected system prompt (the same
-block lives at `system-prompt.md`):
-
-```
-## Frameworks — activation lines
-
-- **Riel (steering)** — when operating any LLM conversation or task, load the
-  `riel-protocol` skill and whichever apply: `riel-ledger` (multi-phase tasks),
-  `riel-contract` (DAGs), `riel-briefs`/`riel-delegate` (delegation),
-  `riel-cli` (ledger, packets and digest via `rielctl`). Riel does not create
-  capability — it prevents it from being lost.
-```
-
-Keep it this short: the soul references the skills, it never embeds them
+The paste-ready block (for `soul.md` or any injected system prompt) lives at
+`system-prompt.md` — one source, so the README never carries a second copy of
+it. Keep it that short: the soul references the skills, it never embeds them
 (embedding desyncs and costs tokens every turn).
 
 ### The Hermes plugin (optional)
@@ -393,7 +382,7 @@ riel/
 │   ├── validate-mermaid.sh   ← validates every mermaid block with mmdc
 │   └── extract-mermaid.py    ← extracts mermaid blocks (regex, re.DOTALL)
 ├── tests/             ← stdlib unittest suite (rielctl, vendor hashes, plugin hooks, desktop chip)
-└── references/        ← evidence & design notes (public)
+└── references/        ← papers-and-sources.md — evidence & design notes (public)
 ```
 
 ### Tests

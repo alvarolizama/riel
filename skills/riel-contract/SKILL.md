@@ -1,7 +1,7 @@
 ---
 name: riel-contract
 description: "Use when authoring mermaid verb-graph contracts for skills and todos — 3-layer pattern, closed verb vocabulary, verification funnel, ASK escalation, machine-checkable."
-version: 3.6.0
+version: 3.6.1
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -63,40 +63,17 @@ Rule: **mermaid complements, never replaces prose.** Prose explains the
 why; the diagram summarizes the flow. A section with >3 sequential bullets
 is a `flowchart TD` candidate.
 
-## Entry router template
+The two routing layers are templated — the working examples are the
+`## Entry router` and `## Parse contract` sections of the skills themselves;
+what follows is only what those examples must satisfy:
 
-````markdown
-## Entry router
-
-```mermaid
-flowchart TD
-  Q{What do you need?} -->|"action 1"| SELF["THIS SKILL\nsub-flow A"]
-  Q -->|"action 2"| OTHER1["other-skill\nsub-flow X"]
-
-  style SELF fill:#d1fae5,stroke:#059669
-```
-
-Run ONLY the sub-flow you landed on. If the diagram sends you to another
-skill, **stop here** and hand off — do not absorb that work.
-````
-
-- Destinations that are ANOTHER skill carry the **real name**, never
-  "other skill".
-- The current skill is highlighted in green (`#d1fae5`/`#059669`).
-
-## Parse contract template
-
-````markdown
-## Parse contract
-
-### What this skill CONSUMES
-- <input 1> — where it comes from, format
-
-### What this skill PRODUCES
-<produced artifact with its exact structure>
-
-**Without <artifact>, the output is malformed** — the consumer rejects it.
-````
+- **Entry router.** Run ONLY the sub-flow you landed on: if the diagram sends
+  you to another skill, **stop here** and hand off — do not absorb that work.
+  Destinations that are ANOTHER skill carry the **real name**, never "other
+  skill"; the current skill is highlighted in green (`#d1fae5`/`#059669`).
+- **Parse contract.** `### What this skill PRODUCES` names the artifact with
+  its exact structure — **without <artifact>, the output is malformed** and
+  the consumer rejects it.
 
 ## Verb vocabulary (canonical)
 
