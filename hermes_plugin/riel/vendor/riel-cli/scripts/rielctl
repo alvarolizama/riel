@@ -15,6 +15,7 @@ Usage:
     rielctl resume
     rielctl todo
     rielctl context [--contract PATH] [-o OUT]   # keywords de contexto (JSON)
+    rielctl clean   [--all] [--purge]            # limpia .riel/ con backup plano
     rielctl ship    FILE...
     rielctl digest  FILE [-o OUT]
     rielctl brief new [--type T] [--param k=v ...] [--list]
@@ -32,11 +33,12 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
 
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 LEDGER_DIR = ".riel"
 LEDGER_PATH = os.path.join(LEDGER_DIR, "ledger.md")
 CONTRACT_PATH = os.path.join(LEDGER_DIR, "contract.md")
@@ -492,7 +494,7 @@ def _contract_goal(text):
 
 
 def contract_to_todo_items(text, st):
-    """Phase and step items from the contract's DAG (Spec 6 v3).
+    """Phase and step items from the contract's DAG (Spec 6).
 
     The todo IS the plan: phases are rows, steps are nested subtasks
     (`parent` = the phase). The ledger only decides statuses — a phase whose
@@ -578,7 +580,7 @@ def contract_to_todo_items(text, st):
 
 
 def ledger_to_todo(st, contract_text=None):
-    """Derive the session-todo mirror from the plan (Spec 6 v3).
+    """Derive the session-todo mirror from the plan (Spec 6).
 
     The todo is the PLAN: the goal (the contract's Objective) as the root, the
     contract's phases as rows and each phase's steps as nested subtasks. The
@@ -648,7 +650,7 @@ def cmd_todo(args):
         print("no ledger found at {}; run rielctl note --goal --next first".format(
             args.ledger), file=sys.stderr)
         return 1
-    # Spec 6 v3: the todo is the plan — the contract's phases and steps
+    # Spec 6: the todo is the plan — the contract's phases and steps
     contract_text = None
     contract_path = os.path.join(os.path.dirname(args.ledger) or ".", "contract.md")
     if os.path.isfile(contract_path):
@@ -698,6 +700,46 @@ def cmd_context(args):
         with open(args.output, "w", encoding="utf-8") as fh:
             fh.write(out + "\n")
     print(out)
+    return 0
+
+
+def cmd_clean(args):
+    """Clear the worktree's .riel/ state before starting a new task.
+
+    Backs up each file as a flat, timestamped sibling INSIDE .riel/ (never a
+    subdirectory), then removes the originals. `--all` also cleans
+    contract.md; `--purge` removes without backing up. Idempotent: with
+    nothing to clean it exits 0 with a message. The agent asks the user
+    first (backup / purge / keep the existing ledger) — clean never decides.
+    """
+    targets = [LEDGER_PATH]
+    if args.all:
+        targets.append(CONTRACT_PATH)
+
+    present = [p for p in targets if os.path.isfile(p)]
+    if not present:
+        print("nothing to clean in {} (no {})".format(
+            LEDGER_DIR, ", ".join(targets)))
+        return 0
+
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    for path in present:
+        if not args.purge:
+            base = os.path.basename(path)[:-len(".md")]
+            backup = os.path.join(
+                LEDGER_DIR, "{}-{}.bak.md".format(base, stamp))
+            # a second clean within the same second must not clobber
+            n = 1
+            while os.path.exists(backup):
+                backup = os.path.join(
+                    LEDGER_DIR, "{}-{}-{}.bak.md".format(base, stamp, n))
+                n += 1
+            shutil.copy2(path, backup)
+            os.remove(path)
+            print("backed up {} -> {}".format(path, backup))
+        else:
+            os.remove(path)
+            print("purged {}".format(path))
     return 0
 
 
@@ -1440,6 +1482,15 @@ def main(argv=None):
                     help="path to contract.md (default: .riel/contract.md)")
     cx.add_argument("--output", "-o")
     cx.set_defaults(fn=cmd_context)
+
+    cl = sub.add_parser("clean",
+                        help="clear .riel/ state — flat timestamped backups "
+                             "inside .riel/, never a subdirectory")
+    cl.add_argument("--all", action="store_true",
+                    help="also clean contract.md (default: ledger only)")
+    cl.add_argument("--purge", action="store_true",
+                    help="remove without backing up")
+    cl.set_defaults(fn=cmd_clean)
 
     h = sub.add_parser("ship", help="check outgoing file for dense markers")
     h.add_argument("files", nargs="+")

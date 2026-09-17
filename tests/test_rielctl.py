@@ -1071,6 +1071,91 @@ d
         self.assertNotIn("Context keywords", err)
 
 
+class CleanTests(TempDirTest):
+    LEDGER = "# Riel ledger\n\n## Goal\ng\n\n## Next\nn\n"
+    CONTRACT = "# Task: t\n\n## Objective\nWe need t\n"
+
+    def _riel(self, ledger=True, contract=False):
+        d = os.path.join(self.tmp, ".riel")
+        os.makedirs(d, exist_ok=True)
+        if ledger:
+            with open(os.path.join(d, "ledger.md"), "w",
+                      encoding="utf-8") as fh:
+                fh.write(self.LEDGER)
+        if contract:
+            with open(os.path.join(d, "contract.md"), "w",
+                      encoding="utf-8") as fh:
+                fh.write(self.CONTRACT)
+        return d
+
+    def _files(self, d):
+        return sorted(os.listdir(d))
+
+    def test_clean_backs_up_the_ledger_inside_riel_as_a_flat_file(self):
+        d = self._riel()
+        rc, out, _ = run("clean")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("backed up", out)
+        names = self._files(d)
+        self.assertNotIn("ledger.md", names)
+        backups = [n for n in names if n.startswith("ledger-")
+                   and n.endswith(".bak.md")]
+        self.assertEqual(len(backups), 1)
+        # flat file, never a subdirectory
+        self.assertTrue(os.path.isfile(os.path.join(d, backups[0])))
+        # byte-identical content
+        with open(os.path.join(d, backups[0]), encoding="utf-8") as fh:
+            self.assertEqual(fh.read(), self.LEDGER)
+
+    def test_clean_keeps_the_contract_by_default(self):
+        d = self._riel(ledger=True, contract=True)
+        rc, _, _ = run("clean")
+        self.assertEqual(rc, 0)
+        names = self._files(d)
+        self.assertIn("contract.md", names)
+        self.assertNotIn("ledger.md", names)
+
+    def test_clean_all_includes_the_contract(self):
+        d = self._riel(ledger=True, contract=True)
+        rc, out, _ = run("clean", "--all")
+        self.assertEqual(rc, 0, out)
+        names = self._files(d)
+        self.assertNotIn("ledger.md", names)
+        self.assertNotIn("contract.md", names)
+        self.assertTrue(any(n.startswith("ledger-") for n in names))
+        self.assertTrue(any(n.startswith("contract-") for n in names))
+
+    def test_clean_purge_removes_without_backup(self):
+        d = self._riel()
+        rc, out, _ = run("clean", "--purge")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("purged", out)
+        self.assertEqual(self._files(d), [])
+
+    def test_clean_is_idempotent_with_nothing_to_clean(self):
+        self._riel(ledger=False)          # .riel/ exists, no ledger
+        rc, out, _ = run("clean")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("nothing to clean", out)
+
+    def test_clean_without_riel_dir_is_a_noop(self):
+        rc, out, _ = run("clean")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("nothing to clean", out)
+
+    def test_second_clean_in_the_same_second_does_not_clobber(self):
+        d = self._riel()
+        run("clean")
+        with open(os.path.join(d, "ledger.md"), "w",
+                  encoding="utf-8") as fh:
+            fh.write(self.LEDGER + "\n## More\nm\n")
+        rc, _, _ = run("clean")
+        self.assertEqual(rc, 0)
+        backups = [n for n in self._files(d)
+                   if n.startswith("ledger-") and n.endswith(".bak.md")]
+        self.assertEqual(len(backups), 2)   # both survive, distinct names
+
+
 class FetchTests(TempDirTest):
     """rielctl fetch — HTTP(S) download with integrity + security defaults."""
 

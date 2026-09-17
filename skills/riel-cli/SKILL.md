@@ -1,7 +1,7 @@
 ---
 name: riel-cli
 description: "Use when Riel needs its mechanical helper — writes the ledger with the exact format, instantiates and validates packets, expands a graph digest, derives the session-todo mirror. The agent invokes it in RUN nodes instead of handwriting state files."
-version: 1.9.0
+version: 1.10.0
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -85,6 +85,24 @@ rielctl ship FILE.md   # check FILE for dense-register leakage before delivery
 rielctl digest FILE.md # explicit text digest of any file's mermaid graph
 ```
 
+### Clean (start a task over existing `.riel/` state)
+
+```bash
+rielctl clean           # back up .riel/ledger.md, then remove it
+rielctl clean --all     # also the contract.md
+rielctl clean --purge   # remove without backing up
+```
+
+The backup is a **flat timestamped file INSIDE `.riel/`**
+(`ledger-<ts>.bak.md`) — never a subdirectory. A second clean within the
+same second appends `-N` instead of clobbering. Idempotent: with nothing to
+clean it exits 0 and says so.
+
+**The agent asks the user before cleaning** — a `.riel/` found at the
+opening holds another task's state, and the choice (back up / purge /
+continue the existing ledger via `resume`) is the user's, not a silent
+default (rule in `riel-ledger`, "Opening over an existing `.riel/`").
+
 ### Context keywords (Spec 2)
 
 ```bash
@@ -132,6 +150,7 @@ Exit codes:
 
 - `note` / `seam` / `resume` / `todo` / `status`: 0 unless arguments invalid
   or the ledger is missing (1).
+- `clean`: always 0 — "nothing to clean" is a message, not an error.
 - `ship`: exit 0 if the file is clean; exit 1 if it finds dense markers
   (the agent should fix before delivery).
 
