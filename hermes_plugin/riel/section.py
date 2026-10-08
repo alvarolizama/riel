@@ -8,7 +8,7 @@ the model's catalog; the guide's topics do not, so this block names the door
 
 The rules that keep it honest:
 
-  * **No network.** The only subprocess is `rielctl status`, capped at
+  * **No network.** The only subprocess is the engine's `status`, capped at
     {@link STATE_TIMEOUT_SECS}s; its failure is SILENCE — never an error in the
     prompt.
   * **The files are the truth.** The topic list comes from `guide/*.md` at
@@ -34,7 +34,7 @@ STATE_FIELD_CHARS = 90
 STATE_TIMEOUT_SECS = 3
 
 PLUGIN_DIR = Path(__file__).resolve().parent
-RIELCTL = PLUGIN_DIR / "engine" / "rielctl"
+ENGINE = PLUGIN_DIR / "engine" / "run.py"
 
 HEAD = (
     "Riel — steering for long tasks: externalized state (the ledger) and a "

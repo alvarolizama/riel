@@ -2,7 +2,7 @@
 
 Three read-only endpoints, answering the statusbar chip:
 
-  GET /health            → is the backend up and does it have its bundled rielctl
+  GET /health            → is the backend up and does it have its bundled engine
   GET /ledger?worktree=  → the ledger summary for one worktree (the chip's counters)
   GET /contract?worktree= → the contract.md verbatim (the chip's click dialog)
 
@@ -53,8 +53,8 @@ MAX_WORKTREE_CHARS = 4096
 
 @router.get("/health")
 async def health() -> dict:
-    rielctl = _ledger_status.RIELCTL
-    return {"ok": rielctl.exists(), "rielctl": str(rielctl), "cwd": os.getcwd()}
+    engine = _ledger_status.ENGINE
+    return {"ok": engine.exists(), "engine": str(engine), "cwd": os.getcwd()}
 
 
 @router.get("/ledger")

@@ -33,7 +33,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 PLUGIN = REPO / "hermes_plugin" / "riel"
-RIELCTL = PLUGIN / "skills" / "riel-cli" / "scripts" / "rielctl"
+ENGINE = PLUGIN / "engine" / "run.py"
 
 
 def _dispatch(registry, tool: str, args: dict, task: str) -> dict:
@@ -43,9 +43,9 @@ def _dispatch(registry, tool: str, args: dict, task: str) -> dict:
 
 
 def _seed(worktree: str, *argv) -> None:
-    """Write ledger entries with the vendored rielctl."""
+    """Write ledger entries with the bundled engine."""
     subprocess.run(
-        [sys.executable, str(RIELCTL), *argv],
+        [sys.executable, str(ENGINE), *argv],
         cwd=worktree,
         capture_output=True,
         text=True,

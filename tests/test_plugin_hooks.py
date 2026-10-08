@@ -23,7 +23,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
 PLUGIN = REPO / "hermes_plugin" / "riel"
-BUNDLED_RIELCTL = PLUGIN / "engine" / "rielctl"
+BUNDLED_ENGINE = PLUGIN / "engine" / "run.py"
 
 HAND_WRITTEN_NO_EVIDENCE = """# Riel ledger
 
@@ -64,7 +64,7 @@ class GateTestCase(unittest.TestCase):
 
     def seed_in(self, directory, *argv):
         proc = subprocess.run(
-            [sys.executable, str(BUNDLED_RIELCTL), *argv],
+            [sys.executable, str(BUNDLED_ENGINE), *argv],
             cwd=directory,
             capture_output=True,
             text=True,
@@ -131,9 +131,9 @@ class AssessTest(GateTestCase):
         self.assertFalse(facts["present"])
         self.assertIsNone(facts["error"])
 
-    def test_missing_bundled_rielctl_degrades_to_an_error(self):
+    def test_missing_bundled_engine_degrades_to_an_error(self):
         self.seed("note", "--goal", "g", "--next", "n")
-        facts = self.hooks.assess(self.tmp, rielctl=Path("/nope/rielctl"))
+        facts = self.hooks.assess(self.tmp, engine=Path("/nope/run.py"))
         self.assertTrue(facts["present"])
         self.assertIn("engine", facts["error"])
         self.assertIsNone(self.hooks.nudge_message(self.tmp, facts))

@@ -107,8 +107,9 @@ class TypedToolsTest(unittest.TestCase):
 
     def test_brief_validate_maps_named_parameters_onto_the_engine(self):
         payload = self.call("riel_brief", {"verb": "validate", "file": ".riel/contract.md"})
-        self.assertEqual(payload["command"], ["rielctl", "brief", "validate", ".riel/contract.md"],
-                         "a relative path stays relative: the engine resolves it in the worktree")
+        self.assertEqual(payload["tool"], "riel_brief")
+        self.assertEqual(payload["verb"], "validate")
+        self.assertNotIn("command", payload, "no command-shaped provenance")
 
     def test_brief_new_renders_and_does_not_write(self):
         payload = self.call("riel_brief", {"verb": "new", "template": "feature",
@@ -126,14 +127,17 @@ class TypedToolsTest(unittest.TestCase):
         payload = self.call("riel_brief", {"verb": "digest"})
         self.assertIn("needs 'file'", payload["error"])
 
-    def test_clean_scopes_map_to_the_engine_flags(self):
-        for scope, flag in (("ledger", None), ("all", "--all"), ("purge", "--purge")):
+    def test_a_scope_is_not_a_verb_and_the_argv_stays_inside(self):
+        """The envelope reports the TOOL; the engine's flags are implementation.
+
+        What each scope does to `.riel/` is pinned in the engine's own suite
+        (`tests/test_engine.py`); here we pin what the caller can see.
+        """
+        for scope in ("ledger", "all", "purge"):
             payload = self.call("riel_clean", {"scope": scope})
-            self.assertEqual(payload["command"][1], "clean", scope)
-            if flag:
-                self.assertIn(flag, payload["command"], scope)
-            else:
-                self.assertEqual(len(payload["command"]), 2, scope)
+            self.assertEqual(payload["tool"], "riel_clean", scope)
+            self.assertNotIn("verb", payload, scope)
+            self.assertNotIn("command", payload, scope)
         self.assertIn("unsupported scope", self.call("riel_clean", {"scope": "everything"})["error"])
 
     def test_seam_can_carry_the_anchor_re_read(self):
@@ -152,7 +156,7 @@ class TypedToolsTest(unittest.TestCase):
     def test_fetch_requires_a_url_and_never_echoes_it_back(self):
         self.assertIn("needs 'url'", self.call("riel_fetch", {})["error"])
         payload = self.call("riel_fetch", {"url": "https://example.test/c.md?token=secret"})
-        self.assertEqual(payload["command"][:2], ["rielctl", "fetch"])
+        self.assertEqual(payload["tool"], "riel_fetch")
         self.assertNotIn("token", payload.get("error", ""))
 
     def test_check_runs_both_halves_on_one_file(self):
@@ -167,7 +171,7 @@ class TypedToolsTest(unittest.TestCase):
 
     def test_state_is_the_ledger_mirror(self):
         payload = self.call("riel_state", {})
-        self.assertEqual(payload["command"][:2], ["rielctl", "status"])
+        self.assertEqual(payload["tool"], "riel_state")
         for key in ("exit_code", "passed", "stdout", "stderr"):
             self.assertIn(key, payload)
 

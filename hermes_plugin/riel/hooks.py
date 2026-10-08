@@ -13,7 +13,7 @@ Bounds that keep it honest:
     files → never nudge. This hook is not a global nag.
   * **Self-throttled.** At most `gate_attempts` nudges per turn (default 1), on
     top of Hermes' own cap (`agent.max_verify_nudges`, 3 by default).
-  * **Never blocks.** Every failure path — no ledger, missing bundled rielctl,
+  * **Never blocks.** Every failure path — no ledger, missing bundled engine,
     unparseable `status` JSON, subprocess timeout — returns `None` and lets
     the turn finish. A gate that jams is worse than no gate.
 
@@ -30,7 +30,7 @@ import sys
 from pathlib import Path
 
 PLUGIN_DIR = Path(__file__).resolve().parent
-RIELCTL = PLUGIN_DIR / "engine" / "rielctl"
+ENGINE = PLUGIN_DIR / "engine" / "run.py"
 LEDGER_PARTS = (".riel", "ledger.md")
 EVIDENCE_MARKER = "verified by:"
 MAX_ANCESTOR_DEPTH = 12
@@ -150,34 +150,34 @@ def find_worktree(changed_paths, session_cwd=None, max_depth: int = MAX_ANCESTOR
     return None
 
 
-def assess(worktree, rielctl: Path = RIELCTL, timeout: int = TIMEOUT_SECS) -> dict:
+def assess(worktree, engine: Path = ENGINE, timeout: int = TIMEOUT_SECS) -> dict:
     """Ledger facts the gate decides on. Never raises."""
     facts = {"present": False, "claims": [], "verified": [], "verified_with_evidence": [], "error": None}
     root = _normalize(worktree)
     if root is None or not root.is_dir() or not _has_ledger(root):
         return facts
     facts["present"] = True
-    if not rielctl.exists():
+    if not engine.exists():
         facts["error"] = "bundled engine is missing (run: make plugin-build)"
         return facts
     try:
         proc = subprocess.run(
-            [sys.executable, str(rielctl), "status"],
+            [sys.executable, str(engine), "status"],
             cwd=str(root),
             capture_output=True,
             text=True,
             timeout=timeout,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        facts["error"] = f"rielctl could not run: {exc}"
+        facts["error"] = f"the engine could not run: {exc}"
         return facts
     if proc.returncode != 0:
-        facts["error"] = (proc.stderr or "").strip() or "rielctl status failed"
+        facts["error"] = (proc.stderr or "").strip() or "the engine's status call failed"
         return facts
     try:
         items = json.loads(proc.stdout)
     except ValueError:
-        facts["error"] = "rielctl status did not return JSON"
+        facts["error"] = "the engine's status call did not return JSON"
         return facts
     for item in items if isinstance(items, list) else []:
         if not isinstance(item, dict):

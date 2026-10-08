@@ -70,7 +70,7 @@ function DetailSection({ heading, items, mark, markClass }) {
   })
 }
 
-/** The ledger's popover body: everything the ledger has, like `rielctl seam`. */
+/** The ledger's popover body: everything the ledger has, like `riel_seam`. */
 function LedgerPanel({ ledger, busy, tool }) {
   const row = (label, value, valueClass) =>
     jsxs('div', {

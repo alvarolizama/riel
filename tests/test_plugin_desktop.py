@@ -5,7 +5,7 @@ Three layers, each with the cheapest honest check available:
   * package wiring — manifest/paths, and the two rules the SDK enforces on a
     disk plugin (allowed import specifiers, no hardcoded colors);
   * `ledger_status.read_status` — stdlib-only, driven by the **bundled**
-    rielctl against a real temp worktree;
+    engine against a real temp worktree;
   * the chip itself — the plugin file is loaded by a real Node process against
     stubbed `@hermes/plugin-sdk` / `react` modules, `register()` is called, the
     gateway events are emitted and the component is rendered, so a syntax
@@ -41,7 +41,7 @@ REPO = HERE.parent
 PLUGIN = REPO / "hermes_plugin" / "riel"
 DASHBOARD = PLUGIN / "dashboard"
 DESKTOP = PLUGIN / "desktop"
-BUNDLED_RIELCTL = PLUGIN / "engine" / "rielctl"
+BUNDLED_ENGINE = PLUGIN / "engine" / "run.py"
 
 CLIENT_CWD = "/tmp/riel-statusbar-test-worktree"
 ALLOWED_SPECIFIERS = {"@hermes/plugin-sdk", "react", "react/jsx-runtime"}
@@ -451,7 +451,7 @@ class DesktopWiringTest(unittest.TestCase):
 
 
 class LedgerStatusTest(unittest.TestCase):
-    """`ledger_status` driven through the bundled rielctl."""
+    """`ledger_status` driven through the bundled engine."""
 
     @classmethod
     def setUpClass(cls):
@@ -465,7 +465,7 @@ class LedgerStatusTest(unittest.TestCase):
 
     def _seed(self, *argv):
         proc = subprocess.run(
-            [sys.executable, str(BUNDLED_RIELCTL), *argv],
+            [sys.executable, str(BUNDLED_ENGINE), *argv],
             cwd=self.tmp,
             capture_output=True,
             text=True,
@@ -557,7 +557,7 @@ class LedgerStatusTest(unittest.TestCase):
         status = self.status.read_status(self.tmp)
         self.assertTrue(status["present"])
         self.assertEqual(status["verified"], 0)
-        self.assertIn("error", status)  # rielctl declines to build a mirror
+        self.assertIn("error", status)  # the engine declines to build a mirror
 
     def test_never_raises_on_a_junk_worktree_argument(self):
         for value in ("", "   ", "/dev/null", "\x00"):
@@ -591,7 +591,7 @@ class PluginApiRouteTest(unittest.TestCase):
     def test_ledger_route_returns_the_summary(self):
         with tempfile.TemporaryDirectory(prefix="riel-route-") as tmp:
             subprocess.run(
-                [sys.executable, str(BUNDLED_RIELCTL), "note", "--goal", "route goal"],
+                [sys.executable, str(BUNDLED_ENGINE), "note", "--goal", "route goal"],
                 cwd=tmp,
                 capture_output=True,
                 text=True,
@@ -607,10 +607,10 @@ class PluginApiRouteTest(unittest.TestCase):
             self.assertEqual(missing.status_code, 200)
             self.assertFalse(missing.json()["present"])
 
-    def test_health_reports_the_bundled_rielctl(self):
+    def test_health_reports_the_bundled_engine(self):
         payload = self._client().get("/health").json()
         self.assertTrue(payload["ok"], payload)
-        self.assertTrue(payload["rielctl"].endswith("rielctl"))
+        self.assertTrue(payload["engine"].endswith("run.py"))
 
     def test_contract_route_returns_verbatim_markdown(self):
         with tempfile.TemporaryDirectory(prefix="riel-route-") as tmp:

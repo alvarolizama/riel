@@ -1,7 +1,7 @@
 ---
 topic: contract
 trigger: "Use when authoring mermaid verb-graph contracts for skills and todos — 3-layer pattern, closed verb vocabulary, verification funnel, ASK escalation, machine-checkable."
-version: 3.7.1
+version: 3.7.2
 ---
 
 # riel-contract — Mermaid as an executable contract (Riel)
@@ -275,7 +275,7 @@ just documented: `riel_brief(verb="validate")` rejects an execution node that
 does not start with a closed verb, an `ASK` node that does not name its
 trigger, a `<br/>`, a `style` in the execution DAG, and a tool name in a
 node label; it warns on a loop with no counter guard and on an over-long
-label. (`mmdc` is the parser-level check; the rest are greps in the engine.)
+label. (`mmdc` is the parser-level check; the rest are checks `riel_brief(verb="validate")` runs.)
 
 ## Pitfalls
 

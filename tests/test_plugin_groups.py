@@ -101,7 +101,7 @@ class SettingsTest(unittest.TestCase):
 
 
 class GuardTest(unittest.TestCase):
-    """The check_fn hides; the handler must refuse — and never touch rielctl."""
+    """The check_fn hides; the handler must refuse — and never touch the engine."""
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="riel-guard-test-")
@@ -116,12 +116,12 @@ class GuardTest(unittest.TestCase):
     def ledger_path(self):
         return os.path.join(self.tmp, ".riel", "ledger.md")
 
-    def test_tools_off_refuses_without_running_rielctl(self):
+    def test_tools_off_refuses_without_running_the_engine(self):
         self.live["tools"] = False
         payload = json.loads(tools.HANDLERS["riel_note"]({"goal": "must not run", "worktree": self.tmp}))
         self.assertIn("the 'tools' group is off", payload["error"])
         self.assertEqual(payload["group"], "tools")
-        self.assertFalse(os.path.exists(self.ledger_path()), "rielctl ran while the group was off")
+        self.assertFalse(os.path.exists(self.ledger_path()), "the engine ran while the group was off")
 
     def test_every_registered_tool_is_guarded(self):
         self.live["tools"] = False
@@ -129,7 +129,7 @@ class GuardTest(unittest.TestCase):
             payload = json.loads(handler({"worktree": self.tmp}))
             self.assertIn("group is off", payload.get("error", ""), name)
 
-    def test_tools_on_runs_the_real_rielctl(self):
+    def test_tools_on_runs_the_real_engine(self):
         payload = json.loads(tools.HANDLERS["riel_note"]({"goal": "ship it", "worktree": self.tmp}))
         self.assertTrue(payload["passed"], payload)
         self.assertTrue(os.path.exists(self.ledger_path()))

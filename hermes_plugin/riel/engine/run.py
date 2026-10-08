@@ -1,31 +1,32 @@
 #!/usr/bin/env python3
-"""rielctl — mechanical helper for the Riel framework.
+"""The engine behind Riel's tools — one stdlib file, no user surface.
 
-Writes .riel/ledger.md with the exact expected format, instantiates
-packet templates, and validates packets. Decides nothing semantic.
-
+Every subcommand below is reached through a TOOL (`riel_note`, `riel_brief`,
+`riel_seam`, …); nothing here is typed into a shell, and no flag travels as
+data. The tools pass named parameters, this file owns the formats and decides
+nothing semantic.
 Usage:
-    rielctl note    [--goal G] [--next N] [--core "name — fact"]
+    note    [--goal G] [--next N] [--core "name — fact"]
                     [--core-slot N] [--claim C --verify-with CMD]
                     [--check WHAT --by CMD --covering SCOPE [--confidence N]]
                     [--open Q --settled-by TEST]
                     [--close N --check WHAT --by CMD [--covering SCOPE]]
                     [--from-contract [PATH]]   # seed from .riel/contract.md
-    rielctl seam
-    rielctl resume
-    rielctl todo
-    rielctl context [--contract PATH] [-o OUT]   # keywords de contexto (JSON)
-    rielctl clean   [--all] [--purge]            # limpia .riel/ con backup plano
-    rielctl ship    FILE...
-    rielctl digest  FILE [-o OUT]
-    rielctl anchor  [P#] [--contract PATH] [--shaping PATH]  # claim + su región
-    rielctl shaping validate [PATH]              # valida .riel/shaping.md (Spec 7)
-    rielctl shaping new [-o PATH] [--force] [--param k=v ...]
-    rielctl brief new [--type T] [--param k=v ...] [--list]
-    rielctl brief validate FILE
-    rielctl brief digest FILE [-o OUT]
-    rielctl brief slice  FILE [--phase F#] [-o OUT]
-    rielctl fetch   URL -o FILE [--sha256 H] [--header 'Name: v'] [--allow-http] [--timeout S] [--max-bytes N]
+    seam
+    resume
+    todo
+    context [--contract PATH] [-o OUT]   # keywords de contexto (JSON)
+    clean   [--all] [--purge]            # limpia .riel/ con backup plano
+    ship    FILE...
+    digest  FILE [-o OUT]
+    anchor  [P#] [--contract PATH] [--shaping PATH]  # claim + su región
+    shaping validate [PATH]              # valida .riel/shaping.md (Spec 7)
+    shaping new [-o PATH] [--force] [--param k=v ...]
+    brief new [--type T] [--param k=v ...] [--list]
+    brief validate FILE
+    brief digest FILE [-o OUT]
+    brief slice  FILE [--phase F#] [-o OUT]
+    fetch   URL -o FILE [--sha256 H] [--header 'Name: v'] [--allow-http] [--timeout S] [--max-bytes N]
 """
 import argparse
 import hashlib
@@ -503,7 +504,7 @@ def print_ledger(st):
 def cmd_seam(args):
     st = read_ledger(args.ledger)
     if not st["goal"]:
-        print("no ledger found at {}; run rielctl note --goal --next first".format(
+        print("no ledger found at {}; call riel_note(goal=…, next=…) first".format(
             args.ledger), file=sys.stderr)
         return 1
     print_ledger(st)
@@ -519,7 +520,7 @@ def cmd_seam(args):
         with open(CONTRACT_PATH, encoding="utf-8") as fh:
             anchored = [c for c in claim_anchors(fh.read()) if c["anchor"]]
     if anchored:
-        print("\n[anchor] {} of the claims carry an anchor — `rielctl anchor` "
+        print("\n[anchor] {} of the claims carry an anchor — `riel_seam(anchors=true)` "
               "re-reads each one beside its region.".format(len(anchored)))
     return 0
 
@@ -625,7 +626,7 @@ def contract_to_todo_items(text, st):
     gate has a ✓ is completed; the active phase (the one owning the Next)
     carries the current step as `in_progress`, its earlier steps completed and
     the rest pending. No ledger fact (Next, claim, open, ✓) becomes a row;
-    those are served by `rielctl status`.
+    those are served by `riel_state`.
     """
     items = []
     block = _graph_block(text)
@@ -709,7 +710,7 @@ def ledger_to_todo(st, contract_text=None):
     The todo is the PLAN: the goal (the contract's Objective) as the root, the
     contract's phases as rows and each phase's steps as nested subtasks. The
     ledger only decides statuses (`contract_to_todo_items`). The ledger's own
-    facts — Next, claims, opens, ✓ — are NOT rows here; `rielctl status`
+    facts — Next, claims, opens, ✓ — are NOT rows here; `riel_state`
     serves them to the chip and the gate. Without a contract the todo degrades
     to goal + the ledger's single Phase row.
     """
@@ -744,7 +745,7 @@ def ledger_to_status(st):
 
     This is the ledger mirror the plugin consumes — goal, phase, next, open
     questions, claims and verified checkpoints — kept separate from the plan
-    (`rielctl todo`). Same item shape, so the consumers keep one fold.
+    (`riel_todo`). Same item shape, so the consumers keep one fold.
     """
     items = []
 
@@ -771,7 +772,7 @@ def ledger_to_status(st):
 def cmd_todo(args):
     st = read_ledger(args.ledger)
     if not st["goal"] and not st["verified"] and not st["next"]:
-        print("no ledger found at {}; run rielctl note --goal --next first".format(
+        print("no ledger found at {}; call riel_note(goal=…, next=…) first".format(
             args.ledger), file=sys.stderr)
         return 1
     # Spec 6: the todo is the plan — the contract's phases and steps
@@ -798,7 +799,7 @@ def cmd_status(args):
     """Print the ledger's own facts — the mirror the chip and the gate fold."""
     st = read_ledger(args.ledger)
     if not st["goal"] and not st["verified"] and not st["next"]:
-        print("no ledger found at {}; run rielctl note --goal --next first".format(
+        print("no ledger found at {}; call riel_note(goal=…, next=…) first".format(
             args.ledger), file=sys.stderr)
         return 1
     print(json.dumps(ledger_to_status(st), indent=2, ensure_ascii=False))
@@ -1604,7 +1605,7 @@ def cmd_brief_validate(args):
 
     # if mmdc is available, try parsing each graph block
     if shutil.which(VERIFY_CMD) and mermaid_blocks:
-        out_dir = tempfile.mkdtemp(prefix="rielctl-validate-")
+        out_dir = tempfile.mkdtemp(prefix="riel-validate-")
         try:
             for idx, block in enumerate(mermaid_blocks):
                 src = os.path.join(out_dir, "block{}.mmd".format(idx))
@@ -1707,7 +1708,7 @@ def cmd_fetch(args):
         return 2
 
     req = urllib.request.Request(
-        url, headers={"User-Agent": "rielctl/{}".format(VERSION)})
+        url, headers={"User-Agent": "riel/{}".format(VERSION)})
     for raw in args.header or []:
         name, sep, value = raw.partition(":")
         if not sep or not name.strip():
@@ -1768,7 +1769,7 @@ def cmd_fetch(args):
 # ------------------------------------------------------------------ main ----
 
 def main(argv=None):
-    p = argparse.ArgumentParser(prog="rielctl", description=__doc__)
+    p = argparse.ArgumentParser(prog="riel", description=__doc__)
     p.add_argument("--version", action="version", version=VERSION)
     p.add_argument(
         "--ledger", default=LEDGER_PATH,

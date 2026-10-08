@@ -2,7 +2,7 @@
 
 Stdlib-only and Hermes-free on purpose: the plugin's handler module imports
 nothing from Hermes at module level, so these tests exercise the real handlers
-against the **bundled** rielctl — the same copy a user gets when installing
+against the **bundled** engine — the same copy a user gets when installing
 the plugin.
 
 Two things are pinned here:
@@ -132,13 +132,13 @@ class PackageTest(unittest.TestCase):
             self.assertTrue(meta.get("version"), f"{topic} has no version")
 
     def test_the_bundle_carries_the_machinery_the_prose_calls(self):
-        rielctl = os.path.join(PLUGIN, "engine", "rielctl")
+        engine = os.path.join(PLUGIN, "engine", "run.py")
         templates = os.path.join(PLUGIN, "templates")
-        self.assertTrue(os.path.isfile(rielctl))
-        self.assertEqual(sha256(rielctl), sha256(os.path.join(REPO, "engine", "rielctl")))
+        self.assertTrue(os.path.isfile(engine))
+        self.assertEqual(sha256(engine), sha256(os.path.join(REPO, "engine", "run.py")))
         shipped = sorted(f for f in os.listdir(templates) if f.endswith(".md"))
         self.assertEqual(shipped, sorted(f for f in os.listdir(os.path.join(REPO, "templates")) if f.endswith(".md")))
-        self.assertTrue(os.access(rielctl, os.X_OK), "the bundled engine must stay executable")
+        self.assertTrue(os.access(engine, os.X_OK), "the bundled engine must stay executable")
 
     def test_no_vendor_or_skills_directory(self):
         self.assertFalse(os.path.exists(os.path.join(PLUGIN, "vendor")), "vendor/ was retired")
@@ -183,7 +183,7 @@ class WiringTest(unittest.TestCase):
 
 
 class HandlerTest(unittest.TestCase):
-    """The handlers drive the bundled rielctl end-to-end."""
+    """The handlers drive the bundled engine end-to-end."""
 
     @classmethod
     def setUpClass(cls):
@@ -210,7 +210,8 @@ class HandlerTest(unittest.TestCase):
         seam = self.payload(self.tools.riel_seam, {"worktree": self.tmp})
         self.assertEqual(seam["exit_code"], 0, seam)
         self.assertIn("ship the plugin", seam["stdout"])
-        self.assertEqual(seam["command"], ["rielctl", "seam"])
+        self.assertEqual(seam["tool"], "riel_seam")
+        self.assertNotIn("command", seam)
 
     def test_todo_returns_the_session_mirror(self):
         self.payload(self.tools.riel_note, {"goal": "goal text", "next": "next action", "worktree": self.tmp})

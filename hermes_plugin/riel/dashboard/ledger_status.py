@@ -1,10 +1,10 @@
 """Normalize a worktree's Riel ledger into the small summary the statusbar chip shows.
 
 Stdlib only, and importable without FastAPI so the repo suite can test it
-directly. It shells out to the **bundled** `rielctl status` — the ledger's own
+directly. It shells out to the **bundled engine's** `status` — the ledger's own
 facts as JSON — instead of re-parsing `.riel/ledger.md` here, so the ledger
-format keeps exactly one owner (`rielctl`). The plan the session todo mirrors
-(phases and their steps) is `rielctl todo`'s business, not the chip's.
+format keeps exactly one owner (the engine). The plan the session todo mirrors
+(phases and their steps) is `riel_todo`'s business, not the chip's.
 
 Never raises: the caller is an HTTP route and the panel must degrade to
 "no ledger" instead of a 500.
@@ -20,7 +20,7 @@ import time
 from pathlib import Path
 
 PLUGIN_DIR = Path(__file__).resolve().parent.parent
-RIELCTL = PLUGIN_DIR / "engine" / "rielctl"
+ENGINE = PLUGIN_DIR / "engine" / "run.py"
 TIMEOUT_SECS = 15
 
 _LEDGER_SUFFIX = (".riel", "ledger.md")
@@ -51,7 +51,7 @@ def _strip(content: str, prefix: str) -> str:
 
 
 def summarize(items: list) -> dict:
-    """Fold `rielctl status` items into the chip's counters, headlines AND detail.
+    """Fold `riel_state` items into the chip's counters, headlines AND detail.
 
     The detail lists carry each item's content (claims with their verify-with,
     verified checkpoints with their evidence, open questions) so the popover can
@@ -85,7 +85,7 @@ def summarize(items: list) -> dict:
     return summary
 
 
-def read_status(worktree: str, rielctl: Path = RIELCTL, timeout: int = TIMEOUT_SECS) -> dict:
+def read_status(worktree: str, engine: Path = ENGINE, timeout: int = TIMEOUT_SECS) -> dict:
     """Ledger summary for *worktree*, or a `present: False` report. Never raises."""
     raw = str(worktree or "").strip()
     if not raw:
@@ -112,31 +112,31 @@ def read_status(worktree: str, rielctl: Path = RIELCTL, timeout: int = TIMEOUT_S
         status["stale_secs"] = max(0, int(time.time()) - status["updated"])
     status["present"] = True
 
-    if not rielctl.exists():
+    if not engine.exists():
         status["error"] = "bundled engine is missing (run: make plugin-build)"
         return status
     try:
         proc = subprocess.run(
-            [sys.executable, str(rielctl), "status"],
+            [sys.executable, str(engine), "status"],
             cwd=root,
             capture_output=True,
             text=True,
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        status["error"] = f"rielctl timed out after {timeout}s"
+        status["error"] = f"the engine timed out after {timeout}s"
         return status
     except OSError as exc:
-        status["error"] = f"rielctl could not be executed: {exc}"
+        status["error"] = f"the engine could not be executed: {exc}"
         return status
     if proc.returncode != 0:
         # A ledger with no goal/next/verified yet: present, just empty.
-        status["error"] = (proc.stderr or "").strip() or "rielctl todo failed"
+        status["error"] = (proc.stderr or "").strip() or "the engine's status call failed"
         return status
     try:
         items = json.loads(proc.stdout)
     except ValueError:
-        status["error"] = "rielctl todo did not return JSON"
+        status["error"] = "the engine's status call did not return JSON"
         return status
     if isinstance(items, list):
         status.update(summarize(items))

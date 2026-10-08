@@ -1,17 +1,18 @@
 ---
 topic: tools
-trigger: "Use when you need Riel's tool surface — which of the eleven tools writes what, the engine's exit codes, the template and fetch rules. No command line: the tools are the interface."
-version: 1.14.0
+trigger: "Use when you need Riel's tool surface — which of the twelve tools writes what, what each returns, and the template, fetch and exit-code rules. There is no command line: the tools are the interface."
+version: 1.15.0
 ---
 
-# riel-cli — Mechanical helper for Riel (Riel)
+# riel-cli — Riel's tool surface (Riel)
 
-The engine is a stdlib-only Python script that ships inside the package and
-performs the mechanical parts of the framework so the agent doesn't have to
-remember them. Every part below is reached through a **tool** — there is no
-command line to call:
+Every part of Riel the agent would otherwise have to remember by hand is a
+**tool**, and each tool owns exactly one part — there is nothing to install and
+no command line to call:
 
 - Writing `.riel/ledger.md` with the exact expected format (`riel_note`)
+- Reading the prose itself — the index, one guide, or one section of it
+  (`riel_guide`)
 - Instantiating packet templates (`riel_brief(verb="new")`)
 - Verifying that a packet satisfies the structural constraints
   (`riel_brief(verb="validate")`) — including the closed verb vocabulary
@@ -27,6 +28,8 @@ command line to call:
   (`riel_shaping(verb="new")` / `verb="validate"`)
 - Re-reading each claim beside the region that supports it
   (`riel_seam(anchors=true)`) — the anchor surface of a seam
+- Dense-register and graph-digest check on one file before delivering it
+  (`riel_check`)
 
 **When to use:** on any `loop`-mode task and on every delegated task, the
 agent calls these tools in `RUN` nodes instead of handwriting ledger files.
@@ -36,12 +39,12 @@ task earns.
 ## The surface: tools, never a command line
 
 There is nothing to install and no command to remember: **the surface is the
-tools**. The engine that does the mechanical work (stdlib Python, `rielctl`)
-ships inside the package next to this file, and every tool runs it against the
-worktree of the session you are in — the session's cwd, never the process's.
+tools**. Each one acts on the worktree of the session you are in — the session's
+cwd, never the process's — and nothing is typed into a shell.
 
 | Tool | Takes | Answers |
 |---|---|---|
+| `riel_guide` | `topic`, `section` | the prose: index, one guide, or one slice |
 | `riel_note` | `goal`, `next`, `source`, `phase`, `core`+`core_slot`, `claim`+`verify_with`, `check`+`by`+`covering`+`confidence`, `open`+`settled_by`, `close`, `from_contract` | writes the ledger |
 | `riel_seam` | `anchors=true` to also re-read each claim beside its support | the ledger at a seam |
 | `riel_resume` | — | full post-gap bootstrap |
@@ -54,10 +57,11 @@ worktree of the session you are in — the session's cwd, never the process's.
 | `riel_fetch` | `url`, `out`, `sha256`, `headers`, `allow_http` | a remote contract, on disk |
 | `riel_check` | `file` | dense-register check + graph digest |
 
-Every tool returns the same envelope: `{command, worktree, exit_code, passed,
-stdout, stderr}` plus its own keys. **`command` is provenance** — which engine
-call produced this — never an interface: no tool takes argv, no flag travels as
-data, and nothing here is meant to be typed into a shell.
+Every tool returns the same envelope: `{tool, worktree, exit_code, passed,
+stdout, stderr}` plus its own keys (`verb` when the tool takes one, and the
+prose's `topic`/`section` for `riel_guide`). **`tool` is provenance** — which
+tool answered — never an interface: no tool takes argv, no flag travels as data,
+and nothing here is meant to be typed into a shell.
 
 All state-mutating tools write to `.riel/` in the worktree of the session; the
 ones that only read take `worktree` to address another checkout explicitly.
@@ -79,7 +83,7 @@ riel_note(close=1, check="it survives", by="test", covering="encoding")
 `close` requires `check`/`by`: a question is closed against the checkpoint that
 settled it, never dropped silently.
 
-Numbering (✓NN, ?NN) is assigned by the engine — never hand-edited.
+Numbering (✓NN, ?NN) is assigned by `riel_note` — never hand-edited.
 
 ### Inspections
 
@@ -271,8 +275,8 @@ the bound · `4` sha256 mismatch (nothing written).
 
 ## The one rule
 
-The engine decides nothing and verifies nothing semantically. It is a clerk:
-it keeps the format perfect so the agent can spend its reasoning on the actual
-work — and the tools are the only way to reach it. Every semantic decision — what the Goal is,
+Riel decides nothing and verifies nothing semantically. The tools are clerks:
+they keep the format perfect so the agent can spend its reasoning on the actual
+work. Every semantic decision — what the Goal is,
 whether the gate actually passed, whether the claim is satisfied — remains
 the agent's.

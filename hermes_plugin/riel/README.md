@@ -5,10 +5,10 @@ El paquete ES el producto: la prosa, el motor, las tools, el gate y el chip.
 **La superficie son tools, nunca una línea de comandos.** Doce tools tipadas —
 `riel_guide` (la prosa), `riel_note`, `riel_seam` (con `anchors`), `riel_resume`,
 `riel_todo`, `riel_state`, `riel_context`, `riel_brief`, `riel_shaping`,
-`riel_clean`, `riel_fetch`, `riel_check` — sobre el motor (`rielctl`, stdlib) que
-viaja dentro del paquete y decide nada: el formato tiene un solo dueño. Ninguna
-tool recibe argv; el campo `command` de la respuesta es provenance, no una
-interfaz.
+`riel_clean`, `riel_fetch`, `riel_check` — sobre el motor (un archivo stdlib que
+viaja dentro del paquete y decide nada: el formato tiene un solo dueño). Ninguna
+tool recibe argv; el campo `tool` de la respuesta es provenance (qué tool
+contestó) y el `verb` cuando la tool lo lleva, nunca una interfaz.
 
 **La prosa viaja acá, y se lee por una sola puerta.** `guide/` trae seis topics
 (`protocol`, `ledger`, `contract`, `briefs`, `delegate`, `tools`): sin argumento
@@ -48,7 +48,7 @@ comodidad de desarrollo; una instalación real es una copia de un commit.
 
 ## Cómo resuelve el worktree
 
-`rielctl` lee y escribe `.riel/` **relativo al cwd**. El handler corre dentro
+el motor lee y escribe `.riel/` **relativo al cwd**. El handler corre dentro
 del proceso de Hermes, cuyo cwd no es el worktree de la sesión, así que cada
 llamada resuelve la raíz así:
 
@@ -57,7 +57,7 @@ llamada resuelve la raíz así:
 3. `TERMINAL_CWD`,
 4. el cwd del proceso.
 
-Y ejecuta `rielctl` en un **subproceso** con `cwd=<worktree>`: cada llamada
+Y ejecuta el motor en un **subproceso** con `cwd=<worktree>`: cada llamada
 tiene su propio cwd y no hay `chdir` global compartido entre sesiones
 concurrentes (un gateway sirve varias a la vez).
 
@@ -78,7 +78,7 @@ Los dos datos entran por caminos distintos:
 | Actividad | `host.onEvent('tool.start' \| 'tool.complete')` — el tap del gateway — más `host.state.busy` para el turno en curso |
 
 El endpoint lo sirve `dashboard/plugin_api.py`, el backend del plugin montado por
-el gateway en el proceso del agente, y normaliza el mirror de `rielctl status` vía
+el gateway en el proceso del agente, y normaliza el mirror de `riel_state` vía
 `dashboard/ledger_status.py`: el formato del ledger sigue teniendo un solo dueño
 (el plugin no re-parsea `.riel/ledger.md`) y el renderer nunca lee el disco —
 solo `<worktree>/.riel/ledger.md` puede salir, y solo como contadores + los
@@ -112,7 +112,7 @@ agente sigue en vez de cerrar.
 |---|---|
 | Opt-in por worktree | sin `.riel/ledger.md` encima de los archivos editados no hay aviso: no es un nag global |
 | Un solo aviso por turno | `plugins.entries.riel.settings.gate_attempts` (default 1); por encima de eso Hermes corta en `agent.max_verify_nudges` (3) |
-| Nunca bloquea | cualquier fallo (sin ledger, sin `rielctl`, timeout, ledger ilegible) devuelve `None` y el turno cierra |
+| Nunca bloquea | cualquier fallo (sin ledger, sin motor, timeout, ledger ilegible) devuelve `None` y el turno cierra |
 | Apagable | `plugins.entries.riel.settings.gate: false` |
 
 Qué worktree se juzga: primero el de los **archivos editados** (un turno puede
@@ -136,7 +136,7 @@ Dos momentos, los dos donde `Core` se (re)escribe:
 | Avanzar de fase | lo mismo para la fase entrante |
 | `brief slice` a un hijo | las keywords viajan en el packet; el hijo busca con su propio budget |
 
-`rielctl context` emite el mismo índice en JSON para cualquier harness, no solo
+`riel_context` emite el mismo índice en JSON para cualquier harness, no solo
 Hermes — el plugin no re-parsea el contrato.
 
 ## Verificación

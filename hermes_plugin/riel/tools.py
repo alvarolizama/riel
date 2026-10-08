@@ -1,12 +1,12 @@
 """Tool handlers — machinery for the Riel plugin.
 
-Every handler runs the **bundled** `rielctl` in a fresh subprocess whose cwd is
+Every handler runs the **bundled engine** in a fresh subprocess whose cwd is
 the session's worktree. That script is the engine, never an interface: the agent
-sees tools, and no tool accepts argv — every parameter is typed. `rielctl` stays
+sees tools, and no tool accepts argv — every parameter is typed. The engine stays
 the sole writer of `.riel/ledger.md`: this module adds no ledger semantics, no
 format, no state of its own.
 
-Why a subprocess instead of importing the engine in-process: rielctl resolves
+Why a subprocess instead of importing the engine in-process: it resolves
 `.riel/` relative to the process cwd, and its `DEFAULT_TEMPLATE_DIRS` freezes
 `os.getcwd()` at import time. Inside a long-lived Hermes process (a gateway
 serving several sessions) an `os.chdir` would be global state shared by every
@@ -27,7 +27,7 @@ import sys
 from pathlib import Path
 
 _PLUGIN_DIR = Path(__file__).resolve().parent
-RIELCTL = _PLUGIN_DIR / "engine" / "rielctl"
+ENGINE = _PLUGIN_DIR / "engine" / "run.py"
 TIMEOUT_SECS = 60
 
 _SETTINGS_MODULE = None
@@ -128,32 +128,39 @@ def _worktree(args: dict, kwargs: dict) -> str:
     return _session_worktree(kwargs)
 
 
-def _run(argv: list, args: dict, kwargs: dict) -> str:
-    """Run the engine in the worktree; always return a JSON string, never raise."""
+def _run(argv: list, args: dict, kwargs: dict, tool: str, verb: str = "") -> str:
+    """Run the engine in the worktree; always return a JSON string, never raise.
+
+    `tool`/`verb` are the envelope's provenance: WHICH tool answered and, when
+    the tool takes one, with which verb. There is no command-shaped field — the
+    engine's argv is implementation, not something a caller passes or reads.
+    """
     worktree = _worktree(args, kwargs)
     if not os.path.isdir(worktree):
-        return _error(f"worktree is not a directory: {worktree}", worktree=worktree)
-    if not RIELCTL.exists():
+        return _error(f"worktree is not a directory: {worktree}", tool=tool, worktree=worktree)
+    if not ENGINE.exists():
         return _error(
             "bundled engine is missing — the package has no engine/ tree",
-            path=str(RIELCTL),
+            path=str(ENGINE),
             hint="from the repo checkout: make plugin-build",
         )
     try:
         proc = subprocess.run(
-            [sys.executable, str(RIELCTL), *argv],
+            [sys.executable, str(ENGINE), *argv],
             cwd=worktree,
             capture_output=True,
             text=True,
             timeout=TIMEOUT_SECS,
         )
     except subprocess.TimeoutExpired:
-        return _error(f"rielctl timed out after {TIMEOUT_SECS}s", command=argv, worktree=worktree)
+        return _error(f"the engine timed out after {TIMEOUT_SECS}s", tool=tool, worktree=worktree)
     except OSError as exc:
-        return _error(f"rielctl could not be executed: {exc}", command=argv, worktree=worktree)
-    return json.dumps(
+        return _error(f"the engine could not be executed: {exc}", tool=tool, worktree=worktree)
+    payload = {"tool": tool}
+    if verb:
+        payload["verb"] = verb
+    payload.update(
         {
-            "command": ["rielctl", *argv],
             "worktree": worktree,
             "exit_code": proc.returncode,
             "passed": proc.returncode == 0,
@@ -161,6 +168,7 @@ def _run(argv: list, args: dict, kwargs: dict) -> str:
             "stderr": proc.stderr,
         }
     )
+    return json.dumps(payload)
 
 
 def _flag_args(args: dict) -> list:
@@ -216,12 +224,17 @@ def riel_note(args: dict, **kwargs) -> str:
             accepted=keys,
             note="with no flags the engine just re-prints the ledger; use riel_seam for that",
         )
-    return _run(["note", *argv], args, kwargs)
+    return _run(["note", *argv], args, kwargs, tool="riel_note")
 
 
-def _passthrough(verb: str, extra_note: "str | None" = None):
+def _passthrough(verb: str, tool: str, extra_note: "str | None" = None):
+    """A handler that runs one engine verb and, optionally, adds a note.
+
+    `tool` is the name this passthrough answers as — the envelope's provenance
+    says which tool spoke, never which engine verb ran.
+    """
     def handler(args: dict, **kwargs) -> str:
-        payload = json.loads(_run([verb], args, kwargs))
+        payload = json.loads(_run([verb], args, kwargs, tool=tool))
         if extra_note and isinstance(payload, dict) and payload.get("exit_code") == 0:
             payload["next"] = extra_note
         return json.dumps(payload, ensure_ascii=False)
@@ -231,9 +244,9 @@ def _passthrough(verb: str, extra_note: "str | None" = None):
 
 def riel_seam(args: dict, **kwargs) -> str:
     """The seam re-read: the ledger, and — when asked — each claim beside its support."""
-    payload = json.loads(_run(["seam"], args, kwargs))
+    payload = json.loads(_run(["seam"], args, kwargs, tool="riel_seam"))
     if args.get("anchors") and payload.get("exit_code") == 0:
-        anchors = json.loads(_run(["anchor"], args, kwargs))
+        anchors = json.loads(_run(["anchor"], args, kwargs, tool="riel_seam", verb="anchors"))
         payload["anchors"] = {"exit_code": anchors.get("exit_code"),
                               "passed": anchors.get("passed"),
                               "stdout": anchors.get("stdout"),
@@ -241,14 +254,17 @@ def riel_seam(args: dict, **kwargs) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
-riel_resume = _passthrough("resume")
+riel_resume = _passthrough("resume", tool="riel_resume")
 riel_todo = _passthrough(
     "todo",
-    "Inject this into the session todo: pass the items array (stdout) to the "
-    "todo_list tool (todos=<array>) so the UI shows the plan — the contract's "
-    "goal, its phases and their steps.",
+    tool="riel_todo",
+    extra_note=(
+        "Inject this into the session todo: pass the items array (stdout) to the "
+        "todo_list tool (todos=<array>) so the UI shows the plan — the contract's "
+        "goal, its phases and their steps."
+    ),
 )
-riel_state = _passthrough("status")
+riel_state = _passthrough("status", tool="riel_state")
 
 
 # ------------------------------------------------------------------ context ---
@@ -264,16 +280,16 @@ MAX_KEYWORDS = 12
 
 def _contract_keywords(worktree: str):
     """(keywords, error) from the worktree's contract, via the engine's `context`."""
-    payload = json.loads(_run(["context"], {"worktree": worktree}, {}))
+    payload = json.loads(_run(["context"], {"worktree": worktree}, {}, tool="riel_context"))
     if payload.get("error"):
         return None, payload["error"]
     if payload.get("exit_code") != 0:
         stderr = (payload.get("stderr") or "").strip()
-        return None, stderr or "rielctl context failed"
+        return None, stderr or "the engine's context call failed"
     try:
         keywords = json.loads(payload.get("stdout") or "{}").get("keywords") or []
     except ValueError:
-        return None, "rielctl context did not return JSON"
+        return None, "the engine's context call did not return JSON"
     return keywords, None
 
 
@@ -363,7 +379,7 @@ def riel_brief(args: dict, **kwargs) -> str:
             phase = str(args.get("phase") or "").strip()
             if phase:
                 argv += ["--phase", phase]
-    return _run(argv, args, kwargs)
+    return _run(argv, args, kwargs, tool="riel_brief", verb=verb)
 
 
 def riel_shaping(args: dict, **kwargs) -> str:
@@ -384,7 +400,7 @@ def riel_shaping(args: dict, **kwargs) -> str:
         target = str(args.get("file") or "").strip()
         if target:
             argv.append(os.path.expanduser(target))
-    return _run(argv, args, kwargs)
+    return _run(argv, args, kwargs, tool="riel_shaping", verb=verb)
 
 
 def riel_clean(args: dict, **kwargs) -> str:
@@ -394,7 +410,7 @@ def riel_clean(args: dict, **kwargs) -> str:
     if scope not in CLEAN_SCOPES:
         return _error("unsupported scope for riel_clean", scope=scope, allowed=list(CLEAN_SCOPES))
     argv = ["clean"] + (["--all"] if scope == "all" else ["--purge"] if scope == "purge" else [])
-    return _run(argv, args, kwargs)
+    return _run(argv, args, kwargs, tool="riel_clean")
 
 
 def riel_fetch(args: dict, **kwargs) -> str:
@@ -414,7 +430,7 @@ def riel_fetch(args: dict, **kwargs) -> str:
         argv += ["--header", header]
     if args.get("allow_http"):
         argv.append("--allow-http")
-    return _run(argv, args, kwargs)
+    return _run(argv, args, kwargs, tool="riel_fetch")
 
 
 def riel_check(args: dict, **kwargs) -> str:
@@ -423,8 +439,8 @@ def riel_check(args: dict, **kwargs) -> str:
     if not target:
         return _error("riel_check needs 'file'")
     path = os.path.expanduser(target)
-    ship = json.loads(_run(["ship", path], args, kwargs))
-    digest = json.loads(_run(["digest", path], args, kwargs))
+    ship = json.loads(_run(["ship", path], args, kwargs, tool="riel_check", verb="ship"))
+    digest = json.loads(_run(["digest", path], args, kwargs, tool="riel_check", verb="digest"))
     return json.dumps(
         {
             "file": path,
@@ -462,7 +478,7 @@ def riel_guide(args: dict, **kwargs) -> str:
         text = module.index_text()
         return json.dumps(
             {
-                "command": ["guide"],
+                "tool": "riel_guide",
                 "worktree": worktree,
                 "exit_code": 0,
                 "passed": True,
@@ -479,14 +495,14 @@ def riel_guide(args: dict, **kwargs) -> str:
     text, error = module.read(topic, section)
     if error:
         payload = dict(error)
-        payload["command"] = ["guide", topic]
+        payload["tool"] = "riel_guide"
         payload["worktree"] = worktree
         payload["exit_code"] = 1
         payload["passed"] = False
         return json.dumps(payload, ensure_ascii=False)
     return json.dumps(
         {
-            "command": ["guide", topic] + ([section] if section else []),
+            "tool": "riel_guide",
             "worktree": worktree,
             "exit_code": 0,
             "passed": True,

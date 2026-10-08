@@ -29,8 +29,8 @@ help:
 plugin-build:
 	@rm -rf $(PLUGIN_DIR)/skills $(PLUGIN_DIR)/vendor
 	@for part in $(PARTS); do rm -rf $(PLUGIN_DIR)/$$part; cp -R $$part $(PLUGIN_DIR)/$$part; done
-	@chmod +x $(PLUGIN_DIR)/engine/rielctl
-	@echo "bundled: $(words $(wildcard guide/*.md)) topics + engine/rielctl + $(words $(wildcard templates/*.md)) templates -> $(PLUGIN_DIR)/"
+	@chmod +x $(PLUGIN_DIR)/engine/run.py
+	@echo "bundled: $(words $(wildcard guide/*.md)) topics + engine/run.py + $(words $(wildcard templates/*.md)) templates -> $(PLUGIN_DIR)/"
 
 ## plugin-link: symlink the package into a plugins dir — DEV ONLY, never a real install
 plugin-link:
@@ -50,13 +50,13 @@ validate:
 ## digest: print the explicit graph digest for every skill, README and spec
 digest:
 	@for f in README.md specs/*.md guide/*.md; do \
-		R="$$(python3 engine/rielctl digest "$$f" 2>/dev/null)"; \
+		R="$$(python3 engine/run.py digest "$$f" 2>/dev/null)"; \
 		if [ -n "$$R" ]; then printf '\n===== %s =====\n%s\n' "$$f" "$$R"; fi; \
 	done
 
 ## lint: byte-compile the Python tooling; shellcheck the shell scripts if present
 lint:
-	python3 -m compileall -q scripts engine/rielctl tests $(PLUGIN_DIR)
+	python3 -m compileall -q scripts engine/run.py tests $(PLUGIN_DIR)
 	@if command -v shellcheck >/dev/null 2>&1; then \
 		shellcheck scripts/*.sh; \
 	else \

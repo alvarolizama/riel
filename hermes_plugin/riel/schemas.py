@@ -1,6 +1,6 @@
 """Tool schemas — what the LLM reads to decide when to call these tools.
 
-Machinery only: every tool delegates to the bundled `rielctl`, which is the
+Machinery only: every task tool delegates to the bundled engine, which is the
 sole writer of `.riel/ledger.md`. Descriptions state when to use the tool, not
 how the ledger is formatted — the format, the rules and the recipes live in the
 package's prose, which `riel_guide` serves.
@@ -21,7 +21,7 @@ RIEL_NOTE = {
         "Write or update the Riel ledger (.riel/ledger.md) in a worktree: goal, next "
         "action, core facts, claims with their verifying command, verified checkpoints "
         "with real gate output, open questions and closures. Use it on loop-mode tasks and "
-        "on every delegated task, instead of hand-editing the ledger — rielctl owns the "
+        "on every delegated task, instead of hand-editing the ledger — the engine owns the "
         "format. Pass at least one content flag; with no flags it just re-prints the ledger."
     ),
     "parameters": {

@@ -26,7 +26,7 @@ no symlink, nothing on `PATH`.
 | `dashboard/` | the chip's backend routes (`/api/plugins/riel/*`) | itself |
 | `desktop/plugin.js` | the statusbar chip, the switches and the ⌘K commands | itself |
 | `guide/` | the prose, one file per topic | **the repo's `guide/`** |
-| `engine/` | `rielctl`, the sole writer of the formats | **the repo's `engine/`** |
+| `engine/` | `run.py` — the machine behind the tools, sole writer of the formats | **the repo's `engine/`** |
 | `templates/` | the packet and shaping templates | **the repo's `templates/`** |
 
 `guide/`, `engine/` and `templates/` are **build artifacts**: `make plugin-build`
@@ -133,7 +133,7 @@ managed-install refusals apply.
 
 ## The interface: tools, never a command line
 
-The engine (`engine/rielctl`, stdlib only) does the mechanical work and is the
+The engine (`engine/run.py`, one stdlib file) does the mechanical work and is the
 sole writer of the formats. It is **implementation**: no tool takes argv, no flag
 travels as data, and nothing in the package is meant to be typed into a shell.
 The twelve tools are the surface:
@@ -153,11 +153,12 @@ The twelve tools are the surface:
 | `riel_fetch` | a remote contract, on disk |
 | `riel_check` | dense markers + graph digest on one file |
 
-Every tool returns one envelope — `{command, worktree, exit_code, passed,
-stdout, stderr}` plus its own keys — so a caller, a test or the chip can read
-the result the same way. `riel_guide` puts the prose in `stdout` (and `content`)
-and needs no worktree state: it reads the package, not the task. `command` is
-**provenance** (which engine call produced this), not an interface.
+Every tool returns one envelope — `{tool, worktree, exit_code, passed, stdout,
+stderr}` plus its own keys (`verb` when the tool takes one) — so a caller, a test
+or the chip can read the result the same way. `riel_guide` puts the prose in
+`stdout` (and `content`) and needs no worktree state: it reads the package, not
+the task. `tool` is **provenance** (which tool answered), not an interface — there
+is no command-shaped field anywhere in the envelope.
 
 ## What the package is not
 

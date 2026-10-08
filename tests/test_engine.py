@@ -1,4 +1,4 @@
-"""Regression tests for engine/rielctl.
+"""Regression tests for engine/run.py.
 
 Stdlib-only (unittest). Each test runs the CLI in a fresh tempdir via
 subprocess so we exercise exactly what an agent would invoke.
@@ -18,15 +18,15 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
-RIELCTL = os.path.join(REPO, "engine", "rielctl")
+ENGINE = os.path.join(REPO, "engine", "run.py")
 BRIEFS_TEMPLATES = os.path.join(REPO, "templates")
 EXTRACT_MERMAID = os.path.join(REPO, "scripts", "extract-mermaid.py")
 
 
 def run(*argv, cwd=None):
-    """Run rielctl and return (exit_code, stdout, stderr)."""
+    """Run the engine and return (exit_code, stdout, stderr)."""
     proc = subprocess.run(
-        [sys.executable, RIELCTL] + list(argv),
+        [sys.executable, ENGINE] + list(argv),
         cwd=cwd,
         capture_output=True,
         text=True,
@@ -47,7 +47,7 @@ def run_script(script, *argv, cwd=None):
 
 class TempDirTest(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.mkdtemp(prefix="rielctl-test-")
+        self.tmp = tempfile.mkdtemp(prefix="riel-engine-test-")
         self.cwd = os.getcwd()
         os.chdir(self.tmp)
 
@@ -192,7 +192,7 @@ class TodoTests(TempDirTest):
         self.assertIn("no ledger", err)
 
     def test_status_is_the_full_ledger_mirror(self):
-        """`rielctl status` carries the ledger's own facts (chip + gate)."""
+        """`riel_state` carries the ledger's own facts (chip + gate)."""
         run("note", "--goal", "ship login", "--phase", "F1",
             "--next", "wire controller")
         run("note", "--claim", "login works", "--verify-with", "mix test")
@@ -399,7 +399,7 @@ class CLITests(TempDirTest):
     def test_version(self):
         rc, out, _ = run("--version")
         self.assertEqual(rc, 0)
-        with open(RIELCTL, encoding="utf-8") as fh:
+        with open(ENGINE, encoding="utf-8") as fh:
             declared = re.search(r'VERSION = "([^"]+)"', fh.read()).group(1)
         self.assertIn(declared, out)
 
@@ -1175,7 +1175,7 @@ class CleanTests(TempDirTest):
 
 
 class FetchTests(TempDirTest):
-    """rielctl fetch — HTTP(S) download with integrity + security defaults."""
+    """`riel_fetch` — HTTP(S) download with integrity + security defaults."""
 
     def _serve(self, payload):
         import http.server
@@ -1261,7 +1261,7 @@ class ShapingValidateTests(TempDirTest):
 ¿qué decisión cierra este shaping?
 
 ## Findings
-- F1: hay un helper de secciones — source: rielctl:145, confidence high
+- F1: hay un helper de secciones — source: engine/run.py:145, confidence high
 - F2: el slice hereda los claims — source: `make test`, confidence med
 
 ## Facts
@@ -1346,7 +1346,7 @@ flowchart LR
 
     def test_sections_out_of_order_is_an_issue(self):
         bad = self.VALID.replace("""## Findings
-- F1: hay un helper de secciones — source: rielctl:145, confidence high
+- F1: hay un helper de secciones — source: engine/run.py:145, confidence high
 - F2: el slice hereda los claims — source: `make test`, confidence med
 
 """, "").replace("""## Facts
@@ -1355,14 +1355,14 @@ flowchart LR
 - el prefijo F# del grafo se solapa con el de las fases
 
 ## Findings
-- F1: hay un helper de secciones — source: rielctl:145, confidence high
+- F1: hay un helper de secciones — source: engine/run.py:145, confidence high
 """)
         rc, out, _ = run("shaping", "validate", self._write(bad))
         self.assertEqual(rc, 1)
         self.assertIn("out of order", out)
 
     def test_a_finding_without_source_warns_but_validates(self):
-        bad = self.VALID.replace(" — source: rielctl:145, confidence high", "")
+        bad = self.VALID.replace(" — source: engine/run.py:145, confidence high", "")
         rc, _, err = run("shaping", "validate", self._write(bad))
         self.assertEqual(rc, 0)
         self.assertIn("WARN", err)

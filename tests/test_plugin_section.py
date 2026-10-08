@@ -140,7 +140,7 @@ class SectionTest(unittest.TestCase):
 
     def test_state_line_reads_the_worktree_the_session_sits_in(self):
         subprocess.run(
-            [sys.executable, str(section.RIELCTL), "note", "--goal", "ship the package",
+            [sys.executable, str(section.ENGINE), "note", "--goal", "ship the package",
              "--next", "run the suite"],
             cwd=self.tmp, capture_output=True, text=True, check=True,
         )
@@ -152,13 +152,13 @@ class SectionTest(unittest.TestCase):
     def test_no_ledger_means_no_state_line(self):
         self.assertEqual(section.state_line(self.tmp), "")
 
-    def test_a_missing_rielctl_is_silence_not_an_error(self):
+    def test_a_missing_engine_is_silence_not_an_error(self):
         self.assertEqual(section.state_line(""), "")
         self.assertEqual(section.state_line(os.path.join(self.tmp, "nope")), "")
 
     def test_the_block_carries_the_state_when_there_is_a_ledger(self):
         subprocess.run(
-            [sys.executable, str(section.RIELCTL), "note", "--goal", "ship the package"],
+            [sys.executable, str(section.ENGINE), "note", "--goal", "ship the package"],
             cwd=self.tmp, capture_output=True, text=True, check=True,
         )
         self.assertIn("Worktree state — Goal: ship the package", self.render())
@@ -176,8 +176,8 @@ class GuideWiringTest(unittest.TestCase):
         self.assertIn("riel_guide(topic=\"contract\")", line)
 
     def test_the_engine_the_section_runs_is_in_the_package(self):
-        self.assertTrue(os.path.isfile(section.RIELCTL), section.RIELCTL)
-        self.assertEqual(os.path.basename(os.path.dirname(section.RIELCTL)), "engine")
+        self.assertTrue(os.path.isfile(section.ENGINE), section.ENGINE)
+        self.assertEqual(os.path.basename(os.path.dirname(section.ENGINE)), "engine")
 
     def test_no_hermes_import_at_module_level(self):
         for name in ("section.py", "settings.py"):

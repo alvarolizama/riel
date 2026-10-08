@@ -34,7 +34,7 @@ Riel ships as two faces over one core:
 | Face | What it is | Where |
 |---|---|---|
 | **The prose** | six guides the agent reads on demand — protocol, ledger, contract, briefs, delegate, tools | `guide/*.md` |
-| **The engine** (`rielctl`) | stdlib-only Python, not a user surface: the sole writer of the ledger format; instantiates, validates and slices packets; derives the todo/state mirrors; fetches remote contracts — reached only through the twelve tools | `engine/rielctl` |
+| **The engine** (one stdlib file) | not a user surface: the sole writer of the ledger format; instantiates, validates and slices packets; derives the todo/state mirrors; fetches remote contracts — reached only through the twelve tools | `engine/run.py` |
 | **The Hermes plugin** | the whole product: the prose (read through `riel_guide`), the engine, twelve typed tools (`riel_guide`, `riel_note` … `riel_check`), the `pre_verify` gate and a statusbar chip — installed as a copy of a commit, updated the same way | `hermes_plugin/riel/` |
 | **Specs** | the design contract of each artifact (ledger format, contract format, phase advance, todo mirror) | `specs/` |
 
@@ -47,11 +47,11 @@ artifact regenerated from `guide/` and pinned by hash in the test suite.
 | Component | What it steers | Status |
 |---|---|---|
 | riel_guide(topic="ledger") | **State** — Goal/Claims/Core/Verified/Open/Next, re-read at every seam, recovery via checkpoints, opening rules over an existing `.riel/`, mirrors to the session todo | ✅ guide v1.15.1 |
-| riel_guide(topic="contract") | **Structure** — mermaid as contract: closed verb vocabulary, verification funnel, graph digest, machine-checkable | ✅ guide v3.7.1 |
+| riel_guide(topic="contract") | **Structure** — mermaid as contract: closed verb vocabulary, verification funnel, graph digest, machine-checkable | ✅ guide v3.7.2 |
 | riel_guide(topic="protocol") | **Trajectory** — functional grammar, persona, minimal surface on the first turn | ✅ guide v1.7.1 |
 | riel_guide(topic="briefs") | **Delegation briefs** — self-contained packets: curated context + the `### Why` rationale and context-keyword index, verb-graph, pre-registered claims (with their anchors), executable gates, the shaping step before the plan, templates | ✅ guide v3.8.1 |
 | riel_guide(topic="delegate") | **Delegation router** — plan, dispatch waves, JSON-schema'd returns, parent verifies | ✅ guide v1.3.1 |
-| riel_guide(topic="tools") | **Tooling** — the tool surface: `riel_note` writes the ledger mechanically, `riel_clean` archives the worktree state with flat in-`.riel/` backups, `riel_brief` instantiates/validates packets, slices a phase into a child packet (inheriting the Objective, the `### Why` rationale and the keywords) and expands the graph digest, `riel_todo` derives the session-todo mirror (the plan: the contract's goal, phases and steps), `riel_state` the ledger mirror the chip and the gate fold, `riel_context` emits the context keywords, `riel_fetch` fetches a remote contract to disk (HTTPS, atomic, sha256-verified), `riel_shaping` validates a shaping (Spec 7) and `riel_seam(anchors=true)` re-reads each claim beside the anchored region that supports it | ✅ guide v1.14.0 |
+| riel_guide(topic="tools") | **Tooling** — the tool surface: `riel_note` writes the ledger mechanically, `riel_clean` archives the worktree state with flat in-`.riel/` backups, `riel_brief` instantiates/validates packets, slices a phase into a child packet (inheriting the Objective, the `### Why` rationale and the keywords) and expands the graph digest, `riel_todo` derives the session-todo mirror (the plan: the contract's goal, phases and steps), `riel_state` the ledger mirror the chip and the gate fold, `riel_context` emits the context keywords, `riel_fetch` fetches a remote contract to disk (HTTPS, atomic, sha256-verified), `riel_shaping` validates a shaping (Spec 7) and `riel_seam(anchors=true)` re-reads each claim beside the anchored region that supports it | ✅ guide v1.15.0 |
 
 Each component is independent and optional: a short task uses zero; a long
 loop may use all six. Use only the machinery the task earns.
@@ -328,7 +328,7 @@ desktop plugins** if the chip does not appear).
 | Piece | Needed at | Requires |
 |---|---|---|
 | The 6 skills (markdown only) | runtime | nothing — they are read by the agent |
-| `rielctl` (`engine/rielctl`) | runtime (loop/delegate tasks) | **Python 3, stdlib only** |
+| The engine (`engine/run.py`) | runtime (loop/delegate tasks) | **Python 3, stdlib only** |
 | Task templates (`templates/`) | runtime | nothing — the engine reads them directly |
 | `scripts/validate-mermaid.sh` | development (validate graph files) | Node + `mmdc`: `npm install -g @mermaid-js/mermaid-cli` |
 | `tests/` | development (run the suite) | Python 3, stdlib only (the desktop half's tests also use `node`; the FastAPI route tests need a Hermes interpreter) |
@@ -425,6 +425,6 @@ make digest                            # explicit text digest of every graph
 
 Released under the [MIT License](LICENSE) — Copyright (c) 2026 Álvaro Lizama.
 The license covers the whole repository: the prose (`guide/`), the engine
-(`engine/rielctl`), the repo tooling (`scripts/`, `tests/`,
+(`engine/run.py`), the repo tooling (`scripts/`, `tests/`,
 `Makefile`) and the Hermes plugin package (`hermes_plugin/riel/`).
 Third-party dependencies keep their own licenses.
