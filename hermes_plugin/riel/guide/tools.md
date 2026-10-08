@@ -1,7 +1,7 @@
 ---
 topic: tools
 trigger: "Use when you need Riel's tool surface — which of the twelve tools writes what, what each returns, and the template, fetch and exit-code rules. There is no command line: the tools are the interface."
-version: 1.15.1
+version: 1.16.0
 ---
 
 # tools — Riel's tool surface (Riel)
@@ -272,6 +272,19 @@ token embedded in the query string must not leak into logs or tool output. Pass
 How a fetch can fail, in the envelope's `exit_code`: `0` ok · `1`
 network/HTTP/write error · `2` bad scheme or refused plain-http · `3` body over
 the bound · `4` sha256 mismatch (nothing written).
+
+## Where the long form lives
+
+The specs are the long form of the formats this guide summarizes — they are not
+shipped with the plugin, they live with the repo:
+
+| Cited as | File | Holds |
+|---|---|---|
+| Spec 1 | `spec-ledger-format.md` | the ledger: every field, the registers, the phase advance |
+| Spec 2 | `spec-contract-format.md` | the contract: sections, claim anchors, the graph rules |
+| Spec 6 | `spec-todo-hermes.md` | the session-todo mirror and the ledger mirror |
+| Spec 7 | `spec-shaping-format.md` | the shaping: findings, sources, the verdict that seeds the plan |
+| Spec 8 | `spec-plugin-package.md` | what this package is, and what it refuses to be |
 
 ## The one rule
 

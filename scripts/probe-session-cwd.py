@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Probe the plugin the way a LIVE Hermes session would.
 
-Not part of `make test`: it needs Hermes itself on `sys.path` (module names
-like `hermes_cli.plugins` and `tools.registry` only resolve inside a Hermes
-install), so it lives outside the stdlib-only regression suite.
+Not part of `make test`: it needs Hermes itself importable (module names like
+`hermes_cli.plugins` and `tools.registry` only resolve inside a Hermes install),
+so it lives outside the stdlib-only regression suite.
 
 What it proves, against a real Hermes install:
   1. Hermes' own discovery + registration finds the plugin and its tools;
@@ -17,10 +17,18 @@ What it proves, against a real Hermes install:
   6. `riel_context` returns the contract's keyword index and stops there — the
      search belongs to the agent, whose memory backends a plugin cannot reach.
 
+The Hermes import bootstraps itself: a managed install keeps the agent tree
+outside site-packages and initializes its deps through `hermes_bootstrap`, which
+only the launcher runs — so this probe retries through it, and says what to set
+when it cannot find the tree.
+
 Usage (run from a directory that is NOT either worktree):
 
-    HERMES_PY=/path/to/hermes/venv/bin/python   # `head -1 $(command -v hermes)` chain
-    "$HERMES_PY" hermes_plugin/probe-session-cwd.py
+    python3 scripts/probe-session-cwd.py
+
+A `hermes` launcher that is not in `~/.hermes/hermes-agent` needs its root:
+
+    HERMES_AGENT_ROOT=/path/to/hermes-agent python3 scripts/probe-session-cwd.py
 """
 
 import json
@@ -34,6 +42,42 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 PLUGIN = REPO / "hermes_plugin" / "riel"
 ENGINE = PLUGIN / "engine" / "run.py"
+
+DEFAULT_AGENT_ROOT = Path.home() / ".hermes" / "hermes-agent"
+
+
+def _import_hermes() -> None:
+    """Make a Hermes install importable, bootstrapping a managed one if needed.
+
+    A pip install is importable as-is. A MANAGED install keeps the agent tree
+    outside site-packages and runs `hermes_bootstrap` from its launcher, so a
+    bare `python3 probe…` finds neither: we add the tree (from `$HERMES_AGENT`
+    or the managed default) and retry, mirroring the launcher.
+    """
+    try:
+        import hermes_cli.plugins  # noqa: F401
+        return
+    except ModuleNotFoundError:
+        pass
+    root = Path(os.environ.get("HERMES_AGENT_ROOT") or DEFAULT_AGENT_ROOT)
+    if not root.is_dir():
+        raise SystemExit(
+            "Hermes is not importable. Run this with the interpreter `hermes` "
+            "uses, or point HERMES_AGENT_ROOT at the agent tree "
+            f"({root} does not exist)."
+        )
+    sys.path.insert(0, str(root))
+    try:
+        import hermes_bootstrap  # noqa: F401
+    except ModuleNotFoundError:
+        pass
+    try:
+        import hermes_cli.plugins  # noqa: F401
+    except ModuleNotFoundError as exc:
+        raise SystemExit(f"Hermes still not importable after adding {root}: {exc}")
+
+
+_import_hermes()
 
 
 def _dispatch(registry, tool: str, args: dict, task: str) -> dict:

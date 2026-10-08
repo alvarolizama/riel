@@ -51,7 +51,7 @@ tree that ships; the suite covers it in place.
 | riel_guide(topic="protocol") | **Trajectory** — functional grammar, persona, minimal surface on the first turn | ✅ guide v1.7.2 |
 | riel_guide(topic="briefs") | **Delegation briefs** — self-contained packets: curated context + the `### Why` rationale and context-keyword index, verb-graph, pre-registered claims (with their anchors), executable gates, the shaping step before the plan, templates | ✅ guide v3.8.2 |
 | riel_guide(topic="delegate") | **Delegation router** — plan, dispatch waves, JSON-schema'd returns, parent verifies | ✅ guide v1.3.2 |
-| riel_guide(topic="tools") | **Tooling** — the tool surface: `riel_note` writes the ledger mechanically, `riel_clean` archives the worktree state with flat in-`.riel/` backups, `riel_brief` instantiates/validates packets, slices a phase into a child packet (inheriting the Objective, the `### Why` rationale and the keywords) and expands the graph digest, `riel_todo` derives the session-todo mirror (the plan: the contract's goal, phases and steps), `riel_state` the ledger mirror the chip and the gate fold, `riel_context` emits the context keywords, `riel_fetch` fetches a remote contract to disk (HTTPS, atomic, sha256-verified), `riel_shaping` validates a shaping (Spec 7) and `riel_seam(anchors=true)` re-reads each claim beside the anchored region that supports it | ✅ guide v1.15.1 |
+| riel_guide(topic="tools") | **Tooling** — the tool surface: `riel_note` writes the ledger mechanically, `riel_clean` archives the worktree state with flat in-`.riel/` backups, `riel_brief` instantiates/validates packets, slices a phase into a child packet (inheriting the Objective, the `### Why` rationale and the keywords) and expands the graph digest, `riel_todo` derives the session-todo mirror (the plan: the contract's goal, phases and steps), `riel_state` the ledger mirror the chip and the gate fold, `riel_context` emits the context keywords, `riel_fetch` fetches a remote contract to disk (HTTPS, atomic, sha256-verified), `riel_shaping` validates a shaping (Spec 7) and `riel_seam(anchors=true)` re-reads each claim beside the anchored region that supports it | ✅ guide v1.16.0 |
 
 Each component is independent and optional: a short task uses zero; a long
 loop may use all six. Use only the machinery the task earns.
@@ -355,7 +355,6 @@ riel/
 │   │   ├── templates/     ← the packet and shaping templates
 │   │   ├── dashboard/     ← backend routes (/api/plugins/riel/*)
 │   │   └── desktop/       ← statusbar chip + switches (opt-in)
-│   └── probe-session-cwd.py ← live probe of the Hermes load path (needs Hermes)
 ├── specs/             ← the long form of each format
 │   ├── spec-plugin-package.md   ← what the package is, and what it refuses to be
 │   ├── spec-ledger-format.md    ← .riel/ledger.md format + rules + phase advance
@@ -363,8 +362,10 @@ riel/
 │   ├── spec-shaping-format.md   ← .riel/shaping.md format (the evidence before the plan)
 │   └── spec-todo-hermes.md      ← session-todo mirror (the plan) + ledger mirror (state)
 ├── scripts/           ← repo tooling
-│   ├── validate-mermaid.sh   ← validates every mermaid block with mmdc
-│   └── extract-mermaid.py    ← extracts mermaid blocks (regex, re.DOTALL)
+│   ├── validate-mermaid.sh     ← validates every mermaid block with mmdc
+│   ├── extract-mermaid.py      ← extracts mermaid blocks (regex, re.DOTALL)
+│   └── probe-session-cwd.py    ← the LIVE probe: real discovery, registry
+│                              dispatch, session cwd, the gate (needs Hermes)
 └── tests/             ← stdlib unittest suite (engine, guide, plugin, chip)
 ```
 
@@ -386,17 +387,21 @@ routes through a real FastAPI app, and the `pre_verify` gate's decision
 table (worktree resolution, counters, self-throttling, and its opt-out
 rules).
 
-The Hermes-side load path (discovery, registration, session-cwd resolution,
-per-session isolation) needs a real Hermes install, so it is probed
-separately — run from a directory that is not a worktree:
+### The live probe
+
+The Hermes-side load path — discovery, registration, dispatch through the real
+registry, session-cwd resolution, per-session isolation, the `pre_verify` gate
+and `riel_context` — needs a real Hermes install, so it is NOT part of
+`make test`. `hermes plugins doctor riel` reads the manifest; this probe
+*exercises* it. Run it from a directory that is not a worktree:
 
 ```bash
-# the same interpreter the `hermes` launcher execs
-hermes_dir="$(dirname "$(sed -n 's/^exec "\(.*\)\/hermes".*/\1/p' "$(command -v hermes)")")"
-"$hermes_dir/bin/python" hermes_plugin/probe-session-cwd.py
+python3 scripts/probe-session-cwd.py     # bootstraps a managed install itself
 ```
 
-Any Python that can `import hermes_cli` works as well.
+It finds the agent tree at `$HERMES_AGENT_ROOT` (default
+`~/.hermes/hermes-agent`) and runs `hermes_bootstrap` the way the launcher does,
+so any Python 3 works.
 
 Graph docs are validated with mermaid-cli:
 
