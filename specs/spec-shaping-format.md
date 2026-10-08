@@ -16,7 +16,7 @@ contract's claims point back into it (Spec 2, "Claim anchors").
   the contract).
 - Written **before** the contract: the shaping closes the question, then the
   contract restates the decision in its closed form. Same worktree, same task.
-- `rielctl clean --all` backs it up (flat, timestamped, inside `.riel/`) and
+- `riel_clean(scope="all")` backs it up (flat, timestamped, inside `.riel/`) and
   removes it, exactly like the contract; without `--all` it is left in place.
 - Overwritten per task: it is the working evidence of the task in flight, not a
   durable record.
@@ -55,7 +55,7 @@ that drifts into it just duplicates what the contract must state.
 
 ## Validation
 
-`rielctl shaping validate [PATH]` — default `.riel/shaping.md`.
+`riel_shaping(verb="validate", file=PATH)` — default `.riel/shaping.md`.
 
 Errors (exit 1): a missing section, an empty `## Question`, a `## Findings`
 section with no `F#` line.
@@ -74,13 +74,13 @@ other shipped fixture: the structure is there, the research is not.
 
 The contract's claims point back into the shaping: `— anchor: shaping:F<n>`
 (Spec 2, "Claim anchors"). That is what keeps provenance: at any seam,
-`rielctl anchor` prints the claim beside the finding that supports it, so a
+`riel_seam(anchors=true)` prints the claim beside the finding that supports it, so a
 finding that changed can be noticed while the claim is still refutable —
 instead of after it has been "verified".
 
 ## The handoff
 
-`rielctl shaping new` instantiates `riel-briefs/templates/shaping.md`. The
+`riel_shaping(verb="new")` instantiates `riel-briefs/templates/shaping.md`. The
 handoff into the contract is authored, never generated: the Verdict seeds
 `## Objective`, the `### Why` and `## Pre-registered claims`, and each claim
 keeps its provenance anchor.

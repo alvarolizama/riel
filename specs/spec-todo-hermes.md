@@ -10,7 +10,7 @@ the derivation from the Riel contract + ledger into that list.
 The todo shows the PLAN: the contract's goal (its `## Objective`) is the
 root, its phases are rows and each phase's steps are nested subtasks. The
 ledger only decides the statuses. The ledger's own facts — Next, claims, open
-questions, verified checkpoints — are NOT rows in the todo; `rielctl status`
+questions, verified checkpoints — are NOT rows in the todo; `riel_state`
 serves them to the desktop chip and the `pre_verify` gate. Division of labor:
 **todo = the plan (what must be done) · ledger = the state (what is being
 done) · chip/gate = the ledger's facts.**
@@ -22,16 +22,16 @@ done) · chip/gate = the ledger's facts.**
 | Contract (Spec 2) | `.riel/contract.md` (phases + steps + claims + gates) | the task | the plan |
 | Ledger (`.riel/ledger.md`) | Goal/Phase/Claims/✓/?/Next | the task | the state |
 | Session todo (Hermes tool) | items mirror of the PLAN | the session | nothing — a projection |
-| Ledger mirror (`rielctl status`) | items of the LEDGER | the session | nothing — a projection |
+| Ledger mirror (`riel_state`) | items of the LEDGER | the session | nothing — a projection |
 
 The session todo is a **projection**: regenerate it from the contract + ledger
 at every seam, never hand-edit it into a divergent plan. The todo may SHOW
 future work (from the contract) but may never INVENT it — every phase and
 step item must trace to a contract node.
 
-## Derivation (`rielctl todo`)
+## Derivation (`riel_todo`)
 
-`rielctl todo` reads `.riel/ledger.md` AND `.riel/contract.md` (when present)
+`riel_todo` reads `.riel/ledger.md` AND `.riel/contract.md` (when present)
 and prints the JSON array for the todo tool. The todo is the plan alone:
 
 | Source | Item | Status |
@@ -83,12 +83,12 @@ Two facts that shape the derivation:
   surface retires on its own.
 
 What the desktop does NOT show: the ledger's own facts (✓ evidence, opens,
-claims). Those live in the Riel statusbar chip (`rielctl status` fold) —
+claims). Those live in the Riel statusbar chip (`riel_state` fold) —
 the todo surfaces track plan progress, the chip tracks verified state.
 
-## The ledger mirror (`rielctl status`)
+## The ledger mirror (`riel_state`)
 
-`rielctl status` prints the ledger's own facts as items — the same shape the
+`riel_state` prints the ledger's own facts as items — the same shape the
 todo uses, so the chip and the gate keep one fold:
 
 | Source | Item | Status |
@@ -103,8 +103,8 @@ todo uses, so the chip and the gate keep one fold:
 Consumers: the desktop chip (`hermes_plugin/riel/dashboard/ledger_status.py`)
 folds it into its counters and popover; the `pre_verify` gate
 (`hermes_plugin/riel/hooks.py`) reads the `claim-`/`done-` items to enforce
-the checkpoint rule. Both shell out to `rielctl status`, never to `rielctl
-todo` — the ledger format keeps exactly one owner (`rielctl`).
+the checkpoint rule. Both read `riel_state`, never `riel_todo` — the ledger
+format keeps exactly one owner (the engine).
 
 ## Rules
 
@@ -141,7 +141,7 @@ writes it into `.riel/ledger.md`.
 Spec 2 defines the local contract (`.riel/contract.md`, the plan). This spec
 defines the SESSION mirror in the agent UI (what the contract + local ledger
 project into the todo tool) and the ledger mirror the chip and the gate fold
-(`rielctl status`). Same hierarchy, different layer: contract = plan,
+(`riel_state`). Same hierarchy, different layer: contract = plan,
 ledger = state, session todo = display.
 
 ## Cross-references

@@ -7,7 +7,7 @@ Applies to every task in `loop` mode (multi-file, multi-tool, multi-phase, or sp
 
 - `.riel/ledger.md` in the task worktree; goes into `.gitignore`.
 - **One workstream = one worktree = one ledger** (isolates parallel sessions; same lesson as git index races).
-- It is ephemeral: after the done-check it is cleared with `rielctl clean` — the plan lives in `.riel/contract.md`; the ledger is disposable state. `clean` backs up as a flat timestamped file INSIDE `.riel/` (`ledger-<ts>.bak.md`, never a subdirectory); `--all` also clears the contract, `--purge` clears without backup.
+- It is ephemeral: after the done-check it is cleared with `riel_clean` — the plan lives in `.riel/contract.md`; the ledger is disposable state. `riel_clean` backs up as a flat timestamped file INSIDE `.riel/` (`ledger-<ts>.bak.md`, never a subdirectory); `scope="all"` also clears the contract, `scope="purge"` clears without backup.
 
 ### Git hygiene (the ledger is local state, never a deliverable)
 
@@ -21,9 +21,9 @@ Applies to every task in `loop` mode (multi-file, multi-tool, multi-phase, or sp
 
 ## Exact format
 
-The order below matches `rielctl` exactly — `note` writes Goal, then the
+The order below matches the engine exactly — `riel_note` writes Goal, then the
 optional Source/Phase, then Claims, Core, Verified, Open, Next. Use
-`rielctl note` as the writer; do not hand-format the file into a different
+the `riel_note` tool as the writer; do not hand-format the file into a different
 order.
 
 ```markdown

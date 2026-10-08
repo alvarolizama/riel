@@ -1,7 +1,7 @@
 ---
 name: riel-cli
-description: "Use when Riel needs its mechanical helper — writes the ledger with the exact format, instantiates and validates packets, expands a graph digest, derives the session-todo mirror. The agent invokes it in RUN nodes instead of handwriting state files."
-version: 1.13.0
+description: "Use when Riel needs its mechanical helper — writes the ledger with the exact format, instantiates and validates packets, expands a graph digest, derives the session-todo mirror. No command line: the agent calls the tools in RUN nodes instead of handwriting state files."
+version: 1.13.1
 author: Álvaro Lizama
 license: MIT
 metadata:

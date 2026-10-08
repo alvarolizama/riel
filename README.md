@@ -34,11 +34,11 @@ Riel ships as two faces over one core:
 | Face | What it is | Where |
 |---|---|---|
 | **Six skills** | the protocol prose the agent reads: ledger, contract, trajectory, briefs, delegation, CLI | `skills/riel-*` |
-| **`rielctl`** | stdlib-only Python CLI: the sole writer of the ledger format; instantiates, validates and slices packets; derives the todo/status mirrors; fetches remote contracts | `skills/riel-cli/scripts/rielctl` |
-| **Hermes plugin** (optional) | machinery only: five tools (`riel_note`, `riel_seam`, `riel_resume`, `riel_todo`, `riel_context`) over a vendored `rielctl`, the `pre_verify` gate, and a statusbar activity chip | `hermes_plugin/riel/` |
+| **The engine** (`rielctl`) | stdlib-only Python, not a user surface: the sole writer of the ledger format; instantiates, validates and slices packets; derives the todo/state mirrors; fetches remote contracts — reached only through the eleven tools | `skills/riel-cli/scripts/rielctl` |
+| **The Hermes plugin** | the whole package: the six skills, the engine, eleven typed tools (`riel_note` … `riel_check`), the `pre_verify` gate and a statusbar chip — installed as a copy of a commit, updated the same way | `hermes_plugin/riel/` |
 | **Specs** | the design contract of each artifact (ledger format, contract format, phase advance, todo mirror) | `specs/` |
 
-The protocol prose lives ONLY in the skills — the plugin never copies it.
+The prose lives in `skills/` — one source of truth; the plugin ships a hash-pinned copy of it inside its package.
 The repo is the single source of truth; the plugin's `vendor/` is a build
 artifact regenerated from `skills/` and pinned by hash in the test suite.
 
@@ -51,7 +51,7 @@ artifact regenerated from `skills/` and pinned by hash in the test suite.
 | `riel:protocol` | **Trajectory** — functional grammar, persona, minimal surface on the first turn | ✅ skill v1.7.1 |
 | `riel:briefs` | **Delegation briefs** — self-contained packets: curated context + the `### Why` rationale and context-keyword index, verb-graph, pre-registered claims (with their anchors), executable gates, the shaping step before the plan, templates | ✅ skill v3.8.1 |
 | `riel:delegate` | **Delegation router** — plan, dispatch waves, JSON-schema'd returns, parent verifies | ✅ skill v1.3.1 |
-| `riel:cli` | **Tooling** — `rielctl` writes the ledger mechanically, cleans the worktree state with flat in-`.riel/` backups, instantiates/validates packets, slices a phase into a child packet (inheriting the Objective, the `### Why` rationale and the keywords), expands the graph digest, derives the session-todo mirror (the plan: the contract's goal, phases and steps) and the ledger mirror the chip and the gate fold (`rielctl status`), emits the context keywords, fetches a remote contract to disk (HTTPS, atomic, sha256-verified), validates a shaping (Spec 7) and re-reads each claim beside the anchored region that supports it | ✅ skill v1.13.0 |
+| `riel:cli` | **Tooling** — the tool surface: `riel_note` writes the ledger mechanically, `riel_clean` archives the worktree state with flat in-`.riel/` backups, `riel_brief` instantiates/validates packets, slices a phase into a child packet (inheriting the Objective, the `### Why` rationale and the keywords) and expands the graph digest, `riel_todo` derives the session-todo mirror (the plan: the contract's goal, phases and steps), `riel_state` the ledger mirror the chip and the gate fold, `riel_context` emits the context keywords, `riel_fetch` fetches a remote contract to disk (HTTPS, atomic, sha256-verified), `riel_shaping` validates a shaping (Spec 7) and `riel_seam(anchors=true)` re-reads each claim beside the anchored region that supports it | ✅ skill v1.13.1 |
 
 Each component is independent and optional: a short task uses zero; a long
 loop may use all six. Use only the machinery the task earns.
@@ -78,12 +78,12 @@ versions across skills is unsupported.
   (`.riel/contract.md`) is written first: objective, `### Why` rationale,
   constraints, pre-registered claims, a mermaid execution graph with a
   verification funnel, executable gates, deliverable, DO NOT. A parser
-  accepts or rejects it (`rielctl brief validate`).
+  accepts or rejects it (`riel_brief(verb="validate")`).
 - **The evidence before the plan.** A task that researches first writes
   `.riel/shaping.md` — findings with their sources and a confidence,
   alternatives with their verdicts, the questions still open — and each claim
   can point back at its support (`— anchor: §Constraints#2`, a node of the
-  graph, or `shaping:F1`). `rielctl anchor` re-reads a claim beside the
+  graph, or `shaping:F1`). `riel_seam(anchors=true)` re-reads a claim beside the
   region that holds it up, at every seam, so a support that moved is noticed
   while the claim is still refutable.
 - **Recovery from degraded runs.** A ✓NN that took 3+ failed attempts
@@ -152,11 +152,11 @@ Four load-bearing defenses against execution error:
 The contract captures *what* (`## Objective`, one sentence opening with
 "We need…"), *what will be true* (`## Pre-registered claims`) and *why*
 (`### Why`, under `## Context`): the rationale — what triggers the
-objective, which alternative was discarded. `rielctl brief slice`
+objective, which alternative was discarded. `riel_brief(verb="slice")`
 inherits the Objective, the `### Why` and the context keywords into every
 child packet, so a delegated agent never executes with the what but
 without the why; on a conflict it escalates (`ASK[goal-changing]`) instead
-of reinterpreting. `brief validate` WARNs when the Objective runs past one
+of reinterpreting. `riel_brief(verb="validate")` WARNs when the Objective runs past one
 sentence — rationale belongs in `### Why`.
 
 ## How to use
@@ -362,7 +362,7 @@ riel/
 │   ├── riel-protocol/   ← trajectory: grammar, persona, minimal surface
 │   ├── riel-briefs/     ← delegation briefs + claims + shaping/packet templates/
 │   ├── riel-delegate/   ← delegation router + JSON output_schema
-│   └── riel-cli/        ← rielctl: ledger writer, packet + digest tooling
+│   └── riel-cli/        ← the engine (stdlib) the tools run: ledger writer, packets, digest
 ├── hermes_plugin/     ← the installable package: prose + engine + tools + gate + chip
 │   ├── riel/            ← one artifact, installed as a copy of a commit
 │   │   ├── skills/        ← artifact: the six skills, rielctl and the templates
@@ -377,7 +377,7 @@ riel/
 ├── scripts/           ← repo tooling
 │   ├── validate-mermaid.sh   ← validates every mermaid block with mmdc
 │   └── extract-mermaid.py    ← extracts mermaid blocks (regex, re.DOTALL)
-├── tests/             ← stdlib unittest suite (rielctl, vendor hashes, plugin hooks, desktop chip)
+├── tests/             ← stdlib unittest suite (engine, artifact hashes, plugin hooks, chip)
 └── references/        ← papers-and-sources.md — evidence & design notes (public)
 ```
 
@@ -387,12 +387,14 @@ riel/
 make test     # or: python3 -m unittest discover -s tests -v
 ```
 
-Stdlib-only, subprocess-driven. 213 tests cover `rielctl note/seam/resume/todo/clean/ship`,
-`brief new/validate/digest/slice`, `shaping new/validate`, `anchor`, the graph
+Stdlib-only, subprocess-driven. 264 tests cover `riel_note`, `riel_seam` (with
+anchors), `riel_resume`, `riel_todo`, `riel_state`, `riel_context`, `riel_brief`
+(new/validate/digest/slice), `riel_shaping` (new/validate), `riel_clean`,
+`riel_fetch`, `riel_check`, the graph
 and claim-anchor checks, and `extract-mermaid.py` end-to-end, plus the Hermes
-plugin package: vendoring hashes,
-manifest/schema/handler wiring, the handlers end-to-end through the vendored
-copy, the statusbar chip rendered by node against a stubbed SDK (labels,
+plugin package: the artifact's per-file hashes,
+manifest/schema/handler wiring, the handlers end-to-end through the bundled
+copy, the prompt section and the three switch groups, the statusbar chip rendered by node against a stubbed SDK (labels,
 tooltip, click, and the refetch a finished tool triggers), the backend
 routes through a real FastAPI app, and the `pre_verify` gate's decision
 table (worktree resolution, counters, self-throttling, and its opt-out

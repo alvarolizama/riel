@@ -14,7 +14,7 @@ the plan artifact and its relationship to the ledger.
 - **Written (or fetched) first, always** — before opening the ledger, before
   any execution, **whether the task delegates or not**. A remote contract
   (authored elsewhere) is materialized here, at the opening, with
-  `rielctl fetch` — never deferred to delegation ("Remote contracts", below).
+  `riel_fetch` — never deferred to delegation ("Remote contracts", below).
 - Overwritten per session: it is working memory for the task in flight, not
   a durable record.
 
@@ -41,7 +41,7 @@ The nine sections, in order:
 8. `## Deliverable`
 9. `## DO NOT`
 
-Validate it mechanically: `rielctl brief validate .riel/contract.md` (the
+Validate it mechanically: `riel_brief(verb="validate", file=".riel/contract.md")` (the
 validator keys on this exact section set and order).
 
 ## Claim anchors
@@ -62,8 +62,8 @@ enforcement: `riel:contract`, "Claim anchors".
 
 Two mechanical facts bind the form: **the claim stays on ONE line** — the
 ledger seed reads line by line — and `brief slice` copies the section
-verbatim, so an anchor written here reaches the child for free. `rielctl
-anchor` resolves a claim's anchor into its excerpt, which is what a seam
+verbatim, so an anchor written here reaches the child for free.
+`riel_seam(anchors=true)` resolves a claim's anchor into its excerpt, which is what a seam
 re-reads; a missing anchor is a `WARN` (the shipped templates carry none),
 never a hard failure.
 
@@ -76,7 +76,7 @@ home for *why this and not something else*.
 
 It is a `###` subsection on purpose: `brief validate` pins the nine `##`
 sections and ignores `###`, so the format stays stable. It is **inherited
-mechanically by `rielctl brief slice`** (like `### Context keywords` and the
+mechanically by `riel_brief(verb="slice")`** (like `### Context keywords` and the
 Objective itself), so a delegated child receives the rationale instead of a
 FILL — and the inherited copy carries the rule: on a conflict with the
 execution, the child escalates (`ASK[goal-changing]`), it never
@@ -89,7 +89,7 @@ the contract travels — a remote `fetch`, a slice, a resumed session.
 ## Context fetch (the keywords)
 
 `## Context` carries a machine-readable index: `### Context keywords`, one term
-per line with an optional `→ dran|memory|code` hint (`rielctl context` emits it
+per line with an optional `→ dran|memory|code` hint (`riel_context` emits it
 as JSON). It is consulted at exactly the two moments where `Core` is (re)set —
 nowhere else, so no tool call pays for a search the task does not need:
 
@@ -137,7 +137,7 @@ The contract is not always hand-written in the worktree: an authoring tool
 (e.g. Gorim) can render it server-side and hand the agent a reference. The
 body never travels through the agent's context — MCP responses cap at ~10KB
 and a contract exceeds it — so the export returns `{url, sha256, bytes}` and
-`rielctl fetch <url> -o .riel/contract.md --sha256 <hash>` materializes it
+`riel_fetch(url=…, out=".riel/contract.md", sha256=…)` materializes it
 into the worktree. `fetch` is server-agnostic: HTTPS by default (plain `http`
 only for localhost, or anywhere with `--allow-http` on a trusted transport
 such as a VPN), TLS verified, body bounded, **atomic** write, and the URL is
