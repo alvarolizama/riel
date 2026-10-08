@@ -1,16 +1,20 @@
-// Riel — desktop half: two statusbar chips for the focused session's worktree.
+// Riel — desktop half: ONE statusbar chip for the focused session's worktree.
 //
-//   Riel ✓4 ?2        — the ledger: verified checkpoints (✓, primary color) and
-//                       open questions (?, amber). Click: toast with Goal/Next.
-//   Contrato          — only when .riel/contract.md exists. Click: modal with
-//                       the contract rendered as Markdown (Streamdown draws the
-//                       sections and the mermaid graph, the chat pipeline).
+//   Riel ● riel_note   — only when .riel/contract.md exists. Click: modal with
+//                        the contract rendered as Markdown (Streamdown draws
+//                        the sections and the mermaid graph, the chat
+//                        pipeline). While the turn runs: a pulsing dot plus
+//                        the live tool name. No contract: no chip at all.
+//
+// The ledger's own state is NOT in the bar anymore: the model re-reads it
+// with riel_seam and the gate enforces it — the bar only says whether this
+// worktree has a plan and whether it is being executed.
 //
 // Style: native statusbar vocabulary — Capitalized label in
-// text-(--ui-text-tertiary) at 0.6875rem, color ONLY on the ✓/? marks
-// (primary / amber-600, the two accents the bar itself uses).
+// text-(--ui-text-tertiary) at 0.6875rem, color ONLY on the live mark
+// (primary, the accent the bar itself uses).
 //
-// Session-awareness: the chips follow the FOCUSED chat. `host.state.cwd` is a
+// Session-awareness: the chip follows the FOCUSED chat. `host.state.cwd` is a
 // workspace-global that can still hold the previous conversation's folder right
 // after a switch (the app's own store docs it), and a detached session never
 // republishes it. So the authoritative worktree comes from the gateway's
@@ -21,340 +25,19 @@
 // Opt-in: `defaultEnabled: false` ships it inventory-only in Capabilities →
 // Plugins, mirroring the agent half's `plugins.enabled` gate in config.yaml.
 
-import { host, haptic, useValue } from '@hermes/plugin-sdk'
+import { host, useValue } from '@hermes/plugin-sdk'
 import { Streamdown } from '@hermes/plugin-sdk'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Switch, Input, Button, PALETTE_AREA } from '@hermes/plugin-sdk'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, PALETTE_AREA } from '@hermes/plugin-sdk'
 import { jsx, jsxs } from 'react/jsx-runtime'
 import { useEffect, useState } from 'react'
 
-const POLL_MS = 5000
-const NEXT_MAX_CHARS = 40
 const TOOL_MAX_CHARS = 18
-const STEP_MAX_CHARS = 34
 const CHIP_CLASS = 'px-1.5 text-[0.6875rem] text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) transition-colors'
-const CHECK_CLASS = 'text-primary'
-const OPEN_CLASS = 'text-amber-600'
 const RUNNING_CLASS = 'text-primary animate-pulse'
 
 function truncate(text, max) {
   const clean = String(text || '').replace(/\s+/g, ' ').trim()
   return clean.length > max ? clean.slice(0, max - 1) + '…' : clean
-}
-
-/* ------------------------------------------------------------------ ledger */
-
-/** One detail section: heading + bullet list, only when there is content. */
-function DetailSection({ heading, items, mark, markClass }) {
-  if (!items || !items.length) return null
-  return jsxs('div', {
-    className: 'flex flex-col gap-0.5',
-    children: [
-      jsx('div', {
-        className: 'pt-1 text-[0.6875rem] font-medium tracking-wide text-(--ui-text-quaternary)',
-        children: heading
-      }),
-      ...items.map((text, i) =>
-        jsxs('div', {
-          // break-words: a ✓ line carries the whole checkpoint (claim + evidence)
-          // and must WRAP, not truncate with an ellipsis.
-          className: 'flex items-baseline gap-1.5 leading-snug break-words',
-          children: [
-            mark
-              ? jsx('span', { className: 'shrink-0 ' + (markClass || ''), children: mark })
-              : null,
-            jsx('span', { className: 'min-w-0 flex-1 text-(--ui-text-secondary)', children: text })
-          ]
-        }, i)
-      )
-    ]
-  })
-}
-
-/** The ledger's popover body: everything the ledger has, like `riel_seam`. */
-function LedgerPanel({ ledger, busy, tool }) {
-  const row = (label, value, valueClass) =>
-    jsxs('div', {
-      className: 'flex items-baseline justify-between gap-3 py-0.5',
-      children: [
-        jsx('span', { className: 'shrink-0 text-(--ui-text-quaternary)', children: label }),
-        jsx('span', { className: valueClass || 'text-right text-(--ui-text-secondary)', children: value })
-      ]
-    })
-
-  if (!ledger) {
-    return jsx('div', {
-      className: 'px-2 py-3 text-center text-xs text-(--ui-text-quaternary)',
-      children: 'Este worktree no tiene .riel/ledger.md'
-    })
-  }
-
-  const stale = ledger.stale_secs == null ? '' : ` · hace ${Math.round(ledger.stale_secs / 60)} min`
-  return jsxs('div', {
-    className: 'flex flex-col gap-1.5 px-1 py-0.5 text-xs',
-    children: [
-      ledger.phase
-        ? jsx('div', { className: 'text-(--ui-text-quaternary)', children: `Fase: ${ledger.phase}` })
-        : null,
-      jsx('div', { className: 'font-medium text-(--ui-text-primary)', children: ledger.goal || '(sin goal)' }),
-      jsxs('div', { className: 'flex items-baseline gap-1.5 text-(--ui-text-secondary)', children: [
-        jsx('span', { className: 'text-(--ui-text-quaternary)', children: '→' }),
-        jsx('span', { children: ledger.next || '(sin next)' })
-      ]}),
-      jsx('div', { className: 'mt-1 border-t border-(--ui-stroke-secondary) pt-1.5' }),
-      row('Verificados', ledger.verified, 'text-right tabular-nums text-primary'),
-      row('Abiertas', ledger.open, 'text-right tabular-nums ' + (ledger.open > 0 ? OPEN_CLASS : '')),
-      row('Claims', ledger.claims, 'text-right tabular-nums'),
-      busy
-        ? row('Turno', 'en curso' + (tool ? `: ${tool.name}` : ''), 'text-right')
-        : tool
-          ? row('Último tool', `${tool.name}${tool.duration_s != null ? ` (${tool.duration_s}s)` : ''}${tool.error ? ' — error' : ''}`, 'text-right')
-          : null,
-      stale
-        ? jsx('div', { className: 'text-(--ui-text-quaternary)', children: stale.replace(' · ', '') })
-        : null,
-      jsx(DetailSection, {
-        heading: 'Verificados',
-        items: ledger.verified_detail,
-        mark: '✓',
-        markClass: CHECK_CLASS
-      }),
-      jsx(DetailSection, {
-        heading: 'Abiertas',
-        items: ledger.open_detail,
-        mark: '?',
-        markClass: OPEN_CLASS
-      }),
-      jsx(DetailSection, {
-        heading: 'Claims',
-        items: ledger.claims_detail,
-        mark: '·'
-      })
-    ]
-  })
-}
-
-/** The chip's live segment: what is happening right now / what is next.
- *
- *  - turn running: the LIVE tool name (the user's "turno corriendo ¿de qué?")
- *  - idle with a Next: the ledger's next step, truncated — the plan's cursor
- *  - idle without Next: the phase, or nothing (the modal carries the detail)
- */
-function chipStep(ledger, busy, tool) {
-  if (busy) {
-    return tool
-      ? { text: truncate(tool.running ? tool.name : `${tool.name} ✓`, STEP_MAX_CHARS), live: true }
-      : { text: 'pensando', live: true }
-  }
-  if (ledger && ledger.next) return { text: truncate(ledger.next, STEP_MAX_CHARS), live: false }
-  if (ledger && ledger.phase) return { text: truncate(ledger.phase, STEP_MAX_CHARS), live: false }
-  return null
-}
-
-/* ---------------------------------------------------------------- switches */
-
-const GROUPS = [
-  { key: 'gate', label: 'Gate', hint: 'turno que editó código no cierra sin un ✓ verificado' },
-  { key: 'tools', label: 'Tools', hint: 'las seis riel_* (note, seam, resume, todo, context, cli)' },
-  { key: 'context', label: 'Prompt', hint: 'el bloque de Riel: la puerta al guide + estado del worktree' }
-]
-
-/** The three switches and the operator's note, from the status bar.
- *
- *  A switch written here is obeyed by the NEXT session: a session keeps the
- *  prompt and the tool list it started with, so the copy says so instead of
- *  pretending the running turn changed. */
-function SwitchesPanel({ ctx }) {
-  const [state, setState] = useState(null)
-  const [error, setError] = useState('')
-  const [note, setNote] = useState('')
-
-  const adopt = data => {
-    if (data && data.ok) {
-      setState(data)
-      setNote(data.harness_note || '')
-      setError('')
-    } else {
-      setError((data && data.error) || 'el backend no contestó')
-    }
-  }
-
-  useEffect(() => {
-    let alive = true
-    const load = async () => {
-      try {
-        const data = await ctx.rest('/settings')
-        if (alive) adopt(data)
-      } catch (e) {
-        if (alive) setError(String((e && e.message) || e))
-      }
-    }
-    load()
-    return () => {
-      alive = false
-    }
-  }, [ctx])
-
-  const flip = async (key, value) => {
-    haptic('tap')
-    try {
-      adopt(await ctx.rest('/settings', { method: 'POST', body: { [key]: value } }))
-    } catch (e) {
-      setError(String((e && e.message) || e))
-    }
-  }
-
-  const saveNote = async () => {
-    try {
-      adopt(await ctx.rest('/settings', { method: 'POST', body: { harness_note: note } }))
-    } catch (e) {
-      setError(String((e && e.message) || e))
-    }
-  }
-
-  if (!state) {
-    return jsx('div', {
-      className: 'text-[0.6875rem] text-(--ui-text-quaternary)',
-      children: error || 'leyendo ajustes…'
-    })
-  }
-
-  return jsxs('div', {
-    className: 'flex flex-col gap-1.5 text-xs',
-    children: [
-      jsx('div', {
-        key: 'title',
-        className: 'text-[0.6875rem] font-medium tracking-wide text-(--ui-text-quaternary)',
-        children: 'Ajustes de Riel'
-      }),
-      ...GROUPS.map(group =>
-        jsxs('div', {
-          className: 'flex items-baseline justify-between gap-3',
-          children: [
-            jsxs('div', {
-              className: 'min-w-0',
-              children: [
-                jsx('span', { className: 'text-(--ui-text-secondary)', children: group.label }),
-                jsx('span', { className: 'ml-2 text-(--ui-text-quaternary)', children: group.hint })
-              ]
-            }),
-            jsx(Switch, {
-              checked: !!state[group.key],
-              onCheckedChange: value => flip(group.key, value)
-            })
-          ]
-        }, group.key)
-      ),
-      jsxs('div', {
-        key: 'note',
-        className: 'mt-1 flex items-center gap-1.5',
-        children: [
-          jsx(Input, {
-            value: note,
-            placeholder: 'nota de harness (va al final del bloque del prompt)',
-            onChange: event => setNote((event && event.target && event.target.value) || '')
-          }),
-          jsx(Button, { size: 'sm', variant: 'secondary', onClick: saveNote, children: 'Guardar' })
-        ]
-      }),
-      jsx('div', {
-        key: 'caveat',
-        className: 'text-[0.6875rem] text-(--ui-text-quaternary)',
-        children: 'Aplica en la PRÓXIMA sesión: esta conserva el prompt y las tools con las que arrancó.'
-      }),
-      error
-        ? jsx('div', { key: 'error', className: 'text-[0.6875rem] text-amber-600', children: error })
-        : null
-    ]
-  })
-}
-
-function LedgerChip({ ledger, busy, tool, ctx }) {
-  const [open, setOpen] = useState(false)
-  const step = chipStep(ledger, busy, tool)
-
-  const title = () => {
-    const lines = []
-    if (ledger) {
-      lines.push(ledger.goal || '(sin goal)', `→ ${ledger.next || '(sin next)'}`)
-      const stale = ledger.stale_secs == null ? '' : ` · hace ${Math.round(ledger.stale_secs / 60)} min`
-      lines.push(`${ledger.verified} verificados · ${ledger.open} abiertas · ${ledger.claims} claims${stale}`)
-    } else {
-      lines.push('Este worktree no tiene .riel/ledger.md')
-    }
-    if (busy) lines.push('Turno en curso' + (tool ? `: ${tool.name}` : ''))
-    else if (tool) {
-      const took = tool.duration_s == null ? '' : ` (${tool.duration_s}s)`
-      lines.push(`Último tool: ${tool.name}${took}${tool.error ? ' — ' + truncate(tool.error, 80) : ''}`)
-    }
-    lines.push('clic: ver el ledger')
-    return lines.join('\n')
-  }
-
-  return jsxs(Dialog, {
-    open,
-    onOpenChange: setOpen,
-    children: [
-      jsx('button', {
-        key: 'trigger',
-        type: 'button',
-        title: title(),
-        className: CHIP_CLASS,
-        onClick: () => setOpen(true),
-        children: jsxs('span', {
-          className: 'inline-flex items-center gap-1',
-          children: [
-            jsx('span', { children: 'Riel: Ledger' }),
-            busy ? jsx('span', { className: RUNNING_CLASS, children: '●' }) : null,
-            step
-              ? jsx('span', {
-                  className: step.live ? 'text-primary' : 'text-(--ui-text-quaternary)',
-                  children: step.text
-                })
-              : null,
-            ledger
-              ? jsxs('span', {
-                  className: 'inline-flex items-center gap-1 tabular-nums',
-                  children: [
-                    jsx('span', { className: CHECK_CLASS, children: `✓${ledger.verified}` }),
-                    ledger.open > 0
-                      ? jsx('span', { className: OPEN_CLASS, children: `?${ledger.open}` })
-                      : null
-                  ]
-                })
-              : null
-          ]
-        })
-      }),
-      jsx(DialogContent, {
-        key: 'content',
-        className: 'flex max-h-[85vh] max-w-2xl flex-col overflow-hidden',
-        children: [
-          jsx(DialogHeader, {
-            key: 'head',
-            children: [
-              jsx(DialogTitle, { key: 't', children: 'Riel · Ledger' }),
-              jsx(DialogDescription, {
-                key: 'd',
-                className: 'text-(--ui-text-tertiary)',
-                children: ledger
-                  ? `${ledger.verified}✓ ${ledger.open}? ${ledger.claims} claims`
-                  : 'sin ledger en este worktree'
-              })
-            ]
-          }),
-          jsxs('div', {
-            key: 'body',
-            className: 'min-h-0 flex-1 overflow-y-auto pr-1',
-            children: [
-              jsx(LedgerPanel, { key: 'ledger', ledger, busy, tool }),
-              jsx('div', { key: 'sep', className: 'mt-2 border-t border-(--ui-stroke-secondary) pt-2' }),
-              jsx(SwitchesPanel, { key: 'switches', ctx })
-            ]
-          })
-        ]
-      })
-    ]
-  })
 }
 
 /* --------------------------------------------------------------- contrato */
@@ -430,12 +113,19 @@ function ContractDialog({ open, onOpenChange, ctx, cwd, sessionId }) {
   })
 }
 
-function ContractChip({ ctx, cwd, sessionId }) {
+/** The one chip: it only exists when the worktree has a contract.
+
+ *  - idle: `Riel` — the plan exists, click reads it.
+ *  - turn running: `Riel ● <tool>` — the pulsing dot plus the live tool name.
+ *  - no contract: nothing at all.
+ */
+function ContractChip({ ctx, cwd, sessionId, busy, tool, revision }) {
   const [hasContract, setHasContract] = useState(null)
   const [open, setOpen] = useState(false)
 
-  // Probe for the contract once per worktree/session: the chip only exists
-  // when there is something to show.
+  // Probe for the contract once per worktree/session (and again whenever a
+  // tool finishes — a contract may have been written mid-task): the chip only
+  // exists when there is something to show.
   useEffect(() => {
     let alive = true
     setHasContract(null)
@@ -455,9 +145,15 @@ function ContractChip({ ctx, cwd, sessionId }) {
     return () => {
       alive = false
     }
-  }, [cwd, sessionId, ctx])
+  }, [cwd, sessionId, revision, ctx])
 
   if (!hasContract) return null
+
+  const title = () => {
+    const lines = ['Ver el contrato de esta tarea (secciones + grafo)']
+    if (busy) lines.push('Turno en curso' + (tool ? `: ${tool.name}` : ''))
+    return lines.join('\n')
+  }
 
   return jsxs('span', {
     className: 'inline-flex items-center',
@@ -465,10 +161,26 @@ function ContractChip({ ctx, cwd, sessionId }) {
       jsx('button', {
         key: 'btn',
         type: 'button',
-        title: 'Ver el contrato de esta tarea (secciones + grafo)',
+        title: title(),
         className: CHIP_CLASS,
         onClick: () => setOpen(true),
-        children: 'Riel: Contract'
+        children: jsxs('span', {
+          className: 'inline-flex items-center gap-1',
+          children: [
+            jsx('span', { children: 'Riel' }),
+            busy
+              ? jsxs('span', {
+                  className: 'inline-flex items-center gap-1',
+                  children: [
+                    jsx('span', { className: RUNNING_CLASS, children: '●' }),
+                    tool && tool.running
+                      ? jsx('span', { className: 'text-primary', children: truncate(tool.name, TOOL_MAX_CHARS) })
+                      : null
+                  ]
+                })
+              : null
+          ]
+        })
       }),
       jsx(ContractDialog, {
         key: 'dialog',
@@ -489,7 +201,6 @@ function RielChips({ ctx }) {
   const busy = useValue(host.state.busy)
   const focusedId = useValue(host.state.focusedSessionId)
   const focusedStoredId = useValue(host.state.focusedStoredSessionId)
-  const [status, setStatus] = useState(null)
   const [tool, setTool] = useState(null)
   const [revision, setRevision] = useState(0)
   // Authoritative cwd PER session. session.info events (keyed by runtime id)
@@ -515,6 +226,8 @@ function RielChips({ ctx }) {
   }, [])
 
   // Activity: the app's gateway event tap, FILTERED to the focused session.
+  // A finished tool bumps the revision so the chip re-probes the contract —
+  // one written mid-task shows up without waiting for a focus switch.
   useEffect(() => {
     const belongs = event => {
       const sid = event && event.session_id
@@ -549,7 +262,6 @@ function RielChips({ ctx }) {
   // still hold the previous conversation's folder at this moment.
   useEffect(() => {
     setTool(null)
-    setStatus(null)
     if (!focusedStoredId) return
     let alive = true
     const known = cwdBySession[focusedStoredId]
@@ -571,37 +283,7 @@ function RielChips({ ctx }) {
     }
   }, [focusedStoredId, ctx])
 
-  useEffect(() => {
-    let alive = true
-    const load = async () => {
-      if (!cwd) {
-        if (alive) setStatus({ present: false })
-        return
-      }
-      try {
-        const data = await ctx.rest('/ledger?worktree=' + encodeURIComponent(cwd))
-        if (alive) setStatus(data)
-      } catch (error) {
-        if (alive) setStatus({ present: false, error: String((error && error.message) || error) })
-      }
-    }
-    load()
-    const timer = setInterval(load, POLL_MS)
-    return () => {
-      alive = false
-      clearInterval(timer)
-    }
-  }, [cwd, focusedId, revision, ctx])
-
-  const ledger = status && status.present ? status : null
-
-  return jsxs('span', {
-    className: 'inline-flex items-center',
-    children: [
-      jsx(LedgerChip, { key: 'ledger', ledger, busy, tool, ctx }),
-      jsx(ContractChip, { key: 'contract', ctx, cwd, sessionId: focusedId })
-    ]
-  })
+  return jsx(ContractChip, { ctx, cwd, sessionId: focusedId, busy, tool, revision })
 }
 
 export default {
@@ -631,7 +313,7 @@ export default {
     }
 
     ctx.register({
-      id: 'ledger-chip',
+      id: 'contract-chip',
       area: 'statusBar.right',
       order: 120,
       render: () => jsx(RielChips, { ctx })

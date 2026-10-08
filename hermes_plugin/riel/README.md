@@ -59,39 +59,38 @@ Y ejecuta el motor en un **subproceso** con `cwd=<worktree>`: cada llamada
 tiene su propio cwd y no hay `chdir` global compartido entre sesiones
 concurrentes (un gateway sirve varias a la vez).
 
-## Mitad desktop — chip de actividad en el statusbar
+## Mitad desktop — un chip en el statusbar
 
-`desktop/plugin.js` registra un chip en `statusBar.right` que muestra dos cosas:
+`desktop/plugin.js` registra un chip en `statusBar.right`, y es el único:
 
-- **Estado del ledger** del worktree en foco: `riel 4✓ 2? · next: <acción>`.
-- **Actividad viva**: mientras el turno corre el chip pasa a
-  `riel ● <tool en ejecución> · 4✓ 2?` en color de acento; cuando el tool
-  termina, `riel ● <tool> ✓`; en reposo, `riel · último: <tool>`.
+- **Solo existe si hay contrato**: `.riel/contract.md` en el worktree en foco.
+  Sin contrato, el statusbar no muestra nada.
+- **En reposo**: `Riel` — el plan existe; un clic abre el modal con el
+  contrato renderizado (Streamdown dibuja las secciones y el grafo mermaid).
+- **Turno en curso**: `Riel ● <tool>` — el punto pulsa en color de acento y
+  nombra la tool viva del chat enfocado (p. ej. `Riel ● riel_note`).
+
+El estado del ledger ya no vive en la barra: lo relee el modelo con
+`riel_seam` y lo hace cumplir el gate. La barra sólo dice si este worktree
+tiene plan y si se está ejecutando.
 
 Los dos datos entran por caminos distintos:
 
 | Dato | Camino |
 |---|---|
-| Ledger | `host.state.cwd` → `GET /api/plugins/riel/ledger?worktree=<cwd>` (cada 5 s, y de inmediato al terminar un tool) |
-| Actividad | `host.onEvent('tool.start' \| 'tool.complete')` — el tap del gateway — más `host.state.busy` para el turno en curso |
+| Contrato | `host.state.cwd` / `session.info` → `GET /api/plugins/riel/contract?worktree=<cwd>` (al abrir, al cambiar de foco y de inmediato al terminar un tool) |
+| Ejecución | `host.onEvent('tool.start' \| 'tool.complete')` — el tap del gateway — más `host.state.busy` para el turno en curso |
 
 El endpoint lo sirve `dashboard/plugin_api.py`, el backend del plugin montado por
-el gateway en el proceso del agente, y normaliza el mirror de `riel_state` vía
-`dashboard/ledger_status.py`: el formato del ledger sigue teniendo un solo dueño
-(el plugin no re-parsea `.riel/ledger.md`) y el renderer nunca lee el disco —
-solo `<worktree>/.riel/ledger.md` puede salir, y solo como contadores + los
-titulares de goal/next.
+el gateway en el proceso del agente. El renderer nunca lee el disco —
+solo `<worktree>/.riel/contract.md` puede salir, y solo como markdown
+verbatim para el modal.
 
-Un clic dispara un toast con `Goal → Next` y el último tool; el tooltip lleva el
-goal, el next, los contadores y el detalle del tool (duración, error).
+Un clic abre el modal del contrato; el tooltip lleva el estado del turno
+(`Turno en curso: <tool>`).
 
-Tres interruptores, todos apagados por defecto:
-
-| Interruptor | Dónde | Qué habilita |
-|---|---|---|
-| `plugins.enabled` | `config.yaml` — `hermes plugins enable riel` | la mitad Python: tools + backend |
-| Capabilities → Plugins | app de escritorio | la mitad desktop (es **opt-in**) |
-| copia del paquete | automática al instalar/actualizar; ⌘K → **Reload desktop plugins** (o **Rescan**) si el chip no aparece | `~/.hermes/desktop-plugins/riel/` |
+Los interruptores del chip viejo siguen vivos como comandos de ⌘K:
+`Riel: encender/apagar el gate` y `… el bloque del prompt`.
 
 Dos asimetrías que conviene tener presentes: la mitad desktop es **app-level**
 (una sola copia para todos los perfiles, la puso ahí el proceso principal de

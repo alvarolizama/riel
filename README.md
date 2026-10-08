@@ -257,11 +257,12 @@ protocol is enforced by the runtime:
   the rule riel_guide(topic="ledger") states, enforced by the runtime. Bounded (one nudge
   per turn by default, `gate_attempts`), opt-out per worktree (no ledger, no
   gate) and switchable (`gate: false`).
-- **The desktop chip** (opt-in, app-level): a statusbar item showing the
-  focused worktree's ledger (`riel 4✓ 2? · next: <action>`) and live tool
-  activity while a turn runs; a click opens the Ledger modal (goal, next,
-  ✓ checkpoints with evidence, and the three switches) and the Contract modal
-  (the plan, with its mermaid graph rendered). Its backend serves
+- **The desktop chip** (opt-in, app-level): ONE statusbar item for the focused
+  worktree — it exists only when `.riel/contract.md` is there; idle it reads
+  `Riel` (a click opens the contract rendered with its mermaid graph), and
+  while the turn runs `Riel ● <tool>` names the live tool. The ledger's own
+  state stays out of the bar: the model re-reads it with `riel_seam` and the
+  `pre_verify` gate enforces it. Its backend serves
   `/api/plugins/riel/{health,ledger,contract,session_cwd,settings}`; ⌘K carries
   `Riel: encender/apagar el gate` and `… el bloque del prompt`.
 - **`riel_context`** hands over the contract's context-keyword index and
@@ -372,15 +373,16 @@ riel/
 make test     # or: python3 -m unittest discover -s tests -v
 ```
 
-Stdlib-only, subprocess-driven. 289 tests cover `riel_note`, `riel_seam` (with
+Stdlib-only, subprocess-driven. 282 tests cover `riel_note`, `riel_seam` (with
 anchors), `riel_resume`, `riel_todo`, `riel_state`, `riel_context`, `riel_brief`
 (new/validate/digest/slice), `riel_shaping` (new/validate), `riel_clean`,
 `riel_fetch`, `riel_check` (dense markers, digest and the `mermaid=true`
 parser half), the graph
 and claim-anchor checks, plus the Hermes
 plugin package: manifest/schema/handler wiring, the handlers end-to-end through the bundled
-copy, the prompt section and the three switch groups, the statusbar chip rendered by node against a stubbed SDK (labels,
-tooltip, click, and the refetch a finished tool triggers), the backend
+copy, the prompt section and the three switch groups, the statusbar chip rendered by node against a stubbed SDK (the one
+chip exists only with a contract, the live `● <tool>` mark, the refetch a
+finished tool triggers, and the per-session worktree resolution), the backend
 routes through a real FastAPI app, and the `pre_verify` gate's decision
 table (worktree resolution, counters, self-throttling, and its opt-out
 rules).
