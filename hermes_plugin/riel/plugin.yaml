@@ -1,6 +1,6 @@
 name: riel
-version: 0.5.0
-description: "Riel — the whole package: the six protocol skills (bundled, discoverable through the `riel` prompt section and loadable as `riel:<skill>`), the `rielctl` they call, the ledger/contract tools, the pre_verify gate and the desktop chip."
+version: 0.5.1
+description: "Riel — the whole package: the six protocol skills (bundled, discoverable through the `riel` prompt section and loadable as `riel:<skill>`), the eleven tools that write the ledger, the contract and the shaping, the pre_verify gate and the desktop chip. No command line: the tools are the surface."
 author: Álvaro Lizama
 license: MIT
 homepage: https://github.com/alvarolizama/riel
