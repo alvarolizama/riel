@@ -36,7 +36,7 @@ MANIFEST = os.path.join(PLUGIN, "plugin.yaml")
 PARTS = ("guide", "engine", "templates")
 
 # The topics the prose ships today: ONE door (`riel_guide`) reads them.
-TOPICS = ("briefs", "contract", "delegate", "ledger", "protocol", "tools")
+TOPICS = ("contract", "delegate", "ledger", "protocol", "shaping", "tools")
 
 
 def sha256(path):

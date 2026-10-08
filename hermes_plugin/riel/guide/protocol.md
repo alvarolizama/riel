@@ -18,7 +18,7 @@ the conversation and how it sustains it.
 ```mermaid
 flowchart TD
   Q{What do you need?} -->|"Open/maintain an LLM\nconversation (protocol)"| SELF["THIS SKILL\nriel-protocol"]
-  Q -->|"Write a brief for\ndelegation"| RB[briefs]
+  Q -->|"Write a packet for\ndelegation"| RB[delegate]
   Q -->|"Mermaid structure\nof the task"| RC[contract]
   Q -->|"Verified state\n(ledger)"| RL[ledger]
 
@@ -110,7 +110,7 @@ discharge rule; lean on those.
 
 ### When delegating (subagents)
 
-In `delegate_task` briefs, apply the same conditions in `goal` + `context`:
+In `delegate_task` packets, apply the same conditions in `goal` + `context`:
 - `goal` opens with the shared objective ("We need…")
 - `context` carries only what the first action needs (repo, files, criteria)
 - Do not dump tools or instructions that do not belong to the current phase

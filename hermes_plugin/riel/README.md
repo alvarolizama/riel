@@ -11,7 +11,7 @@ tool recibe argv; el campo `tool` de la respuesta es provenance (qué tool
 contestó) y el `verb` cuando la tool lo lleva, nunca una interfaz.
 
 **La prosa viaja acá, y se lee por una sola puerta.** `guide/` trae seis topics
-(`protocol`, `ledger`, `contract`, `briefs`, `delegate`, `tools`): sin argumento
+(`protocol`, `ledger`, `contract`, `shaping`, `delegate`, `tools`): sin argumento
 `riel_guide()` devuelve el índice, `riel_guide(topic="contract")` el cuerpo y
 `riel_guide(topic="contract", section="Claim anchors")` sólo esa rebanada. La
 sección `riel` del prompt publica lo que el catálogo de tools no puede —que la

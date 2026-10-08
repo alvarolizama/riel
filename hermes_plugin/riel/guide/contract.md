@@ -314,6 +314,6 @@ label. (`mmdc` is the parser-level check; the rest are checks `riel_contract(ver
 
 ## Cross-references
 
-- One-shot agent instructions with the same vocabulary: `riel_guide(topic="briefs")`
+- One-shot agent instructions with the same vocabulary: `riel_guide(topic="delegate")`
 - The evidence the claims point back into: `riel/specs/spec-shaping-format.md`
 - The ledger that the VERIFY nodes feed: `riel_guide(topic="ledger")`

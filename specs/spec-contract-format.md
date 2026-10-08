@@ -156,5 +156,5 @@ leave a non-delegating task without its contract.
 
 - Ledger format: `spec-ledger-format.md` (Spec 1)
 - Session-todo mirror: `spec-todo-hermes.md` (Spec 6)
-- Packet skeleton + templates: riel_guide(topic="briefs")
+- Packet skeleton + templates: riel_guide(topic="delegate")
 - Graph conventions: riel_guide(topic="contract")

@@ -314,7 +314,7 @@ RIEL_GUIDE = {
         "the index (each topic with when to use it), with a topic for one guide, or with "
         "a topic and a section for just that slice. Read the guide that matches the work "
         "in front of you: 'contract' before authoring a plan, 'ledger' before running a "
-        "loop task, 'briefs' before dispatching a packet, 'delegate' before delegating, "
+        "loop task, 'shaping' before researching the evidence, 'delegate' before delegating, "
         "'protocol' when opening a conversation, 'tools' for the tool surface."
     ),
     "parameters": {
@@ -323,7 +323,7 @@ RIEL_GUIDE = {
             "topic": {
                 "type": "string",
                 "description": (
-                    "protocol | ledger | contract | briefs | delegate | tools. "
+                    "protocol | ledger | contract | shaping | delegate | tools. "
                     "Omit for the index."
                 ),
             },

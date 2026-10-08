@@ -24,7 +24,7 @@ if REPO not in sys.path:
 
 from hermes_plugin.riel import section  # noqa: E402  (path set above)
 
-TOPICS = ("protocol", "ledger", "contract", "briefs", "delegate", "tools")
+TOPICS = ("protocol", "ledger", "contract", "shaping", "delegate", "tools")
 
 
 def fake_hermes_config(settings=None):

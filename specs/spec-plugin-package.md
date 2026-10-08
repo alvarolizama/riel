@@ -52,8 +52,8 @@ version: 3.7.1
 | `guide/protocol.md` | `protocol` | the conversation protocol: grammar, persona, minimal surface |
 | `guide/ledger.md` | `ledger` | the state: Goal/Claims/Core/Verified/Open/Next (Spec 1) |
 | `guide/contract.md` | `contract` | mermaid as contract: closed verbs, funnel, anchors (Spec 2) |
-| `guide/briefs.md` | `briefs` | the packets a delegate receives |
-| `guide/delegate.md` | `delegate` | the delegation router |
+| `guide/delegate.md` | `delegate` | the packets a delegate receives AND the dispatch/verify cycle |
+| `guide/shaping.md` | `shaping` | the evidence before the plan |
 | `guide/tools.md` | `tools` | the tool surface and the engine's rules |
 
 **One door**: `riel_guide` reads them.

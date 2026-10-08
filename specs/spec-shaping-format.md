@@ -90,5 +90,5 @@ keeps its provenance anchor.
 - `spec-contract-format.md` (Spec 2) — the plan the shaping seeds; Claim anchors
 - `spec-ledger-format.md` (Spec 1) — the state the plan advances
 - `spec-todo-hermes.md` (Spec 6) — the plan mirror
-- `riel_guide(topic="briefs")` — the template, and the shaping step before the contract
+- `riel_guide(topic="shaping")` — the operative guide; `riel_guide(topic="delegate")` — the plan it feeds
 - `riel_guide(topic="tools")` — `shaping validate`, `shaping new`, the seam's anchors
