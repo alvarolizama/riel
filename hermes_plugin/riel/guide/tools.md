@@ -1,7 +1,7 @@
 ---
 topic: tools
 trigger: "Use when you need Riel's tool surface — which of the twelve tools writes what, what each returns, and the template, fetch and exit-code rules. There is no command line: the tools are the interface."
-version: 1.16.0
+version: 1.17.0
 ---
 
 # tools — Riel's tool surface (Riel)
@@ -55,7 +55,7 @@ cwd, never the process's — and nothing is typed into a shell.
 | `riel_shaping` | `verb` (new/validate) + `params`/`file`/`force` | the pre-contract research |
 | `riel_clean` | `scope` (ledger/all/purge) | archives `.riel/` state |
 | `riel_fetch` | `url`, `out`, `sha256`, `headers`, `allow_http` | a remote contract, on disk |
-| `riel_check` | `file` | dense-register check + graph digest |
+| `riel_check` | `file`, `mermaid=true` | dense-register check, graph digest, and the parser-level check of every diagram |
 
 Every tool returns the same envelope: `{tool, worktree, exit_code, passed,
 stdout, stderr}` plus its own keys (`verb` when the tool takes one, and the

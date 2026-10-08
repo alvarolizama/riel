@@ -434,25 +434,33 @@ def riel_fetch(args: dict, **kwargs) -> str:
 
 
 def riel_check(args: dict, **kwargs) -> str:
-    """A file's delivery check: dense-register markers plus its mermaid digest."""
+    """A file's delivery check: dense markers, the graph digest and — when asked
+    with `mermaid=true` — the parser-level check of every mermaid block (mmdc).
+    """
     target = str(args.get("file") or "").strip()
     if not target:
         return _error("riel_check needs 'file'")
     path = os.path.expanduser(target)
     ship = json.loads(_run(["ship", path], args, kwargs, tool="riel_check", verb="ship"))
     digest = json.loads(_run(["digest", path], args, kwargs, tool="riel_check", verb="digest"))
-    return json.dumps(
-        {
-            "file": path,
-            "worktree": ship.get("worktree"),
-            "ship": {"exit_code": ship.get("exit_code"), "passed": ship.get("passed"),
-                     "stdout": ship.get("stdout"), "stderr": ship.get("stderr")},
-            "digest": {"exit_code": digest.get("exit_code"), "passed": digest.get("passed"),
-                       "stdout": digest.get("stdout"), "stderr": digest.get("stderr")},
-            "passed": bool(ship.get("passed")) and bool(digest.get("passed")),
-        },
-        ensure_ascii=False,
-    )
+    payload = {
+        "file": path,
+        "worktree": ship.get("worktree"),
+        "ship": {"exit_code": ship.get("exit_code"), "passed": ship.get("passed"),
+                 "stdout": ship.get("stdout"), "stderr": ship.get("stderr")},
+        "digest": {"exit_code": digest.get("exit_code"), "passed": digest.get("passed"),
+                   "stdout": digest.get("stdout"), "stderr": digest.get("stderr")},
+        "passed": bool(ship.get("passed")) and bool(digest.get("passed")),
+    }
+    if args.get("mermaid"):
+        parse = json.loads(_run(["mermaid", path], args, kwargs, tool="riel_check", verb="mermaid"))
+        payload["mermaid"] = {
+            "exit_code": parse.get("exit_code"), "passed": parse.get("passed"),
+            "stdout": parse.get("stdout"), "stderr": parse.get("stderr"),
+        }
+        # No blocks or no mmdc is exit 0 with a SKIP line: silence is not a failure.
+        payload["passed"] = payload["passed"] and bool(parse.get("passed"))
+    return json.dumps(payload, ensure_ascii=False)
 
 
 def riel_guide(args: dict, **kwargs) -> str:

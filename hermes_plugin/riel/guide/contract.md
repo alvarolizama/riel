@@ -1,7 +1,7 @@
 ---
 topic: contract
 trigger: "Use when authoring mermaid verb-graph contracts for skills and todos — 3-layer pattern, closed verb vocabulary, verification funnel, ASK escalation, machine-checkable."
-version: 3.7.3
+version: 3.7.5
 ---
 
 # contract — mermaid verb-graph contracts (Riel)
@@ -265,8 +265,8 @@ the deliverable exists.
 
 ## Syntax validation
 
-Repo tooling: `scripts/validate-mermaid.sh` extracts every mermaid block
-(`scripts/extract-mermaid.py`, Python regex with `re.DOTALL`) and pipes
+Repo tooling: `riel_check(mermaid=true)` extracts every mermaid block
+(`riel_check(mermaid=true)`, or the engine's `mermaid` over several files) and pipes
 each through `mmdc`. Requires mermaid-cli
 (`npm install -g @mermaid-js/mermaid-cli`).
 
@@ -309,7 +309,7 @@ label. (`mmdc` is the parser-level check; the rest are checks `riel_brief(verb="
 - [ ] Claims carry their anchor (`§Section#n` | node id | `shaping:F#`), one
       line per claim
 - [ ] Verification funnel before End; loops with counters
-- [ ] Mermaid parses: `scripts/validate-mermaid.sh`
+- [ ] Mermaid parses: `riel_check(file=…, mermaid=true)` (or the engine's `mermaid` over several files)
 - [ ] The why-prose intact (mermaid adds, does not replace)
 
 ## Cross-references

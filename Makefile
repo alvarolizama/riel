@@ -7,8 +7,8 @@
 # PATH — so there is no install target here.
 #
 # There is no build step either: the package's tree IS the source. Edit it in
-# place; `tests/` covers it, `scripts/validate-mermaid.sh` parses its diagrams
-# and `specs/` is the long form of its formats.
+# place; `tests/` covers it, the engine's own `mermaid` subcommand parses its
+# diagrams (`make validate`) and `specs/` is the long form of its formats.
 
 PKG = hermes_plugin/riel
 
@@ -27,7 +27,7 @@ test:
 
 ## validate: parse every mermaid block with mmdc (needs mermaid-cli on PATH)
 validate:
-	scripts/validate-mermaid.sh
+	python3 $(PKG)/engine/run.py mermaid README.md specs/*.md $(PKG)/guide/*.md $(PKG)/templates/*.md
 
 ## digest: print the explicit graph digest for the README, the specs and the guides
 digest:

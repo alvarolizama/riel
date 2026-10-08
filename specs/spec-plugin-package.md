@@ -153,7 +153,7 @@ The twelve tools are the surface:
 | `riel_shaping` (new/validate) | the shaping (Spec 7) |
 | `riel_clean` (ledger/all/purge) | archive `.riel/` state |
 | `riel_fetch` | a remote contract, on disk |
-| `riel_check` | dense markers + graph digest on one file |
+| `riel_check` | dense markers + graph digest on one file (+ `mermaid=true`: the parser check) |
 
 Every tool returns one envelope — `{tool, worktree, exit_code, passed, stdout,
 stderr}` plus its own keys (`verb` when the tool takes one) — so a caller, a test

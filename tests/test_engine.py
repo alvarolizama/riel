@@ -22,24 +22,12 @@ PLUGIN = os.path.join(REPO, "hermes_plugin", "riel")
 # The engine lives INSIDE the package: it is the product's own tree, not a copy.
 ENGINE = os.path.join(PLUGIN, "engine", "run.py")
 BRIEFS_TEMPLATES = os.path.join(PLUGIN, "templates")
-EXTRACT_MERMAID = os.path.join(REPO, "scripts", "extract-mermaid.py")
 
 
 def run(*argv, cwd=None):
     """Run the engine and return (exit_code, stdout, stderr)."""
     proc = subprocess.run(
         [sys.executable, ENGINE] + list(argv),
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-    )
-    return proc.returncode, proc.stdout, proc.stderr
-
-
-def run_script(script, *argv, cwd=None):
-    """Run a repo script and return (exit_code, stdout, stderr)."""
-    proc = subprocess.run(
-        [sys.executable, script] + list(argv),
         cwd=cwd,
         capture_output=True,
         text=True,
@@ -698,31 +686,59 @@ d
             self.assertEqual(rc, 0, "%s: %s" % (name, out))
 
 
-class ExtractMermaidTests(TempDirTest):
+class MermaidTests(TempDirTest):
+    """`mermaid FILE...` — the parser-level check the repo gate and riel_check use.
+
+    Silence is the contract: no mmdc (or no blocks) is exit 0, never an error.
+    """
+
     def _write(self, name, content):
         path = os.path.join(self.tmp, name)
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(content)
         return path
 
-    def test_extracts_blocks_in_order(self):
+    def test_a_clean_file_passes(self):
         md = self._write(
             "doc.md",
-            "# t\n\n```mermaid\nflowchart TD\n  A --> B\n```\n\n"
-            "prose\n\n```mermaid\nflowchart LR\n  C --> D\n```\n",
+            "# t\n\n```mermaid\nflowchart TD\n  A --> B\n```\n\nprose\n",
         )
-        out_dir = os.path.join(self.tmp, "out")
-        rc, _, err = run_script(EXTRACT_MERMAID, md, out_dir)
+        rc, out, err = run("mermaid", md)
         self.assertEqual(rc, 0, err)
-        self.assertEqual(sorted(os.listdir(out_dir)), ["001.mmd", "002.mmd"])
-        with open(os.path.join(out_dir, "001.mmd"), encoding="utf-8") as fh:
-            self.assertIn("A --> B", fh.read())
+        self.assertIn("PASS:", out)
 
-    def test_no_blocks_exits_zero(self):
+    def test_a_file_without_blocks_is_skipped_not_failed(self):
         md = self._write("plain.md", "just prose, no diagrams\n")
-        out_dir = os.path.join(self.tmp, "empty")
-        rc, _, _ = run_script(EXTRACT_MERMAID, md, out_dir)
+        rc, out, _ = run("mermaid", md)
         self.assertEqual(rc, 0)
+        self.assertIn("SKIP:", out)
+        self.assertIn("0 failed", out)
+
+    def test_a_broken_block_fails_with_a_line_per_block(self):
+        md = self._write(
+            "broken.md",
+            "# t\n\n```mermaid\nflowchart TD\n  A --> B\n  C -->\n```\n",
+        )
+        rc, out, _ = run("mermaid", md)
+        # Without mmdc installed the check is silent: only assert the failure when
+        # the parser is actually there (the gate runs where it is).
+        if shutil.which(os.environ.get("RIEL_MMDC", "mmdc")):
+            self.assertEqual(rc, 1, out)
+            self.assertIn("FAIL:", out)
+        else:
+            self.assertEqual(rc, 0, out)
+
+    def test_a_missing_file_fails_loudly(self):
+        rc, out, _ = run("mermaid", os.path.join(self.tmp, "nope.md"))
+        self.assertEqual(rc, 1)
+        self.assertIn("MISSING:", out)
+
+    def test_several_files_in_one_call(self):
+        a = self._write("a.md", "# a\n\n```mermaid\nflowchart TD\n  A --> B\n```\n")
+        b = self._write("b.md", "# b\nno diagrams\n")
+        rc, out, err = run("mermaid", a, b)
+        self.assertEqual(rc, 0, err)
+        self.assertIn("b.md", out)
 
 
 class ContractSeedTests(TempDirTest):

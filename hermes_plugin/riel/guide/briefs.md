@@ -1,7 +1,7 @@
 ---
 topic: briefs
 trigger: "Use when writing self-contained agent briefs on the fly — curated context, verb-graph, gates, anchored opening. Dispatch packets for delegate_task."
-version: 3.8.2
+version: 3.8.3
 ---
 
 # briefs — Dispatch briefs (Riel)
@@ -302,7 +302,7 @@ Structure:
       does not resolve
 - [ ] `## DO NOT` is present and non-empty
 
-Graph (validable con `mmdc` / `scripts/validate-mermaid.sh`):
+Graph (validable con `mmdc` / `riel_check(file=…, mermaid=true)`):
 
 - [ ] The execution graph parses (`mmdc`)
 - [ ] Every execution node starts with a verb from the closed vocabulary

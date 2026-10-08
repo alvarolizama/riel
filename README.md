@@ -47,11 +47,11 @@ tree that ships; the suite covers it in place.
 | Component | What it steers | Status |
 |---|---|---|
 | riel_guide(topic="ledger") | **State** — Goal/Claims/Core/Verified/Open/Next, re-read at every seam, recovery via checkpoints, opening rules over an existing `.riel/`, mirrors to the session todo | ✅ guide v1.15.2 |
-| riel_guide(topic="contract") | **Structure** — mermaid as contract: closed verb vocabulary, verification funnel, graph digest, machine-checkable | ✅ guide v3.7.3 |
+| riel_guide(topic="contract") | **Structure** — mermaid as contract: closed verb vocabulary, verification funnel, graph digest, machine-checkable | ✅ guide v3.7.5 |
 | riel_guide(topic="protocol") | **Trajectory** — functional grammar, persona, minimal surface on the first turn | ✅ guide v1.7.2 |
-| riel_guide(topic="briefs") | **Delegation briefs** — self-contained packets: curated context + the `### Why` rationale and context-keyword index, verb-graph, pre-registered claims (with their anchors), executable gates, the shaping step before the plan, templates | ✅ guide v3.8.2 |
+| riel_guide(topic="briefs") | **Delegation briefs** — self-contained packets: curated context + the `### Why` rationale and context-keyword index, verb-graph, pre-registered claims (with their anchors), executable gates, the shaping step before the plan, templates | ✅ guide v3.8.3 |
 | riel_guide(topic="delegate") | **Delegation router** — plan, dispatch waves, JSON-schema'd returns, parent verifies | ✅ guide v1.3.2 |
-| riel_guide(topic="tools") | **Tooling** — the tool surface: `riel_note` writes the ledger mechanically, `riel_clean` archives the worktree state with flat in-`.riel/` backups, `riel_brief` instantiates/validates packets, slices a phase into a child packet (inheriting the Objective, the `### Why` rationale and the keywords) and expands the graph digest, `riel_todo` derives the session-todo mirror (the plan: the contract's goal, phases and steps), `riel_state` the ledger mirror the chip and the gate fold, `riel_context` emits the context keywords, `riel_fetch` fetches a remote contract to disk (HTTPS, atomic, sha256-verified), `riel_shaping` validates a shaping (Spec 7) and `riel_seam(anchors=true)` re-reads each claim beside the anchored region that supports it | ✅ guide v1.16.0 |
+| riel_guide(topic="tools") | **Tooling** — the tool surface: `riel_note` writes the ledger mechanically, `riel_clean` archives the worktree state with flat in-`.riel/` backups, `riel_brief` instantiates/validates packets, slices a phase into a child packet (inheriting the Objective, the `### Why` rationale and the keywords) and expands the graph digest, `riel_todo` derives the session-todo mirror (the plan: the contract's goal, phases and steps), `riel_state` the ledger mirror the chip and the gate fold, `riel_context` emits the context keywords, `riel_fetch` fetches a remote contract to disk (HTTPS, atomic, sha256-verified), `riel_shaping` validates a shaping (Spec 7) and `riel_seam(anchors=true)` re-reads each claim beside the anchored region that supports it | ✅ guide v1.17.0 |
 
 Each component is independent and optional: a short task uses zero; a long
 loop may use all six. Use only the machinery the task earns.
@@ -229,7 +229,7 @@ stderr}` plus its own keys. `command` is provenance, never something to type.
 | `riel_shaping` | `new` drops the Spec 7 skeleton, `validate` checks a shaping |
 | `riel_clean` | archive the worktree's `.riel/` state — flat timestamped backups inside `.riel/` (`ledger-<ts>.bak.md`, never a subdirectory); `all` includes the contract and the shaping, `purge` removes without backup; ask the user before cleaning (rule in riel_guide(topic="ledger")) |
 | `riel_fetch` | download a contract into the worktree — run it at the **task opening** (`riel_resume`/`riel_seam`/`riel_note(from_contract=true)`), not only when delegating; atomic, sha256-pinned, HTTPS by default (`allow_http` for a trusted transport such as a VPN); the URL may carry a short-lived single-use token instead of the API key, and is never printed |
-| `riel_check` | dense-register check on one file before delivery + the explicit text digest of its graph |
+| `riel_check` | dense-register check on one file before delivery + the explicit text digest of its graph; `mermaid=true` also parses every block with mermaid-cli |
 
 ### The Hermes plugin
 
@@ -320,7 +320,7 @@ desktop plugins** if the chip does not appear).
 | The 6 skills (markdown only) | runtime | nothing — they are read by the agent |
 | The engine (`engine/run.py`) | runtime (loop/delegate tasks) | **Python 3, stdlib only** |
 | Task templates (`templates/`) | runtime | nothing — the engine reads them directly |
-| `scripts/validate-mermaid.sh` | development (validate graph files) | Node + `mmdc`: `npm install -g @mermaid-js/mermaid-cli` |
+| The engine's `mermaid` (via `riel_check(mermaid=true)` or `make validate`) | development (parse graph files) | Node + `mmdc`: `npm install -g @mermaid-js/mermaid-cli` — optional |
 | `tests/` | development (run the suite) | Python 3, stdlib only (the desktop half's tests also use `node`; the FastAPI route tests need a Hermes interpreter) |
 | Hermes plugin package (`hermes_plugin/riel/`) | Hermes users | Hermes + Python 3; it carries the prose (`guide/`), the engine (`engine/run.py`) and the templates (`templates/`) |
 
@@ -334,7 +334,7 @@ the parser-level mmdc check. Nothing in the runtime path requires mmdc.
 |---|---|
 | `help` | list targets (default when you run bare `make`) |
 | `test` | regression suite (unittest discovery) |
-| `validate` | parse every mermaid block with `mmdc` |
+| `validate` | parse every mermaid block with `mmdc` (the engine's `mermaid`) |
 | `digest` | print the explicit graph digest for the README, the specs and the guides |
 | `lint` | byte-compile the Python tooling; `shellcheck` if present |
 
@@ -361,11 +361,9 @@ riel/
 │   ├── spec-contract-format.md  ← .riel/contract.md format (the plan) + claim anchors
 │   ├── spec-shaping-format.md   ← .riel/shaping.md format (the evidence before the plan)
 │   └── spec-todo-hermes.md      ← session-todo mirror (the plan) + ledger mirror (state)
-├── scripts/           ← repo tooling
-│   ├── validate-mermaid.sh     ← validates every mermaid block with mmdc
-│   ├── extract-mermaid.py      ← extracts mermaid blocks (regex, re.DOTALL)
-│   └── probe-session-cwd.py    ← the LIVE probe: real discovery, registry
-│                              dispatch, session cwd, the gate (needs Hermes)
+└── scripts/           ← repo tooling
+    └── probe-session-cwd.py    ← the LIVE probe: real discovery, registry
+                                dispatch, session cwd, the gate (needs Hermes)
 └── tests/             ← stdlib unittest suite (engine, guide, plugin, chip)
 ```
 
@@ -375,11 +373,12 @@ riel/
 make test     # or: python3 -m unittest discover -s tests -v
 ```
 
-Stdlib-only, subprocess-driven. 283 tests cover `riel_note`, `riel_seam` (with
+Stdlib-only, subprocess-driven. 288 tests cover `riel_note`, `riel_seam` (with
 anchors), `riel_resume`, `riel_todo`, `riel_state`, `riel_context`, `riel_brief`
 (new/validate/digest/slice), `riel_shaping` (new/validate), `riel_clean`,
-`riel_fetch`, `riel_check`, the graph
-and claim-anchor checks, and `extract-mermaid.py` end-to-end, plus the Hermes
+`riel_fetch`, `riel_check` (dense markers, digest and the `mermaid=true`
+parser half), the graph
+and claim-anchor checks, plus the Hermes
 plugin package: manifest/schema/handler wiring, the handlers end-to-end through the bundled
 copy, the prompt section and the three switch groups, the statusbar chip rendered by node against a stubbed SDK (labels,
 tooltip, click, and the refetch a finished tool triggers), the backend
@@ -403,12 +402,13 @@ It finds the agent tree at `$HERMES_AGENT_ROOT` (default
 `~/.hermes/hermes-agent`) and runs `hermes_bootstrap` the way the launcher does,
 so any Python 3 works.
 
-Graph docs are validated with mermaid-cli:
+Graph docs are validated with mermaid-cli — the engine's own `mermaid`
+subcommand, the same one behind `riel_check(mermaid=true)`:
 
 ```bash
-make validate                          # every mermaid block, via mmdc
-scripts/validate-mermaid.sh README.md  # a single file
-make digest                            # explicit text digest of every graph
+make validate                                        # every mermaid block
+python3 hermes_plugin/riel/engine/run.py mermaid README.md   # one file
+make digest                                          # explicit text digest
 ```
 
 ## License

@@ -285,12 +285,22 @@ RIEL_CHECK = {
         "must not leak, plus the explicit text digest of its mermaid graph. Run it before "
         "handing a packet, a brief or a contract to someone else: a doc that fails `ship` has "
         "internal shorthand in it, and the digest is what the receiving agent should read "
-        "instead of re-deriving the graph from the diagram."
+        "instead of re-deriving the graph from the diagram. With mermaid=true it ALSO parses "
+        "every mermaid block with mermaid-cli (when installed), so a diagram that no renderer "
+        "accepts never reaches a reader."
     ),
     "parameters": {
         "type": "object",
         "properties": {
             "file": {"type": "string", "description": "The file to check, relative to the worktree."},
+            "mermaid": {
+                "type": "boolean",
+                "description": (
+                    "Also parse each mermaid block with mmdc (needs mermaid-cli on PATH; "
+                    "silently skipped when absent). Use it when the file carries diagrams "
+                    "someone else will render."
+                ),
+            },
             "worktree": _WORKTREE,
         },
         "required": ["file"],

@@ -168,6 +168,27 @@ class TypedToolsTest(unittest.TestCase):
         self.assertIn("digest", payload)
         self.assertEqual(payload["ship"]["exit_code"], 0, payload)
         self.assertIn("A", payload["digest"]["stdout"])
+        self.assertNotIn("mermaid", payload, "the parser-level half is opt-in")
+
+    def test_check_parses_the_diagrams_when_asked(self):
+        """`mermaid=true` adds the parser-level half, and only then."""
+        target = os.path.join(self.tmp, "doc.md")
+        with open(target, "w", encoding="utf-8") as handle:
+            handle.write("# Doc\n\n```mermaid\nflowchart TD\n  A[\"x\"] --> B[\"y\"]\n```\n")
+        payload = self.call("riel_check", {"file": target, "mermaid": True})
+        self.assertIn("mermaid", payload)
+        self.assertEqual(payload["mermaid"]["exit_code"], 0, payload)
+        self.assertIn("PASS:", payload["mermaid"]["stdout"])
+        self.assertTrue(payload["passed"], payload)
+
+    def test_check_without_diagrams_is_not_a_failure(self):
+        """A file with no mermaid block is skipped, never failed."""
+        target = os.path.join(self.tmp, "plain.md")
+        with open(target, "w", encoding="utf-8") as handle:
+            handle.write("# Plain\nno diagrams at all\n")
+        payload = self.call("riel_check", {"file": target, "mermaid": True})
+        self.assertEqual(payload["mermaid"]["exit_code"], 0, payload)
+        self.assertIn("SKIP:", payload["mermaid"]["stdout"])
 
     def test_state_is_the_ledger_mirror(self):
         payload = self.call("riel_state", {})

@@ -19,6 +19,7 @@ Usage:
     clean   [--all] [--purge]            # limpia .riel/ con backup plano
     ship    FILE...
     digest  FILE [-o OUT]
+    mermaid FILE...                              # parsea cada bloque con mmdc
     anchor  [P#] [--contract PATH] [--shaping PATH]  # claim + su región
     shaping validate [PATH]              # valida .riel/shaping.md (Spec 7)
     shaping new [-o PATH] [--force] [--param k=v ...]
@@ -42,12 +43,14 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-VERSION = "1.6.0"
+VERSION = "1.7.0"
 LEDGER_DIR = ".riel"
 LEDGER_PATH = os.path.join(LEDGER_DIR, "ledger.md")
 CONTRACT_PATH = os.path.join(LEDGER_DIR, "contract.md")
 SHAPING_PATH = os.path.join(LEDGER_DIR, "shaping.md")
 VERIFY_CMD = os.environ.get("RIEL_MMDC", "mmdc")
+# A wedged mermaid-cli must not wedge the caller: every mmdc call is bounded.
+MMDC_TIMEOUT = float(os.environ.get("RIEL_MMDC_TIMEOUT", "20"))
 
 DENSE_RE = re.compile(r"[✓?]\d+|↔|⇒|⊕|λ|Σ")
 
@@ -1158,6 +1161,44 @@ _TOOL_NAMES = ("read_file", "write_file", "patch", "terminal", "clarify",
                "search_files")
 
 
+def mermaid_blocks(text):
+    """Every ```mermaid block in *text*, in authored order."""
+    return re.findall(r"```mermaid\n(.*?)```", text, re.S)
+
+
+def mmdc_issues(blocks, timeout=None):
+    """Parse each block with mmdc → a list of issue strings (empty when clean).
+
+    Silence when mmdc is not installed: the parser-level check is a bonus, never
+    a hard dependency. The call is BOUNDED — a wedged mermaid-cli must not wedge
+    the tool that asked for it.
+    """
+    if not blocks or not shutil.which(VERIFY_CMD):
+        return []
+    cap = MMDC_TIMEOUT if timeout is None else timeout
+    issues = []
+    out_dir = tempfile.mkdtemp(prefix="riel-mmdc-")
+    try:
+        for idx, block in enumerate(blocks):
+            src = os.path.join(out_dir, "block{}.mmd".format(idx))
+            out = os.path.join(out_dir, "block{}.svg".format(idx))
+            with open(src, "w", encoding="utf-8") as fh:
+                fh.write(block)
+            try:
+                res = subprocess.run(
+                    [VERIFY_CMD, "-i", src, "-o", out, "--quiet"],
+                    capture_output=True, timeout=cap)
+            except subprocess.TimeoutExpired:
+                issues.append("mermaid block {} timed out after {}s".format(idx, cap))
+                continue
+            if res.returncode != 0:
+                issues.append("mermaid block {} fails mmdc:\n{}".format(
+                    idx, res.stderr.decode("utf-8", "replace")[:400]))
+    finally:
+        shutil.rmtree(out_dir, ignore_errors=True)
+    return issues
+
+
 def _first_mermaid(text):
     """Return the body of the first ```mermaid block, or None."""
     tag = "```mermaid"
@@ -1526,11 +1567,11 @@ def cmd_brief_validate(args):
 
     # Graph conventions
     parsed_nodes = {}
-    mermaid_blocks = re.findall(r"```mermaid\n(.*?)```", text, re.S)
-    if not mermaid_blocks:
+    blocks = re.findall(r"```mermaid\n(.*?)```", text, re.S)
+    if not blocks:
         issues.append("no mermaid execution graph found")
     else:
-        g = mermaid_blocks[0]
+        g = blocks[0]
         parsed_nodes, parsed_edges = mermaid_graph(g)
         ok_ids = {"S", "G", "W", "F", "END", "START", "Q", "SELF", "DC", "APP",
                   "REC", "FIX", "ERR"}
@@ -1541,19 +1582,19 @@ def cmd_brief_validate(args):
         if bad_ids:
             issues.append("non-predictable node ids: {}".format(sorted(set(bad_ids))))
         # A graph with nodes but no edges at all is degenerate
-        if "-->" not in mermaid_blocks[0]:
+        if "-->" not in blocks[0]:
             issues.append("execution graph has no edges")
-        pops_run = re.findall(r'\[\"RUN ', mermaid_blocks[0])
-        pops_verify = re.findall(r'\{"[^\"]*"', mermaid_blocks[0])
+        pops_run = re.findall(r'\[\"RUN ', blocks[0])
+        pops_verify = re.findall(r'\{"[^\"]*"', blocks[0])
         if not pops_run:
             issues.append("no RUN gate found in graph")
         if not pops_verify:
             issues.append("no VERIFY/Check decision found in graph (funnel missing)")
         # Every decision node must have at least one labeled outgoing edge
-        decisions = re.findall(r"([A-Za-z_][A-Za-z0-9_]*)\{", mermaid_blocks[0])
+        decisions = re.findall(r"([A-Za-z_][A-Za-z0-9_]*)\{", blocks[0])
         for node in set(decisions):
             if not re.search(
-                r"{}.*-->?\s*\|".format(re.escape(node)), mermaid_blocks[0]
+                r"{}.*-->?\s*\|".format(re.escape(node)), blocks[0]
             ):
                 issues.append(
                     "decision node {!r} has no labeled outgoing edge".format(node)
@@ -1604,26 +1645,7 @@ def cmd_brief_validate(args):
                 "bounded retries prevent infinite loops")
 
     # if mmdc is available, try parsing each graph block
-    if shutil.which(VERIFY_CMD) and mermaid_blocks:
-        out_dir = tempfile.mkdtemp(prefix="riel-validate-")
-        try:
-            for idx, block in enumerate(mermaid_blocks):
-                src = os.path.join(out_dir, "block{}.mmd".format(idx))
-                out = os.path.join(out_dir, "block{}.svg".format(idx))
-                with open(src, "w", encoding="utf-8") as fh:
-                    fh.write(block)
-                res = subprocess.run(
-                    [VERIFY_CMD, "-i", src, "-o", out, "--quiet"],
-                    capture_output=True,
-                )
-                if res.returncode != 0:
-                    issues.append(
-                        "mermaid block {} fails mmdc:\n{}".format(
-                            idx, res.stderr.decode("utf-8", "replace")[:400]
-                        )
-                    )
-        finally:
-            shutil.rmtree(out_dir, ignore_errors=True)
+    issues.extend(mmdc_issues(blocks))
 
     # Claim anchors (Spec 2 + Spec 7). A claim with no anchor cannot be
     # re-read at a seam — a WARN, never fatal: the shipped templates carry
@@ -1681,6 +1703,42 @@ def _redact_url(url):
         return urllib.parse.urlunsplit(
             (parts.scheme, parts.netloc, parts.path, "", parts.fragment))
     return url
+
+
+def cmd_mermaid(args):
+    """Parse every mermaid block of the given files with mmdc.
+
+    The repo gate behind `make validate` and the parser-level half of
+    `riel_check(mermaid=true)`: silence (exit 0) when there are no blocks or no
+    mmdc, exit 1 with one line per failing block.
+    """
+    total, failed = 0, 0
+    for path in args.file:
+        path = os.path.expanduser(path)
+        if not os.path.isfile(path):
+            print("MISSING: {}".format(path))
+            failed += 1
+            continue
+        with open(path, encoding="utf-8") as fh:
+            blocks = mermaid_blocks(fh.read())
+        if not blocks:
+            print("SKIP: {} (no mermaid block)".format(path))
+            continue
+        total += len(blocks)
+        issues = mmdc_issues(blocks)
+        if issues:
+            failed += len(issues)
+            for issue in issues:
+                print("FAIL: {} -> {}".format(path, issue.replace("\n", " ")[:200]))
+        else:
+            print("PASS: {} -> {} block(s)".format(path, len(blocks)))
+    print("----")
+    if not shutil.which(VERIFY_CMD):
+        print("mmdc not found (install: npm install -g @mermaid-js/mermaid-cli) "
+              "— {} block(s) skipped".format(total))
+        return 0
+    print("{} blocks, {} failed".format(total, failed))
+    return 0 if failed == 0 else 1
 
 
 def cmd_fetch(args):
@@ -1865,6 +1923,12 @@ def main(argv=None):
     h = sub.add_parser("ship", help="check outgoing file for dense markers")
     h.add_argument("files", nargs="+")
     h.set_defaults(fn=cmd_ship)
+
+    mm = sub.add_parser("mermaid",
+                        help="parse every mermaid block of FILE... with mmdc "
+                             "(silent without mmdc; bounded per call)")
+    mm.add_argument("file", nargs="+", help="markdown files to check")
+    mm.set_defaults(fn=cmd_mermaid)
 
     dg = sub.add_parser("digest",
                         help="explicit text digest of a file's mermaid graph")
