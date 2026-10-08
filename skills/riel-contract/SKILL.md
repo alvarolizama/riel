@@ -1,7 +1,7 @@
 ---
 name: riel-contract
 description: "Use when authoring mermaid verb-graph contracts for skills and todos — 3-layer pattern, closed verb vocabulary, verification funnel, ASK escalation, machine-checkable."
-version: 3.7.0
+version: 3.7.1
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -55,7 +55,7 @@ not the capability.
 
 This pattern applies to skills that **route** — that pick a sub-flow or hand
 off to another skill. A skill whose graph is a *lifecycle or protocol*
-(e.g. `riel-ledger`'s seam loop) carries the graph **without** an Entry
+(e.g. `riel:ledger`'s seam loop) carries the graph **without** an Entry
 router / Parse contract: there is nothing to route, and an artificial router
 is noise.
 
@@ -160,7 +160,7 @@ flowchart TD
 | Routers | `Q`, `SELF` | Entry routers and narrative flows |
 
 No variable semantic IDs (`setupDB`, `fixBug`) — small models parse by
-regex; fixed IDs are predictable. `rielctl brief validate` keeps this same
+regex; fixed IDs are predictable. `riel_brief(verb="validate")` keeps this same
 whitelist (plus `DC`/`APP`/`REC`/`FIX` for lifecycle graphs), so doc and
 tool agree.
 
@@ -242,11 +242,11 @@ The claim stays on ONE line — the ledger seed reads line by line, and
 `brief slice` copies the section verbatim, so an anchor written there travels
 to the child for free.
 
-`rielctl brief validate` enforces it: no anchor is a `WARN` (never fatal — the
+`riel_brief(verb="validate")` enforces it: no anchor is a `WARN` (never fatal — the
 shipped templates carry none); an unresolvable `§` anchor or an anchor in no
 known form is an `ISSUE`; a node absent from the local graph is the
 inherited-on-a-slice case (`WARN`), and so is a `shaping:F#` the shaping does
-not have. `rielctl anchor` prints each claim beside the region it names.
+not have. `riel_seam(anchors=true)` prints each claim beside the region it names.
 
 ## Graph digest — the explicit text beside the diagram
 
@@ -262,7 +262,7 @@ spelled out as plain text — elements, authored edges, branch candidates,
 entry/terminals, loops, and a "meaning & limits" footer. Generate it with:
 
 ```bash
-rielctl brief digest .riel/contract.md
+riel_brief(verb="digest", file=".riel/contract.md")
 ```
 
 The digest is best-effort and quote-aware (no parser dependency); it proves
@@ -277,11 +277,11 @@ each through `mmdc`. Requires mermaid-cli
 (`npm install -g @mermaid-js/mermaid-cli`).
 
 The verb vocabulary and the graph conventions above are **enforced**, not
-just documented: `rielctl brief validate` rejects an execution node that
+just documented: `riel_brief(verb="validate")` rejects an execution node that
 does not start with a closed verb, an `ASK` node that does not name its
 trigger, a `<br/>`, a `style` in the execution DAG, and a tool name in a
 node label; it warns on a loop with no counter guard and on an over-long
-label. (`mmdc` is the parser-level check; the rest are greps in `rielctl`.)
+label. (`mmdc` is the parser-level check; the rest are greps in the engine.)
 
 ## Pitfalls
 
@@ -320,6 +320,6 @@ label. (`mmdc` is the parser-level check; the rest are greps in `rielctl`.)
 
 ## Cross-references
 
-- One-shot agent instructions with the same vocabulary: `riel-briefs`
+- One-shot agent instructions with the same vocabulary: `riel:briefs`
 - The evidence the claims point back into: `riel/specs/spec-shaping-format.md`
-- The ledger that the VERIFY nodes feed: `riel-ledger`
+- The ledger that the VERIFY nodes feed: `riel:ledger`

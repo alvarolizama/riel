@@ -1,7 +1,7 @@
 ---
 name: riel-protocol
 description: "Use when opening or maintaining a conversation with an LLM — functional grammar, persona, minimal-surface protocol. Never rewrites the user's request."
-version: 1.7.0
+version: 1.7.1
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -15,7 +15,7 @@ metadata:
 This component steers **the trajectory**: how the agent opens and maintains
 a conversation with an LLM.
 
-**Protocol mode:** the user's request reaches the model **raw**. riel-protocol
+**Protocol mode:** the user's request reaches the model **raw**. riel:protocol
 does NOT rephrase or rewrite requests — it changes how the agent **enters**
 the conversation and how it sustains it.
 
@@ -24,9 +24,9 @@ the conversation and how it sustains it.
 ```mermaid
 flowchart TD
   Q{What do you need?} -->|"Open/maintain an LLM\nconversation (protocol)"| SELF["THIS SKILL\nriel-protocol"]
-  Q -->|"Write a brief for\ndelegation"| RB[riel-briefs]
-  Q -->|"Mermaid structure\nof the task"| RC[riel-contract]
-  Q -->|"Verified state\n(ledger)"| RL[riel-ledger]
+  Q -->|"Write a brief for\ndelegation"| RB[riel:briefs]
+  Q -->|"Mermaid structure\nof the task"| RC[riel:contract]
+  Q -->|"Verified state\n(ledger)"| RL[riel:ledger]
 
   style SELF fill:#d1fae5,stroke:#059669
 ```
@@ -150,7 +150,7 @@ a writing discipline costs nothing to keep.
 
 These conditions order the opening and discipline the conversation. They are
 **not** a measured score improvement — do not claim gains from them. Task
-verification lives in the done-check of `riel-ledger`.
+verification lives in the done-check of `riel:ledger`.
 
 ## Pitfalls
 

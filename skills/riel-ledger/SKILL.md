@@ -1,7 +1,7 @@
 ---
 name: riel-ledger
 description: "Use when running a loop-mode task — write the local Goal/Core/Verified/Open/Next ledger in the worktree, re-read at every seam, verify before done. No remote dependency."
-version: 1.15.0
+version: 1.15.1
 author: Álvaro Lizama
 license: MIT
 metadata:
@@ -38,7 +38,7 @@ verified; hours passed and you cannot remember where you left off.
 - Lives at the worktree root; goes in `.gitignore`.
 - **One workstream = one worktree = one ledger** — parallel sessions never
   share a ledger (same lesson as git index races).
-- Ephemeral: after the done-check it is cleared with `rielctl clean` (flat
+- Ephemeral: after the done-check it is cleared with `riel_clean` (flat
   timestamped backups inside `.riel/`).
 - **Before using the ledger, read `.riel/contract.md`** — the contract is
   the plan; the ledger is state. Never execute from the ledger or from
@@ -51,13 +51,13 @@ contract is a decision about SOMEONE ELSE'S state — never take it silently.
 Ask the user (in Hermes: `clarify`, all options in one call) with the three
 ways out, the recommended one first:
 
-1. **Back up and start clean** — `rielctl clean` (ledger) or
-   `rielctl clean --all` (also the contract): flat timestamped backups stay
+1. **Back up and start clean** — `riel_clean(scope="ledger")` or
+   `riel_clean(scope="all")` (also the contract): flat timestamped backups stay
    INSIDE `.riel/` (`ledger-<ts>.bak.md`), never a new directory.
-2. **Delete without backup** — `rielctl clean --purge`: the previous task is
+2. **Delete without backup** — `riel_clean(scope="purge")`: the previous task is
    done and pushed, or it was a throwaway.
 3. **Continue the existing ledger** — the state in `.riel/` IS this task's:
-   run `rielctl resume` and pick up from the last ✓NN.
+   run `riel_resume` and pick up from the last ✓NN.
 
 Headless runs (no question mechanism available): the agent decides and
 REPORTS the choice — a finished-and-pushed previous task defaults to
@@ -112,7 +112,7 @@ The ledger is local state, not a deliverable. When working inside a repo:
 | Goal | One sentence; updated only if the goal changes |
 | Claims | Pre-registered before first action; P-ids; **never edited after execution begins** — a failed claim is refuted, not reinterpreted; the seed copies the line whole, anchor included (`— anchor: §Section#n` \| a node id \| `shaping:F#`) |
 | Source | Optional; present when the task came from a tracked item |
-| Phase | Derived from the phases graph (riel-contract); pointer to the active phase |
+| Phase | Derived from the phases graph (riel:contract); pointer to the active phase |
 | Core | Max 2 live items; change only via explicit swap; each with its defining fact |
 | Verified | Numbered ✓NN, append-only; never deleted or renumbered; critical checkpoints may carry `confidence X/20` |
 | Open | Numbered ?NN; closed against a checkpoint; the number is never reused |
@@ -185,7 +185,7 @@ flowchart TD
    a tracked item, set Source and take Goal from its title.
 2. Set Core — max 2 live items with their defining facts. When the task has
    a contract, the facts usually already exist: search its
-   `### Context keywords` (`rielctl context`, or `riel_context` in the Hermes
+   `### Context keywords` (the `riel_context` tool
    plugin) and keep what answers, instead of rediscovering it. A Core item
    you could not find is one you had to establish — say which.
 3. Set Phase if the task has a phases graph — the first phase without a
@@ -206,8 +206,8 @@ Not everything fades at the same rate, so refresh frequency is not uniform:
 |---|---|---|
 | **The ledger** — Goal/Core/Verified/Open/Next | **Every seam** | It changes constantly and is the only thing carrying state forward |
 | **Failure invariants + mode gate** | **Every 3 seams, and after any red-line event** | Short, cheap, and they decay with distance, not with change |
-| **The anchored regions of the claims** (`rielctl anchor`) | **Every seam** | Support rots under a claim; re-read the region, not the memory of it |
-| **The active phase graph** (riel-contract) | **Only on phase change, or when the flow starts feeling mechanical** | Re-reading a graph you're inside of buys nothing |
+| **The anchored regions of the claims** (`riel_seam(anchors=true)`) | **Every seam** | Support rots under a claim; re-read the region, not the memory of it |
+| **The active phase graph** (riel:contract) | **Only on phase change, or when the flow starts feeling mechanical** | Re-reading a graph you're inside of buys nothing |
 | **Other skills' rules** | **Never** | They load when the task routes to them |
 
 Refreshing everything every seam is waste; refreshing nothing is how a long
@@ -312,11 +312,11 @@ your own result, not just in favor.
 `✓NN <what holds> — verified by: <command/test/review>, covering <scope>[, confidence X/20]`
 
 **Mirror:** regenerate the session todo right after — and **inject it**:
-`rielctl todo` prints the JSON array; pass it to the `todo_list` tool
+`riel_todo` returns the JSON array; pass it to the `todo_list` tool
 (`todo_list(todos=<that array>)`, or `riel_todo` then `todo_list` where the
 Hermes plugin is installed). A ✓ that closes a phase's gate flips that phase
 (and its steps) to `completed` in the UI without hand-editing the todo; the
-checkpoint itself shows in the desktop chip, which reads `rielctl status`.
+checkpoint itself shows in the desktop chip, which reads `riel_state`.
 
 Re-verifying a **critical** checkpoint is allowed — but only with *variation*
 (a different angle, order, or question), never the same check repeated.
@@ -331,7 +331,7 @@ Phase, swap Core to the new phase's items — searching the contract's
 `### Context keywords` for what that phase needs, the second moment the
 context fetch runs — and set the new Next. Open items
 belonging to future phases migrate with their numbers. Then regenerate the
-session-todo mirror (`rielctl todo` — the contract's phases and their
+session-todo mirror (`riel_todo` — the contract's phases and their
 steps enter as nested rows): regenerate it. Then **inject it into the
 session todo**:
 pass the JSON array to the `todo_list` tool so the UI shows the plan
@@ -426,6 +426,6 @@ live in `.riel/ledger.md`. Remote task systems are out of scope.
 - Local contract (the plan): `riel/specs/spec-contract-format.md`
 - Local format and rules: `riel/specs/spec-ledger-format.md`
 - The evidence a claim points back into: `riel/specs/spec-shaping-format.md`
-- Session-todo mirror (Spec 6, `rielctl todo`): `riel/specs/spec-todo-hermes.md`
+- Session-todo mirror (Spec 6, `riel_todo`): `riel/specs/spec-todo-hermes.md`
 - Phase advancement: `riel/specs/spec-ledger-format.md` (Phase advance)
-- The phases graph the ledger navigates: `riel-contract`
+- The phases graph the ledger navigates: `riel:contract`
