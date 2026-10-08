@@ -170,6 +170,18 @@ class TypedToolsTest(unittest.TestCase):
         self.assertIn("A", payload["digest"]["stdout"])
         self.assertNotIn("mermaid", payload, "the parser-level half is opt-in")
 
+    def test_check_answers_with_the_shared_envelope(self):
+        """A composite tool still speaks the envelope every other tool speaks."""
+        target = os.path.join(self.tmp, "doc.md")
+        with open(target, "w", encoding="utf-8") as handle:
+            handle.write("# Doc\n\n```mermaid\nflowchart TD\n  A[\"x\"] --> B[\"y\"]\n```\n")
+        payload = self.call("riel_check", {"file": target})
+        for key in ("tool", "worktree", "exit_code", "passed", "stdout", "stderr"):
+            self.assertIn(key, payload, f"riel_check misses {key}")
+        self.assertEqual(payload["tool"], "riel_check")
+        self.assertEqual(payload["exit_code"], 0 if payload["passed"] else 1)
+        self.assertIn("A", payload["stdout"], "the halves' text rides in stdout too")
+
     def test_check_parses_the_diagrams_when_asked(self):
         """`mermaid=true` adds the parser-level half, and only then."""
         target = os.path.join(self.tmp, "doc.md")

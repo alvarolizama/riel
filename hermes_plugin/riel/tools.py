@@ -443,23 +443,32 @@ def riel_check(args: dict, **kwargs) -> str:
     path = os.path.expanduser(target)
     ship = json.loads(_run(["ship", path], args, kwargs, tool="riel_check", verb="ship"))
     digest = json.loads(_run(["digest", path], args, kwargs, tool="riel_check", verb="digest"))
-    payload = {
-        "file": path,
-        "worktree": ship.get("worktree"),
+    halves = {
         "ship": {"exit_code": ship.get("exit_code"), "passed": ship.get("passed"),
                  "stdout": ship.get("stdout"), "stderr": ship.get("stderr")},
         "digest": {"exit_code": digest.get("exit_code"), "passed": digest.get("passed"),
                    "stdout": digest.get("stdout"), "stderr": digest.get("stderr")},
-        "passed": bool(ship.get("passed")) and bool(digest.get("passed")),
     }
     if args.get("mermaid"):
         parse = json.loads(_run(["mermaid", path], args, kwargs, tool="riel_check", verb="mermaid"))
-        payload["mermaid"] = {
+        halves["mermaid"] = {
             "exit_code": parse.get("exit_code"), "passed": parse.get("passed"),
             "stdout": parse.get("stdout"), "stderr": parse.get("stderr"),
         }
-        # No blocks or no mmdc is exit 0 with a SKIP line: silence is not a failure.
-        payload["passed"] = payload["passed"] and bool(parse.get("passed"))
+    # The composite still answers with the SAME envelope every other tool does —
+    # the halves ride along as its own keys. A caller that folds tools reads
+    # `passed`/`exit_code` and never has to know which halves it asked for.
+    ok = all(bool(half["passed"]) for half in halves.values())
+    payload = {
+        "tool": "riel_check",
+        "worktree": ship.get("worktree"),
+        "exit_code": 0 if ok else 1,
+        "passed": ok,
+        "stdout": "\n".join(half["stdout"] or "" for half in halves.values()).strip(),
+        "stderr": "".join(half["stderr"] or "" for half in halves.values()),
+        "file": path,
+    }
+    payload.update(halves)
     return json.dumps(payload, ensure_ascii=False)
 
 
