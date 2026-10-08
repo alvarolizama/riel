@@ -30,21 +30,19 @@ hermes plugins update riel
 
 El instalador clona el repo y **mueve solo este subdirectorio** a
 `~/.hermes/plugins/riel` — el checkout no sobrevive. Por eso el paquete es
-autocontenido: `guide/`, `engine/` y `templates/` viajan adentro, generados
-desde el repo (`make plugin-build`) y verificados por hash, archivo por archivo,
-en `tests/test_plugin_vendor.py`. El repo es la fuente; esas tres carpetas acá
-son artefactos de build.
+autocontenido: `guide/`, `engine/` y `templates/` viajan adentro y **son la
+fuente** — no hay copia ni paso de build. Se editan acá y el suite
+(`tests/test_plugin_vendor.py`) verifica que no reaparezca un árbol duplicado.
 
 ## Instalación (desarrollo)
 
 ```bash
-make plugin-build                      # hermes_plugin/riel/{guide,engine,templates}/ desde el repo
-make plugin-link PLUGINS_DIR=~/.hermes/profiles/coder/plugins   # symlink, sólo dev
-hermes plugins enable riel
+HERMES_HOME=~/.hermes/profiles/coder hermes plugins install \\
+  "file://$(pwd)#hermes_plugin/riel" --enable
 ```
 
-Los plugins son **por perfil** (`$HERMES_HOME/plugins/`). El symlink es
-comodidad de desarrollo; una instalación real es una copia de un commit.
+Los plugins son **por perfil** (`$HERMES_HOME/plugins/`) y la instalación es
+siempre una copia de un commit: no hay symlink, ni en dev.
 
 ## Cómo resuelve el worktree
 
@@ -142,6 +140,6 @@ Hermes — el plugin no re-parsea el contrato.
 ## Verificación
 
 ```bash
-make test          # incluye tests/test_plugin_vendor.py (hash + handlers end-to-end)
+make test          # incluye tests/test_plugin_vendor.py (el árbol + handlers end-to-end)
 hermes plugins doctor hermes_plugin/riel --ci   # mismo discovery/registro que usa Hermes
 ```

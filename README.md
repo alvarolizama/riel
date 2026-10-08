@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/riel-header.png" width="96" height="96" alt="Riel" />
+<img src="assets/riel-header.png" width="96" alt="Riel" />
 
 # Riel
 
@@ -9,7 +9,7 @@
 ### Steering layer for harness/LLM
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.0.0-8B5CF6.svg)](./guide/tools.md)
+[![Version](https://img.shields.io/badge/version-1.0.0-8B5CF6.svg)](./hermes_plugin/riel/guide/tools.md)
 [![Python](https://img.shields.io/badge/Python-3-3776AB?logo=python&logoColor=white)](https://www.python.org)
 [![Hermes](https://img.shields.io/badge/Hermes-plugin-5B8DEF)](https://www.nousresearch.com)
 
@@ -33,14 +33,14 @@ Riel ships as two faces over one core:
 
 | Face | What it is | Where |
 |---|---|---|
-| **The prose** | six guides the agent reads on demand — protocol, ledger, contract, briefs, delegate, tools | `guide/*.md` |
+| **The prose** | six guides the agent reads on demand — protocol, ledger, contract, briefs, delegate, tools | `hermes_plugin/riel/guide/*.md` |
 | **The engine** (one stdlib file) | not a user surface: the sole writer of the ledger format; instantiates, validates and slices packets; derives the todo/state mirrors; fetches remote contracts — reached only through the twelve tools | `engine/run.py` |
 | **The Hermes plugin** | the whole product: the prose (read through `riel_guide`), the engine, twelve typed tools (`riel_guide`, `riel_note` … `riel_check`), the `pre_verify` gate and a statusbar chip — installed as a copy of a commit, updated the same way | `hermes_plugin/riel/` |
-| **Specs** | the design contract of each artifact (ledger format, contract format, phase advance, todo mirror) | `specs/` |
+| **Specs** | the long form of each format (ledger, contract, shaping, todo, the package itself) | `specs/` |
 
-The prose lives in `guide/` — one source of truth; the plugin ships a hash-pinned copy of it inside its package (as `guide/`, `engine/` and `templates/`).
+The prose lives **inside the package** (`hermes_plugin/riel/guide/`) — one tree, no copy: what you edit is what ships.
 The repo is the single source of truth; the plugin's `vendor/` is a build
-artifact regenerated from `guide/` and pinned by hash in the test suite.
+tree that ships; the suite covers it in place.
 
 ### Components
 
@@ -231,27 +231,19 @@ stderr}` plus its own keys. `command` is provenance, never something to type.
 | `riel_fetch` | download a contract into the worktree — run it at the **task opening** (`riel_resume`/`riel_seam`/`riel_note(from_contract=true)`), not only when delegating; atomic, sha256-pinned, HTTPS by default (`allow_http` for a trusted transport such as a VPN); the URL may carry a short-lived single-use token instead of the API key, and is never printed |
 | `riel_check` | dense-register check on one file before delivery + the explicit text digest of its graph |
 
-### System prompt initialization
-
-The paste-ready block (for `soul.md` or any injected system prompt) lives at
-`system-prompt.md` — one source, so the README never carries a second copy of
-it. Keep it that short: the soul references the skills, it never embeds them
-(embedding desyncs and costs tokens every turn).
-
-### The Hermes plugin (optional)
+### The Hermes plugin
 
 With the plugin enabled, the same mechanics run as native tools and the
 protocol is enforced by the runtime:
 
-- **Eleven tools**, and no command line: `riel_note`, `riel_seam`,
-  `riel_resume`, `riel_todo`, `riel_state`, `riel_context`, `riel_brief`,
-  `riel_shaping`, `riel_clean`, `riel_fetch`, `riel_check`. Each call resolves
+- **Twelve tools**, and no command line: `riel_guide` (the prose), `riel_note`,
+  `riel_seam`, `riel_resume`, `riel_todo`, `riel_state`, `riel_context`,
+  `riel_brief`, `riel_shaping`, `riel_clean`, `riel_fetch`, `riel_check`. Each call resolves
   the session's worktree (session cwd, never the Hermes process cwd) and runs
   the bundled engine in a subprocess — concurrent sessions never touch each
   other's ledger. `riel_seam(anchors=true)` folds the anchor re-read into the
   seam; `riel_brief` and `riel_shaping` take a typed `verb`, never argv.
-- **The prose ships inside the package, read on demand**: six guides (built from
-  this repo's `guide/`) served by `riel_guide` — the index with no argument, one
+- **The prose ships inside the package, read on demand**: six guides served by `riel_guide` — the index with no argument, one
   guide by topic, one section of it by `section=`. The `riel` prompt section
   publishes what the tool catalog cannot: that the prose exists at all, its topic
   list, and the worktree's ledger state, so a fresh session knows what Riel is
@@ -304,15 +296,13 @@ prompt carries the `riel` section while `riel_guide(topic="ledger")` answers (12
 
 ### Manual (development)
 
-From a checkout — the package's `guide/`, `engine/` and `templates/` are build
-artifacts regenerated from this repo's copies, and the suite pins them by hash:
+From a checkout — the package's tree IS the source; there is no build step:
 
 ```bash
 git clone https://github.com/alvarolizama/riel && cd riel
 
-make plugin-build                                           # regenerate hermes_plugin/riel/{guide,engine,templates}/
-HERMES_HOME=~/.hermes/profiles/<p> hermes plugins install \
-  "file://$(pwd)#hermes_plugin/riel" --enable               # or: make plugin-link PLUGINS_DIR=...
+HERMES_HOME=~/.hermes/profiles/<p> hermes plugins install \\
+  "file://$(pwd)#hermes_plugin/riel" --enable
 make test && make lint && make validate
 
 # the desktop half, app-level (loaded from the installed package; no extra copy)
@@ -332,7 +322,7 @@ desktop plugins** if the chip does not appear).
 | Task templates (`templates/`) | runtime | nothing — the engine reads them directly |
 | `scripts/validate-mermaid.sh` | development (validate graph files) | Node + `mmdc`: `npm install -g @mermaid-js/mermaid-cli` |
 | `tests/` | development (run the suite) | Python 3, stdlib only (the desktop half's tests also use `node`; the FastAPI route tests need a Hermes interpreter) |
-| Hermes plugin package (`hermes_plugin/riel/`) | Hermes users | Hermes + Python 3; the artifacts (`guide/`, `engine/`, `templates/`) carry the prose, the engine and the templates |
+| Hermes plugin package (`hermes_plugin/riel/`) | Hermes users | Hermes + Python 3; it carries the prose (`guide/`), the engine (`engine/run.py`) and the templates (`templates/`) |
 
 Optional. `riel_brief(verb="validate")` will *also* run `mmdc` on each graph if
 it finds it on PATH; without it, structural checks still run, just without
@@ -343,11 +333,9 @@ the parser-level mmdc check. Nothing in the runtime path requires mmdc.
 | Target | Does |
 |---|---|
 | `help` | list targets (default when you run bare `make`) |
-| `plugin-build` | rebuild `hermes_plugin/riel/{guide,engine,templates}/` from the repo (build artifacts) |
-| `plugin-link` | symlink the plugin package into `$(PLUGINS_DIR)` (dev only; a real install is a copy) |
 | `test` | regression suite (unittest discovery) |
 | `validate` | parse every mermaid block with `mmdc` |
-| `digest` | print the explicit graph digest for README + specs + skills |
+| `digest` | print the explicit graph digest for the README, the specs and the guides |
 | `lint` | byte-compile the Python tooling; `shellcheck` if present |
 
 ### Structure
@@ -355,31 +343,29 @@ the parser-level mmdc check. Nothing in the runtime path requires mmdc.
 ```
 riel/
 ├── README.md          ← this file
-├── system-prompt.md   ← the soul/system-prompt initialization block
+├── Makefile           ← test · validate · digest · lint (no build, no install)
+├── LICENSE
 ├── assets/            ← header image
-├── guide/             ← the prose, one file per topic (served by riel_guide)
-│   ├── riel-ledger/     ← state: the heart of the framework
-│   ├── riel-contract/   ← structure: mermaid contract + funnel + digest
-│   ├── riel-protocol/   ← trajectory: grammar, persona, minimal surface
-│   ├── riel-briefs/     ← delegation briefs + claims + shaping/packet templates/
-│   ├── riel-delegate/   ← delegation router + JSON output_schema
-│   └── riel-cli/        ← the engine (stdlib) the tools run: ledger writer, packets, digest
-├── hermes_plugin/     ← the installable package: prose + engine + tools + gate + chip
-│   ├── riel/            ← one artifact, installed as a copy of a commit
-│   │   ├── guide/ engine/ templates/  ← artifacts: the prose, the engine, the packet templates
+├── hermes_plugin/     ← THE PRODUCT: the package a user installs, tree and all
+│   ├── riel/
+│   │   ├── plugin.yaml __init__.py schemas.py tools.py guide.py section.py
+│   │   ├── settings.py commands.py hooks.py
+│   │   ├── guide/         ← the prose: one file per topic, served by riel_guide
+│   │   ├── engine/run.py  ← the machine behind the tools (stdlib, no user surface)
+│   │   ├── templates/     ← the packet and shaping templates
 │   │   ├── dashboard/     ← backend routes (/api/plugins/riel/*)
 │   │   └── desktop/       ← statusbar chip + switches (opt-in)
 │   └── probe-session-cwd.py ← live probe of the Hermes load path (needs Hermes)
-├── specs/             ← design contracts
+├── specs/             ← the long form of each format
+│   ├── spec-plugin-package.md   ← what the package is, and what it refuses to be
 │   ├── spec-ledger-format.md    ← .riel/ledger.md format + rules + phase advance
-│   ├── spec-contract-format.md  ← .riel/contract.md format (the plan) + intent + claim anchors
+│   ├── spec-contract-format.md  ← .riel/contract.md format (the plan) + claim anchors
 │   ├── spec-shaping-format.md   ← .riel/shaping.md format (the evidence before the plan)
-│   └── spec-todo-hermes.md      ← session-todo mirror (the plan) + ledger mirror (status)
+│   └── spec-todo-hermes.md      ← session-todo mirror (the plan) + ledger mirror (state)
 ├── scripts/           ← repo tooling
 │   ├── validate-mermaid.sh   ← validates every mermaid block with mmdc
 │   └── extract-mermaid.py    ← extracts mermaid blocks (regex, re.DOTALL)
-├── tests/             ← stdlib unittest suite (engine, artifact hashes, plugin hooks, chip)
-└── references/        ← papers-and-sources.md — evidence & design notes (public)
+└── tests/             ← stdlib unittest suite (engine, guide, plugin, chip)
 ```
 
 ### Tests
@@ -388,13 +374,12 @@ riel/
 make test     # or: python3 -m unittest discover -s tests -v
 ```
 
-Stdlib-only, subprocess-driven. 264 tests cover `riel_note`, `riel_seam` (with
+Stdlib-only, subprocess-driven. 283 tests cover `riel_note`, `riel_seam` (with
 anchors), `riel_resume`, `riel_todo`, `riel_state`, `riel_context`, `riel_brief`
 (new/validate/digest/slice), `riel_shaping` (new/validate), `riel_clean`,
 `riel_fetch`, `riel_check`, the graph
 and claim-anchor checks, and `extract-mermaid.py` end-to-end, plus the Hermes
-plugin package: the artifact's per-file hashes,
-manifest/schema/handler wiring, the handlers end-to-end through the bundled
+plugin package: manifest/schema/handler wiring, the handlers end-to-end through the bundled
 copy, the prompt section and the three switch groups, the statusbar chip rendered by node against a stubbed SDK (labels,
 tooltip, click, and the refetch a finished tool triggers), the backend
 routes through a real FastAPI app, and the `pre_verify` gate's decision
@@ -424,7 +409,7 @@ make digest                            # explicit text digest of every graph
 ## License
 
 Released under the [MIT License](LICENSE) — Copyright (c) 2026 Álvaro Lizama.
-The license covers the whole repository: the prose (`guide/`), the engine
-(`engine/run.py`), the repo tooling (`scripts/`, `tests/`,
+The license covers the whole repository: the package (the prose, the engine,
+the tools, the chip), the repo tooling (`scripts/`, `tests/`,
 `Makefile`) and the Hermes plugin package (`hermes_plugin/riel/`).
 Third-party dependencies keep their own licenses.

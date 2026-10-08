@@ -6,8 +6,8 @@ against the **bundled** engine — the same copy a user gets when installing
 the plugin.
 
 Two things are pinned here:
-  * `guide/`, `engine/` and `templates/` match the repo sources (hash), so the
-    build artifacts cannot drift;
+  * `guide/`, `engine/` and `templates/` exist in the package and NOWHERE else,
+    so the duplication cannot come back;
   * manifest, schemas and handlers agree, and the handlers actually run.
 
 Run:
@@ -30,9 +30,9 @@ PLUGIN = os.path.join(REPO, "hermes_plugin", "riel")
 
 MANIFEST = os.path.join(PLUGIN, "plugin.yaml")
 
-# The three build artifacts the package carries. Each is a copy of the repo's
-# same-named directory: the prose (`guide/`), the engine the tools run
-# (`engine/`) and the packet templates (`templates/`).
+# The package's own tree: the prose (`guide/`), the engine the tools run
+# (`engine/`) and the packet templates (`templates/`). They live here and are
+# edited here — a same-named directory at the repo root is a regression.
 PARTS = ("guide", "engine", "templates")
 
 # The topics the prose ships today: ONE door (`riel_guide`) reads them.
@@ -88,7 +88,7 @@ def _tree(root):
 
 
 def _frontmatter(path):
-    """The YAML frontmatter of a SKILL.md as a flat `{key: value}` map (stdlib only)."""
+    """The YAML frontmatter of a guide as a flat `{key: value}` map (stdlib only)."""
     meta, lines, inside = {}, [], False
     with open(path, encoding="utf-8") as fh:
         for raw in fh:
@@ -109,16 +109,21 @@ def _frontmatter(path):
 
 
 class PackageTest(unittest.TestCase):
-    """`make plugin-build` output must equal the repo's copies, byte for byte."""
+    """One tree: the package owns its sources — nothing to rebuild, nothing to drift."""
 
-    def test_every_part_matches_the_repo(self):
+    def test_every_part_is_there_and_edit_in_place(self):
+        """Each part exists in the package — and NOWHERE else in the repo.
+
+        The old layout kept a copy at the repo root and pinned it by hash; the
+        single tree removed both the copy and the pin. A stray root dir means
+        someone re-created the duplication.
+        """
         for part in PARTS:
-            source = _tree(os.path.join(REPO, part))
-            bundled = _tree(os.path.join(PLUGIN, part))
-            self.assertTrue(bundled, f"run: make plugin-build ({part} is missing)")
-            self.assertEqual(sorted(bundled), sorted(source), f"the bundle drifted from {part}/")
-            for rel, digest in source.items():
-                self.assertEqual(bundled[rel], digest, f"{part}/{rel} drifted from the repo")
+            bundled = os.path.join(PLUGIN, part)
+            self.assertTrue(os.path.isdir(bundled), f"{part}/ is missing from the package")
+            self.assertTrue(_tree(bundled), f"{part}/ is empty")
+            self.assertFalse(os.path.exists(os.path.join(REPO, part)),
+                             f"{part}/ reappeared at the repo root: the package owns it")
 
     def test_the_prose_ships_with_its_frontmatter(self):
         guide_dir = os.path.join(PLUGIN, "guide")
@@ -135,9 +140,9 @@ class PackageTest(unittest.TestCase):
         engine = os.path.join(PLUGIN, "engine", "run.py")
         templates = os.path.join(PLUGIN, "templates")
         self.assertTrue(os.path.isfile(engine))
-        self.assertEqual(sha256(engine), sha256(os.path.join(REPO, "engine", "run.py")))
-        shipped = sorted(f for f in os.listdir(templates) if f.endswith(".md"))
-        self.assertEqual(shipped, sorted(f for f in os.listdir(os.path.join(REPO, "templates")) if f.endswith(".md")))
+        self.assertTrue(os.path.isfile(engine), engine)
+        self.assertEqual(len([f for f in os.listdir(templates) if f.endswith(".md")]), 8,
+                         "the package ships the eight packet/shaping templates")
         self.assertTrue(os.access(engine, os.X_OK), "the bundled engine must stay executable")
 
     def test_no_vendor_or_skills_directory(self):

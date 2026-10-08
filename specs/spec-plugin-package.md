@@ -25,14 +25,15 @@ no symlink, nothing on `PATH`.
 | `hooks.py` | `pre_verify`, the checkpoint gate | itself |
 | `dashboard/` | the chip's backend routes (`/api/plugins/riel/*`) | itself |
 | `desktop/plugin.js` | the statusbar chip, the switches and the ⌘K commands | itself |
-| `guide/` | the prose, one file per topic | **the repo's `guide/`** |
-| `engine/` | `run.py` — the machine behind the tools, sole writer of the formats | **the repo's `engine/`** |
-| `templates/` | the packet and shaping templates | **the repo's `templates/`** |
+| `guide/` | the prose, one file per topic — **the source**, edited here | itself |
+| `engine/` | `run.py` — the machine behind the tools, sole writer of the formats — **the source** | itself |
+| `templates/` | the packet and shaping templates — **the source** | itself |
 
-`guide/`, `engine/` and `templates/` are **build artifacts**: `make plugin-build`
-regenerates them from the repo and `tests/test_plugin_vendor.py` pins every file
-by hash. They are never edited in place — an edit there is invisible to the repo
-and dies on the next build.
+**One tree, no copies.** `guide/`, `engine/` and `templates/` are the package's
+own sources, edited in place: there is no build step and nothing to keep in sync.
+`tests/test_plugin_vendor.py` asserts each part exists inside the package and that
+no same-named directory reappears at the repo root — the duplication cannot come
+back by accident.
 
 ## The prose: topics, one door
 

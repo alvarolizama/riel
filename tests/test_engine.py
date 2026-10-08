@@ -18,8 +18,10 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
-ENGINE = os.path.join(REPO, "engine", "run.py")
-BRIEFS_TEMPLATES = os.path.join(REPO, "templates")
+PLUGIN = os.path.join(REPO, "hermes_plugin", "riel")
+# The engine lives INSIDE the package: it is the product's own tree, not a copy.
+ENGINE = os.path.join(PLUGIN, "engine", "run.py")
+BRIEFS_TEMPLATES = os.path.join(PLUGIN, "templates")
 EXTRACT_MERMAID = os.path.join(REPO, "scripts", "extract-mermaid.py")
 
 
