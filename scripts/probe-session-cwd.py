@@ -71,6 +71,13 @@ def _import_hermes() -> None:
         import hermes_bootstrap  # noqa: F401
     except ModuleNotFoundError:
         pass
+    except Exception as exc:  # e.g. TypeError from `X | Y` on python < 3.10
+        raise SystemExit(
+            "The agent tree imported but raised — you are probably running an "
+            "older system python. Run this probe with the interpreter Hermes "
+            "itself uses (`head -1 $(command -v hermes)` names it). "
+            f"Underlying error: {exc!r}"
+        )
     try:
         import hermes_cli.plugins  # noqa: F401
     except ModuleNotFoundError as exc:
