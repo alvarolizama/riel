@@ -1,10 +1,10 @@
 ---
 topic: briefs
 trigger: "Use when writing self-contained agent briefs on the fly — curated context, verb-graph, gates, anchored opening. Dispatch packets for delegate_task."
-version: 3.8.1
+version: 3.8.2
 ---
 
-# riel-briefs — Dispatch briefs for agents (Riel)
+# briefs — Dispatch briefs (Riel)
 
 To **land a process on the fly** as a self-contained instruction for an
 agent/subagent: dispatch packets for `delegate_task`, execution specs with
@@ -284,7 +284,7 @@ When dispatching, `goal` stays short and `context` carries the packet:
 ## Packet validation checklist
 
 A packet is *valid* when all of the following pass. `riel_brief(verb="validate")`
-(from `riel_guide(topic="cli")`) runs them mechanically; review by hand before dispatching.
+(read `riel_guide(topic="tools")`) runs them mechanically; review by hand before dispatching.
 
 Structure:
 

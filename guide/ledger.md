@@ -1,10 +1,10 @@
 ---
 topic: ledger
 trigger: "Use when running a loop-mode task — write the local Goal/Core/Verified/Open/Next ledger in the worktree, re-read at every seam, verify before done. No remote dependency."
-version: 1.15.1
+version: 1.15.2
 ---
 
-# riel-ledger — Local verified state for long tasks (Riel)
+# ledger — Local verified state for long tasks (Riel)
 
 The ledger is **externalized working memory** for tasks long enough to lose
 state. It does not solve anything — it lets the agent **restore the same

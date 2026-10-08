@@ -75,7 +75,8 @@ the prose to drift. `tests/test_plugin_vendor.py` asserts the package contains n
 `register_skill` call, and `tests/test_plugin_guide.py` pins the door.
 
 The files keep their identity: the repo's `guide/<topic>.md` and the package's
-copy are the same bytes, and the H1 inside names the topic (`# riel-ledger — …`).
+copy are the same bytes, and the H1 opens with the topic (`# ledger — …`) — the
+file name, the frontmatter `topic:` and the title agree.
 A citation in prose uses the call (`riel_guide(topic="ledger")`); a mermaid
 label uses the bare topic (`ledger`), because a graph label is not a place for a
 tool signature.

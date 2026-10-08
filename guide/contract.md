@@ -1,10 +1,10 @@
 ---
 topic: contract
 trigger: "Use when authoring mermaid verb-graph contracts for skills and todos — 3-layer pattern, closed verb vocabulary, verification funnel, ASK escalation, machine-checkable."
-version: 3.7.2
+version: 3.7.3
 ---
 
-# riel-contract — Mermaid as an executable contract (Riel)
+# contract — mermaid verb-graph contracts (Riel)
 
 How to structure a **skill or todo** that uses mermaid diagrams: 3-layer
 pattern (Entry router → Parse contract → Work), closed vocabulary of 6

@@ -1,10 +1,10 @@
 ---
 topic: tools
 trigger: "Use when you need Riel's tool surface — which of the twelve tools writes what, what each returns, and the template, fetch and exit-code rules. There is no command line: the tools are the interface."
-version: 1.15.0
+version: 1.15.1
 ---
 
-# riel-cli — Riel's tool surface (Riel)
+# tools — Riel's tool surface (Riel)
 
 Every part of Riel the agent would otherwise have to remember by hand is a
 **tool**, and each tool owns exactly one part — there is nothing to install and

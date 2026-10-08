@@ -1,10 +1,10 @@
 ---
 topic: protocol
 trigger: "Use when opening or maintaining a conversation with an LLM — functional grammar, persona, minimal-surface protocol. Never rewrites the user's request."
-version: 1.7.1
+version: 1.7.2
 ---
 
-# riel-protocol — Communication protocol (Riel, phase 1)
+# protocol — Communication protocol (Riel)
 
 This component steers **the trajectory**: how the agent opens and maintains
 a conversation with an LLM.

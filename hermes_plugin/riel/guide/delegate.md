@@ -1,10 +1,10 @@
 ---
 topic: delegate
 trigger: "Use when delegating to subagents — entry router for the delegation flow: plan phases, dispatch riel-briefs packets in waves, parent verifies returns. Orchestrates the other Riel skills."
-version: 1.3.1
+version: 1.3.2
 ---
 
-# riel-delegate — Delegation router (Riel)
+# delegate — Delegating to subagents (Riel)
 
 One skill to route Riel delegation end-to-end. It does not recreate the
 framework — it **routes to it** and holds the operational pitfalls that

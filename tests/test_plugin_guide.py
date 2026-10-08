@@ -63,7 +63,7 @@ class GuideModuleTest(unittest.TestCase):
         body, error = self.guide.read("ledger")
         self.assertIsNone(error)
         self.assertNotIn("topic: ledger", body)
-        self.assertIn("# riel-ledger", body)
+        self.assertIn("# ledger —", body)
 
     def test_read_slices_one_section(self):
         body, _ = self.guide.read("ledger")

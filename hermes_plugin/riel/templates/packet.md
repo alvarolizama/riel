@@ -47,7 +47,7 @@
      never edited: a failed claim is refuted, never reinterpreted.
      A claim may end with its ANCHOR: the region of this contract that
      supports it, re-read at every seam with `riel_seam(anchors=true)` (distinct from
-     the "anchored opening" of riel:protocol). Three forms only:
+     the "anchored opening" of the protocol guide). Three forms only:
        '— anchor: §Constraints#2'  the n-th bullet of that section
        '— anchor: G2'              a node of the execution graph
        '— anchor: shaping:F1'      a finding of .riel/shaping.md
