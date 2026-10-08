@@ -1,7 +1,7 @@
 ---
 topic: ledger
 trigger: "Use when running a loop-mode task — write the local Goal/Core/Verified/Open/Next ledger in the worktree, re-read at every seam, verify before done. No remote dependency."
-version: 1.15.2
+version: 1.16.0
 ---
 
 # ledger — Local verified state for long tasks (Riel)
@@ -32,6 +32,13 @@ verified; hours passed and you cannot remember where you left off.
 - Lives at the worktree root; goes in `.gitignore`.
 - **One workstream = one worktree = one ledger** — parallel sessions never
   share a ledger (same lesson as git index races).
+- **Every engine write over an existing artifact backs it up first**: a second
+  `riel_note` leaves the previous ledger at `ledger-<ts>.bak.md`; the same
+  flat convention covers the contract, the shaping and a fetched contract.
+  Recovery is `grep`-simple: the previous state is always reachable beside
+  the live one. Best-effort by design — a backup that blocks the write is
+  worse than no backup. Hand edits are NOT covered: the engine only sees its
+  own writes, so edit the contract with the engine's doors or accept the gap.
 - Ephemeral: after the done-check it is cleared with `riel_clean` (flat
   timestamped backups inside `.riel/`).
 - **Before using the ledger, read `.riel/contract.md`** — the contract is

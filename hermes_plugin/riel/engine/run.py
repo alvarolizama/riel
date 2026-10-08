@@ -118,6 +118,34 @@ def read_ledger(path):
     return out
 
 
+def _backup_before_write(path):
+    """Best-effort backup of an existing file before the engine overwrites it.
+
+    Same flat convention as `clean` — `name-<ts>.bak.md` beside the original,
+    never a subdirectory — so one recovery story covers both. A ledger is the
+    only state that cannot be re-derived: a concurrent writer clobbering it
+    must always leave the previous version reachable. Failure is SILENT: a
+    backup that blocks the write is worse than no backup (same rule as the
+    gate).
+    """
+    try:
+        if not os.path.isfile(path):
+            return
+        directory = os.path.dirname(path) or "."
+        base = os.path.basename(path)
+        if base.endswith(".md"):
+            base = base[:-len(".md")]
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        backup = os.path.join(directory, "{}-{}.bak.md".format(base, stamp))
+        n = 1
+        while os.path.exists(backup):
+            backup = os.path.join(directory, "{}-{}-{}.bak.md".format(base, stamp, n))
+            n += 1
+        shutil.copy2(path, backup)
+    except OSError:
+        pass
+
+
 def write_ledger(path, st):
     source_section = (
         "## Source\n{}\n\n".format(st["source"]) if st["source"] else ""
@@ -475,6 +503,7 @@ def cmd_note(args):
             return 2
         st["open"].pop(idx)
 
+    _backup_before_write(args.ledger)
     write_ledger(args.ledger, st)
     print_ledger(st)
     if fresh and args.goal is None and args.next is None:
@@ -982,6 +1011,7 @@ def cmd_shaping_new(args):
     parent = os.path.dirname(out)
     if parent:
         os.makedirs(parent, exist_ok=True)
+    _backup_before_write(out)
     with open(out, "w", encoding="utf-8") as fh:
         fh.write(result if result.endswith("\n") else result + "\n")
     print("wrote {}".format(out))
@@ -1148,6 +1178,9 @@ def cmd_contract_new(args):
             file=sys.stderr,
         )
     if args.output:
+        parent = os.path.dirname(os.path.abspath(args.output))
+        os.makedirs(parent, exist_ok=True)
+        _backup_before_write(args.output)
         with open(args.output, "w", encoding="utf-8") as fh:
             fh.write(result)
         print(result)
@@ -1362,6 +1395,9 @@ def cmd_contract_digest(args):
     result = "\n".join(out)
     print(result)
     if args.output:
+        parent = os.path.dirname(os.path.abspath(args.output))
+        os.makedirs(parent, exist_ok=True)
+        _backup_before_write(args.output)
         with open(args.output, "w", encoding="utf-8") as fh:
             fh.write(result + "\n")
     return 0
@@ -1492,6 +1528,9 @@ def cmd_contract_slice(args):
     result = "\n".join(body)
     print(result)
     if args.output:
+        parent = os.path.dirname(os.path.abspath(args.output))
+        os.makedirs(parent, exist_ok=True)
+        _backup_before_write(args.output)
         with open(args.output, "w", encoding="utf-8") as fh:
             fh.write(result + "\n")
     return 0
@@ -1807,6 +1846,7 @@ def cmd_fetch(args):
 
     outdir = os.path.dirname(os.path.abspath(out))
     os.makedirs(outdir, exist_ok=True)
+    _backup_before_write(out)
     fd, tmp = tempfile.mkstemp(dir=outdir, prefix=".riel-fetch-")
     try:
         with os.fdopen(fd, "wb") as fh:

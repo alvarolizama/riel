@@ -45,7 +45,7 @@ The repo is the single source of truth and the suite covers the package in place
 
 | Component | What it steers | Status |
 |---|---|---|
-| riel_guide(topic="ledger") | **State** — Goal/Claims/Core/Verified/Open/Next, re-read at every seam, recovery via checkpoints, opening rules over an existing `.riel/`, mirrors to the session todo | ✅ guide v1.15.2 |
+| riel_guide(topic="ledger") | **State** — Goal/Claims/Core/Verified/Open/Next, re-read at every seam, recovery via checkpoints, opening rules over an existing `.riel/`, auto-backup before every engine write, mirrors to the session todo | ✅ guide v1.16.0 |
 | riel_guide(topic="contract") | **Structure** — mermaid as contract: closed verb vocabulary, verification funnel, graph digest, machine-checkable | ✅ guide v3.7.5 |
 | riel_guide(topic="protocol") | **Trajectory** — functional grammar, persona, minimal surface on the first turn | ✅ guide v1.7.2 |
 | riel_guide(topic="briefs") | **Delegation briefs** — self-contained packets: curated context + the `### Why` rationale and context-keyword index, verb-graph, pre-registered claims (with their anchors), executable gates, the shaping step before the plan, templates | ✅ guide v3.8.3 |

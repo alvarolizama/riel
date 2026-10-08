@@ -1684,3 +1684,43 @@ d
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BackupBeforeWriteTest(TempDirTest):
+    """Every engine write over an existing artifact leaves a flat .bak.md.
+
+    The ledger is state that cannot be re-derived: a concurrent writer
+    clobbering it must always leave the previous version reachable.
+    """
+
+    def baks(self, prefix):
+        return [n for n in os.listdir(os.path.join(self.tmp, ".riel"))
+                if n.startswith(prefix) and n.endswith(".bak.md")]
+
+    def test_first_note_has_no_backup(self):
+        rc, out, err = run("note", "--goal", "g1", "--next", "n1")
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(self.baks("ledger-"), [],
+                         "a first write backed up nothing that existed")
+
+    def test_second_note_backs_up_previous(self):
+        run("note", "--goal", "g1", "--next", "n1")
+        rc, out, err = run("note", "--check", "c1", "--by", "make test")
+        self.assertEqual(rc, 0, err)
+        baks = self.baks("ledger-")
+        self.assertEqual(len(baks), 1, "the previous ledger was not backed up")
+        with open(os.path.join(self.tmp, ".riel", baks[0]), encoding="utf-8") as fh:
+            previous = fh.read()
+        self.assertIn("g1", previous)
+        self.assertNotIn("c1", previous, "the backup holds the PREVIOUS state")
+
+    def test_contract_new_over_existing_backs_up(self):
+        contract = os.path.join(self.tmp, ".riel", "contract.md")
+        run("contract", "new", "--type", "packet", "--param", "name=t1", "-o", contract)
+        rc, out, err = run("contract", "new", "--type", "packet", "--param", "name=t2",
+                           "-o", contract)
+        self.assertEqual(rc, 0, err)
+        baks = self.baks("contract-")
+        self.assertEqual(len(baks), 1)
+        with open(os.path.join(self.tmp, ".riel", baks[0]), encoding="utf-8") as fh:
+            self.assertIn("t1", fh.read())
