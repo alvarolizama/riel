@@ -154,7 +154,7 @@ flowchart TD
 | Routers | `Q`, `SELF` | Entry routers and narrative flows |
 
 No variable semantic IDs (`setupDB`, `fixBug`) — small models parse by
-regex; fixed IDs are predictable. `riel_brief(verb="validate")` keeps this same
+regex; fixed IDs are predictable. `riel_contract(verb="validate")` keeps this same
 whitelist (plus `DC`/`APP`/`REC`/`FIX` for lifecycle graphs), so doc and
 tool agree.
 
@@ -236,7 +236,7 @@ The claim stays on ONE line — the ledger seed reads line by line, and
 `brief slice` copies the section verbatim, so an anchor written there travels
 to the child for free.
 
-`riel_brief(verb="validate")` enforces it: no anchor is a `WARN` (never fatal — the
+`riel_contract(verb="validate")` enforces it: no anchor is a `WARN` (never fatal — the
 shipped templates carry none); an unresolvable `§` anchor or an anchor in no
 known form is an `ISSUE`; a node absent from the local graph is the
 inherited-on-a-slice case (`WARN`), and so is a `shaping:F#` the shaping does
@@ -256,7 +256,7 @@ spelled out as plain text — elements, authored edges, branch candidates,
 entry/terminals, loops, and a "meaning & limits" footer. Generate it with:
 
 ```bash
-riel_brief(verb="digest", file=".riel/contract.md")
+riel_contract(verb="digest", file=".riel/contract.md")
 ```
 
 The digest is best-effort and quote-aware (no parser dependency); it proves
@@ -271,11 +271,11 @@ each through `mmdc`. Requires mermaid-cli
 (`npm install -g @mermaid-js/mermaid-cli`).
 
 The verb vocabulary and the graph conventions above are **enforced**, not
-just documented: `riel_brief(verb="validate")` rejects an execution node that
+just documented: `riel_contract(verb="validate")` rejects an execution node that
 does not start with a closed verb, an `ASK` node that does not name its
 trigger, a `<br/>`, a `style` in the execution DAG, and a tool name in a
 node label; it warns on a loop with no counter guard and on an over-long
-label. (`mmdc` is the parser-level check; the rest are checks `riel_brief(verb="validate")` runs.)
+label. (`mmdc` is the parser-level check; the rest are checks `riel_contract(verb="validate")` runs.)
 
 ## Pitfalls
 

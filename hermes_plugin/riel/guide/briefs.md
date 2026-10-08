@@ -56,7 +56,7 @@ needs neither.)
   subgraph, gates, Deliverable, DO NOT, plus the inherited Objective,
   `### Why` and context keywords) — as its packet. The **parent** keeps
   and validates the ledger; the child never does. Slice it mechanically with
-  `riel_brief(verb="slice", file=".riel/contract.md", phase="F#")` (subgraph + FILL sections),
+  `riel_contract(verb="slice", file=".riel/contract.md", phase="F#")` (subgraph + FILL sections),
   then complete the FILLs by hand.
 
 Seed the ledger from the contract, then iterate normally (`note`, `seam`,
@@ -167,7 +167,7 @@ edge guards, and the verification funnel are all defined there, not here.
   `G1` for gates (per riel_guide(topic="contract")). The agent's parser keys on them.
 - **Pair the graph with its digest** — a Mermaid-only graph is read less
   reliably than the same structure spelled out in text. Include the output
-  of `riel_brief(verb="digest")` beside the diagram (elements, edges, branches,
+  of `riel_contract(verb="digest")` beside the diagram (elements, edges, branches,
   entry/terminals) so the child gets the structure in plain words too.
 
 ## Step 5: Define verification gates
@@ -283,7 +283,7 @@ When dispatching, `goal` stays short and `context` carries the packet:
 
 ## Packet validation checklist
 
-A packet is *valid* when all of the following pass. `riel_brief(verb="validate")`
+A packet is *valid* when all of the following pass. `riel_contract(verb="validate")`
 (read `riel_guide(topic="tools")`) runs them mechanically; review by hand before dispatching.
 
 Structure:
@@ -311,7 +311,7 @@ Graph (validable con `mmdc` / `riel_check(file=…, mermaid=true)`):
 - [ ] Every decision has labeled edges (`|yes|`, `|no|`)
 - [ ] The flow ends in a VERIFY/Check node before `END`
 - [ ] Loops carry counters (`< 3 attempts`), never unbounded
-- [ ] The graph is paired with its explicit digest (`riel_brief(verb="digest")`)
+- [ ] The graph is paired with its explicit digest (`riel_contract(verb="digest")`)
 
 Content:
 

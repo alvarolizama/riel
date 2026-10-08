@@ -50,7 +50,7 @@ The repo is the single source of truth and the suite covers the package in place
 | riel_guide(topic="protocol") | **Trajectory** — functional grammar, persona, minimal surface on the first turn | ✅ guide v1.7.2 |
 | riel_guide(topic="briefs") | **Delegation briefs** — self-contained packets: curated context + the `### Why` rationale and context-keyword index, verb-graph, pre-registered claims (with their anchors), executable gates, the shaping step before the plan, templates | ✅ guide v3.8.3 |
 | riel_guide(topic="delegate") | **Delegation router** — plan, dispatch waves, JSON-schema'd returns, parent verifies | ✅ guide v1.3.2 |
-| riel_guide(topic="tools") | **Tooling** — the tool surface: `riel_note` writes the ledger mechanically, `riel_clean` archives the worktree state with flat in-`.riel/` backups, `riel_brief` instantiates/validates packets, slices a phase into a child packet (inheriting the Objective, the `### Why` rationale and the keywords) and expands the graph digest, `riel_todo` derives the session-todo mirror (the plan: the contract's goal, phases and steps), `riel_state` the ledger mirror the chip and the gate fold, `riel_context` emits the context keywords, `riel_fetch` fetches a remote contract to disk (HTTPS, atomic, sha256-verified), `riel_shaping` validates a shaping (Spec 7) and `riel_seam(anchors=true)` re-reads each claim beside the anchored region that supports it | ✅ guide v1.17.0 |
+| riel_guide(topic="tools") | **Tooling** — the tool surface: `riel_note` writes the ledger mechanically, `riel_clean` archives the worktree state with flat in-`.riel/` backups, `riel_contract` instantiates/validates packets, slices a phase into a child packet (inheriting the Objective, the `### Why` rationale and the keywords) and expands the graph digest, `riel_todo` derives the session-todo mirror (the plan: the contract's goal, phases and steps), `riel_state` the ledger mirror the chip and the gate fold, `riel_context` emits the context keywords, `riel_fetch` fetches a remote contract to disk (HTTPS, atomic, sha256-verified), `riel_shaping` validates a shaping (Spec 7) and `riel_seam(anchors=true)` re-reads each claim beside the anchored region that supports it | ✅ guide v1.17.0 |
 
 Each component is independent and optional: a short task uses zero; a long
 loop may use all six. Use only the machinery the task earns.
@@ -77,7 +77,7 @@ versions across guides is unsupported.
   (`.riel/contract.md`) is written first: objective, `### Why` rationale,
   constraints, pre-registered claims, a mermaid execution graph with a
   verification funnel, executable gates, deliverable, DO NOT. A parser
-  accepts or rejects it (`riel_brief(verb="validate")`).
+  accepts or rejects it (`riel_contract(verb="validate")`).
 - **The evidence before the plan.** A task that researches first writes
   `.riel/shaping.md` — findings with their sources and a confidence,
   alternatives with their verdicts, the questions still open — and each claim
@@ -151,11 +151,11 @@ Four load-bearing defenses against execution error:
 The contract captures *what* (`## Objective`, one sentence opening with
 "We need…"), *what will be true* (`## Pre-registered claims`) and *why*
 (`### Why`, under `## Context`): the rationale — what triggers the
-objective, which alternative was discarded. `riel_brief(verb="slice")`
+objective, which alternative was discarded. `riel_contract(verb="slice")`
 inherits the Objective, the `### Why` and the context keywords into every
 child packet, so a delegated agent never executes with the what but
 without the why; on a conflict it escalates (`ASK[goal-changing]`) instead
-of reinterpreting. `riel_brief(verb="validate")` WARNs when the Objective runs past one
+of reinterpreting. `riel_contract(verb="validate")` WARNs when the Objective runs past one
 sentence — rationale belongs in `### Why`.
 
 ## How to use
@@ -183,10 +183,10 @@ local state):
 ```
 # 1. Write the plan first — the contract (skeleton from a template,
 #    then you write the returned text to .riel/contract.md)
-riel_brief(verb="new", template="feature",
+riel_contract(verb="new", template="feature",
            params=["name=reset flow", "one_sentence=add password reset via email"])
 #    …fill Context (### Why, keywords), claims, graph, gates, DO NOT by hand…
-riel_brief(verb="validate", file=".riel/contract.md")
+riel_contract(verb="validate", file=".riel/contract.md")
 
 # 2. Seed the ledger from the contract (Goal ← Objective, Claims ← P#,
 #    Phase ← first F#/W# node, Next ← graph entry)
@@ -202,7 +202,7 @@ riel_seam(anchors=true)
 riel_note(check="suite green", by="make test: 264 OK", covering="plugin, engine")
 
 # 6. Delegate a phase: slice its subgraph into a child packet
-riel_brief(verb="slice", file=".riel/contract.md", phase="F2")
+riel_contract(verb="slice", file=".riel/contract.md", phase="F2")
 
 # 7. Done-check: every Goal line and Claim maps to a ✓NN
 riel_resume
@@ -224,7 +224,7 @@ stderr}` plus its own keys. `command` is provenance, never something to type.
 | `riel_todo` | session-todo mirror (JSON) — the PLAN: the contract's goal (its Objective), its phases as rows and their steps as nested subtasks; the ledger sets the statuses (the current step is the only in_progress) |
 | `riel_state` | ledger mirror (JSON) — the ledger's own facts for the desktop chip and the `pre_verify` gate: goal, phase, next, opens, claims, verified checkpoints |
 | `riel_context` | context keywords of a contract (JSON) — the index the memory search reads |
-| `riel_brief` | `new` renders a template (returns the text — you write it), `validate` runs the structural rules, `digest` expands a graph, `slice` extracts one phase as a child packet |
+| `riel_contract` | `new` renders a template (returns the text — you write it), `validate` runs the structural rules, `digest` expands a graph, `slice` extracts one phase as a child packet |
 | `riel_shaping` | `new` drops the Spec 7 skeleton, `validate` checks a shaping |
 | `riel_clean` | archive the worktree's `.riel/` state — flat timestamped backups inside `.riel/` (`ledger-<ts>.bak.md`, never a subdirectory); `all` includes the contract and the shaping, `purge` removes without backup; ask the user before cleaning (rule in riel_guide(topic="ledger")) |
 | `riel_fetch` | download a contract into the worktree — run it at the **task opening** (`riel_resume`/`riel_seam`/`riel_note(from_contract=true)`), not only when delegating; atomic, sha256-pinned, HTTPS by default (`allow_http` for a trusted transport such as a VPN); the URL may carry a short-lived single-use token instead of the API key, and is never printed |
@@ -237,11 +237,11 @@ protocol is enforced by the runtime:
 
 - **Twelve tools**, and no command line: `riel_guide` (the prose), `riel_note`,
   `riel_seam`, `riel_resume`, `riel_todo`, `riel_state`, `riel_context`,
-  `riel_brief`, `riel_shaping`, `riel_clean`, `riel_fetch`, `riel_check`. Each call resolves
+  `riel_contract`, `riel_shaping`, `riel_clean`, `riel_fetch`, `riel_check`. Each call resolves
   the session's worktree (session cwd, never the Hermes process cwd) and runs
   the bundled engine in a subprocess — concurrent sessions never touch each
   other's ledger. `riel_seam(anchors=true)` folds the anchor re-read into the
-  seam; `riel_brief` and `riel_shaping` take a typed `verb`, never argv.
+  seam; `riel_contract` and `riel_shaping` take a typed `verb`, never argv.
 - **The prose ships inside the package, read on demand**: six guides served by `riel_guide` — the index with no argument, one
   guide by topic, one section of it by `section=`. The `riel` prompt section
   publishes what the tool catalog cannot: that the prose exists at all, its topic
@@ -324,7 +324,7 @@ desktop plugins** if the chip does not appear).
 | `tests/` | development (run the suite) | Python 3, stdlib only (the desktop half's tests also use `node`; the FastAPI route tests need a Hermes interpreter) |
 | Hermes plugin package (`hermes_plugin/riel/`) | Hermes users | Hermes + Python 3; it carries the prose (`guide/`), the engine (`engine/run.py`) and the templates (`templates/`) |
 
-Optional. `riel_brief(verb="validate")` will *also* run `mmdc` on each graph if
+Optional. `riel_contract(verb="validate")` will *also* run `mmdc` on each graph if
 it finds it on PATH; without it, structural checks still run, just without
 the parser-level mmdc check. Nothing in the runtime path requires mmdc.
 
@@ -374,7 +374,7 @@ make test     # or: python3 -m unittest discover -s tests -v
 ```
 
 Stdlib-only, subprocess-driven. 282 tests cover `riel_note`, `riel_seam` (with
-anchors), `riel_resume`, `riel_todo`, `riel_state`, `riel_context`, `riel_brief`
+anchors), `riel_resume`, `riel_todo`, `riel_state`, `riel_context`, `riel_contract`
 (new/validate/digest/slice), `riel_shaping` (new/validate), `riel_clean`,
 `riel_fetch`, `riel_check` (dense markers, digest and the `mermaid=true`
 parser half), the graph

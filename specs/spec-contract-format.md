@@ -41,7 +41,7 @@ The nine sections, in order:
 8. `## Deliverable`
 9. `## DO NOT`
 
-Validate it mechanically: `riel_brief(verb="validate", file=".riel/contract.md")` (the
+Validate it mechanically: `riel_contract(verb="validate", file=".riel/contract.md")` (the
 validator keys on this exact section set and order).
 
 ## Claim anchors
@@ -76,7 +76,7 @@ home for *why this and not something else*.
 
 It is a `###` subsection on purpose: `brief validate` pins the nine `##`
 sections and ignores `###`, so the format stays stable. It is **inherited
-mechanically by `riel_brief(verb="slice")`** (like `### Context keywords` and the
+mechanically by `riel_contract(verb="slice")`** (like `### Context keywords` and the
 Objective itself), so a delegated child receives the rationale instead of a
 FILL — and the inherited copy carries the rule: on a conflict with the
 execution, the child escalates (`ASK[goal-changing]`), it never

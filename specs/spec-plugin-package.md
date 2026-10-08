@@ -149,7 +149,7 @@ The twelve tools are the surface:
 | `riel_todo` | the plan mirror |
 | `riel_state` | the ledger's facts |
 | `riel_context` | the contract's context index |
-| `riel_brief` (new/validate/digest/slice) | contracts and packets |
+| `riel_contract` (new/validate/digest/slice) | contracts and packets |
 | `riel_shaping` (new/validate) | the shaping (Spec 7) |
 | `riel_clean` (ledger/all/purge) | archive `.riel/` state |
 | `riel_fetch` | a remote contract, on disk |

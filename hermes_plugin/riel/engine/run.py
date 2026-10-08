@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The engine behind Riel's tools — one stdlib file, no user surface.
 
-Every subcommand below is reached through a TOOL (`riel_note`, `riel_brief`,
+Every subcommand below is reached through a TOOL (`riel_note`, `riel_contract`,
 `riel_seam`, …); nothing here is typed into a shell, and no flag travels as
 data. The tools pass named parameters, this file owns the formats and decides
 nothing semantic.
@@ -23,10 +23,10 @@ Usage:
     anchor  [P#] [--contract PATH] [--shaping PATH]  # claim + su región
     shaping validate [PATH]              # valida .riel/shaping.md (Spec 7)
     shaping new [-o PATH] [--force] [--param k=v ...]
-    brief new [--type T] [--param k=v ...] [--list]
-    brief validate FILE
-    brief digest FILE [-o OUT]
-    brief slice  FILE [--phase F#] [-o OUT]
+    contract new [--type T] [--param k=v ...] [--list]
+    contract validate FILE
+    contract digest FILE [-o OUT]
+    contract slice  FILE [--phase F#] [-o OUT]
     fetch   URL -o FILE [--sha256 H] [--header 'Name: v'] [--allow-http] [--timeout S] [--max-bytes N]
 """
 import argparse
@@ -239,7 +239,7 @@ def claim_anchors(text):
     One claim per LINE (the rule the seed already follows), parsed by em-dash
     CLAUSES: the anchor is the line's LAST clause (`— anchor: …`), so a claim
     whose prose merely MENTIONS the syntax (``— anchor:` ``) is not mistaken
-    for one. Because the anchor rides the claim's own line, `brief slice`
+    for one. Because the anchor rides the claim's own line, `contract slice`
     copies it verbatim into a child packet — provenance without new plumbing.
     """
     out = []
@@ -1073,7 +1073,7 @@ def cmd_ship(args):
     return rc
 
 
-# ---------------------------------------------------------------- brief ----
+# -------------------------------------------------------------- contract ----
 
 PKG_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Template search order (first match wins — most specific first):
@@ -1111,7 +1111,7 @@ def render_template(text, params, strict=False):
     return _PARAM_RE.sub(repl, text)
 
 
-def cmd_brief_new(args):
+def cmd_contract_new(args):
     if args.list:
         for d in DEFAULT_TEMPLATE_DIRS:
             if os.path.isdir(d):
@@ -1312,7 +1312,7 @@ def graph_back_edges(edges):
     return backs
 
 
-def cmd_brief_digest(args):
+def cmd_contract_digest(args):
     with open(args.file, encoding="utf-8") as fh:
         text = fh.read()
     block = _graph_block(text)
@@ -1394,7 +1394,7 @@ def _phase_subgraph(nodes, edges, start):
     return keep
 
 
-def cmd_brief_slice(args):
+def cmd_contract_slice(args):
     """Slice one phase of a contract into a mini packet (assisted).
 
     Mechanical: the phase subgraph (nodes reachable from the phase without
@@ -1497,7 +1497,7 @@ def cmd_brief_slice(args):
     return 0
 
 
-def cmd_brief_validate(args):
+def cmd_contract_validate(args):
     with open(args.file, encoding="utf-8") as fh:
         text = fh.read()
     issues = []
@@ -1934,9 +1934,9 @@ def main(argv=None):
                         help="explicit text digest of a file's mermaid graph")
     dg.add_argument("file")
     dg.add_argument("--output", "-o")
-    dg.set_defaults(fn=cmd_brief_digest)
+    dg.set_defaults(fn=cmd_contract_digest)
 
-    b = sub.add_parser("brief", help="work with packets")
+    b = sub.add_parser("contract", help="work with contracts and packets")
     bsub = b.add_subparsers(dest="bcmd", required=True)
 
     bn = bsub.add_parser("new", help="instantiate a template")
@@ -1949,17 +1949,17 @@ def main(argv=None):
     bn.add_argument("--output", "-o")
     bn.add_argument("--strict", action="store_true",
                     help="fail if any {{placeholder}} remains unfilled")
-    bn.set_defaults(fn=cmd_brief_new)
+    bn.set_defaults(fn=cmd_contract_new)
 
     bv = bsub.add_parser("validate", help="validate a packet file")
     bv.add_argument("file")
-    bv.set_defaults(fn=cmd_brief_validate)
+    bv.set_defaults(fn=cmd_contract_validate)
 
     bd = bsub.add_parser("digest",
                          help="print an explicit text digest of the graph")
     bd.add_argument("file")
     bd.add_argument("--output", "-o")
-    bd.set_defaults(fn=cmd_brief_digest)
+    bd.set_defaults(fn=cmd_contract_digest)
 
     bs = bsub.add_parser("slice",
                          help="slice one phase into a mini packet")
@@ -1967,7 +1967,7 @@ def main(argv=None):
     bs.add_argument("--phase",
                     help="phase node id (default: first F#/W#)")
     bs.add_argument("--output", "-o")
-    bs.set_defaults(fn=cmd_brief_slice)
+    bs.set_defaults(fn=cmd_contract_slice)
 
     f = sub.add_parser("fetch",
                        help="download a file over HTTP(S), atomically")

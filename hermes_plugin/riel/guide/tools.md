@@ -13,10 +13,10 @@ no command line to call:
 - Writing `.riel/ledger.md` with the exact expected format (`riel_note`)
 - Reading the prose itself — the index, one guide, or one section of it
   (`riel_guide`)
-- Instantiating packet templates (`riel_brief(verb="new")`)
+- Instantiating packet templates (`riel_contract(verb="new")`)
 - Verifying that a packet satisfies the structural constraints
-  (`riel_brief(verb="validate")`) — including the closed verb vocabulary
-- Expanding the execution graph into explicit text (`riel_brief(verb="digest")`)
+  (`riel_contract(verb="validate")`) — including the closed verb vocabulary
+- Expanding the execution graph into explicit text (`riel_contract(verb="digest")`)
 - Deriving the Hermes session-todo mirror from the plan (`riel_todo`)
   and the ledger mirror the chip and the gate fold (`riel_state`)
 - Emitting a contract's context keywords as JSON (`riel_context`) so the
@@ -51,7 +51,7 @@ cwd, never the process's — and nothing is typed into a shell.
 | `riel_todo` | — | the PLAN mirror (JSON) |
 | `riel_state` | — | the LEDGER's facts (JSON) |
 | `riel_context` | `keywords=[…]` (rarely) | the contract's context index |
-| `riel_brief` | `verb` (new/validate/digest/slice) + `template`/`params`/`file`/`phase` | contracts and packets |
+| `riel_contract` | `verb` (new/validate/digest/slice) + `template`/`params`/`file`/`phase` | contracts and packets |
 | `riel_shaping` | `verb` (new/validate) + `params`/`file`/`force` | the pre-contract research |
 | `riel_clean` | `scope` (ledger/all/purge) | archives `.riel/` state |
 | `riel_fetch` | `url`, `out`, `sha256`, `headers`, `allow_http` | a remote contract, on disk |
@@ -193,15 +193,15 @@ What each tool reports, in the envelope's `exit_code`:
 
 ```
 # the contract (the plan) — from a typed skeleton, then write it yourself
-riel_brief(verb="new", template="feature",
+riel_contract(verb="new", template="feature",
            params=["name=reset flow", "one_sentence=add password reset via email"])
 # → returns the rendered text; write it to .riel/contract.md with write_file
 
-riel_brief(verb="validate", file=".riel/contract.md")
-riel_brief(verb="digest",   file=".riel/contract.md")   # the graph as explicit text
+riel_contract(verb="validate", file=".riel/contract.md")
+riel_contract(verb="digest",   file=".riel/contract.md")   # the graph as explicit text
 
 # a child's packet — one phase sliced from the contract
-riel_brief(verb="slice", file=".riel/contract.md", phase="F2")
+riel_contract(verb="slice", file=".riel/contract.md", phase="F2")
 ```
 
 `verb="new"` searches templates in order:
@@ -258,7 +258,7 @@ is single-use, so the tool needs no credentials.
 **When to run it:** at the *opening* of a task that uses a remote contract —
 `riel_resume` / `riel_seam` / `riel_note(from_contract=true)`, before the
 context fetch — **not only when delegating**. A solo task fetches its contract
-the same way; `riel_brief(verb="slice")` (for a child) is a later, separate
+the same way; `riel_contract(verb="slice")` (for a child) is a later, separate
 moment and is never the trigger.
 
 Security defaults (not optional): **HTTPS required** — plain `http` is refused

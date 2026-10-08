@@ -174,8 +174,8 @@ RIEL_STATE = {
     "parameters": {"type": "object", "properties": {"worktree": _WORKTREE}},
 }
 
-RIEL_BRIEF = {
-    "name": "riel_brief",
+RIEL_CONTRACT = {
+    "name": "riel_contract",
     "description": (
         "Riel plan artifacts — instantiate, validate, digest or slice a contract or a "
         "delegated packet. `verb='new'` renders the shipped template for `template` (feature, "
@@ -340,5 +340,5 @@ RIEL_GUIDE = {
 }
 
 SCHEMAS = (RIEL_NOTE, RIEL_SEAM, RIEL_RESUME, RIEL_TODO, RIEL_CONTEXT,
-           RIEL_STATE, RIEL_BRIEF, RIEL_SHAPING, RIEL_CLEAN, RIEL_FETCH, RIEL_CHECK,
+           RIEL_STATE, RIEL_CONTRACT, RIEL_SHAPING, RIEL_CLEAN, RIEL_FETCH, RIEL_CHECK,
            RIEL_GUIDE)

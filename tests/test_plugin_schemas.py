@@ -86,7 +86,7 @@ class TypedToolsTest(unittest.TestCase):
         self.assertEqual(
             sorted(tools.HANDLERS),
             sorted(["riel_guide", "riel_note", "riel_seam", "riel_resume", "riel_todo",
-                    "riel_context", "riel_state", "riel_brief", "riel_shaping", "riel_clean",
+                    "riel_context", "riel_state", "riel_contract", "riel_shaping", "riel_clean",
                     "riel_fetch", "riel_check"]),
         )
 
@@ -97,7 +97,7 @@ class TypedToolsTest(unittest.TestCase):
         self.assertIn("section", described)
 
     def test_verb_enums_are_declared_and_refused(self):
-        for name, allowed in (("riel_brief", tools.BRIEF_VERBS), ("riel_shaping", tools.SHAPING_VERBS)):
+        for name, allowed in (("riel_contract", tools.CONTRACT_VERBS), ("riel_shaping", tools.SHAPING_VERBS)):
             spelled = self.schema(name)["parameters"]["properties"]["verb"]["description"]
             for verb in allowed:
                 self.assertIn(verb, spelled, name)
@@ -106,13 +106,13 @@ class TypedToolsTest(unittest.TestCase):
             self.assertEqual(payload["allowed"], list(allowed), name)
 
     def test_brief_validate_maps_named_parameters_onto_the_engine(self):
-        payload = self.call("riel_brief", {"verb": "validate", "file": ".riel/contract.md"})
-        self.assertEqual(payload["tool"], "riel_brief")
+        payload = self.call("riel_contract", {"verb": "validate", "file": ".riel/contract.md"})
+        self.assertEqual(payload["tool"], "riel_contract")
         self.assertEqual(payload["verb"], "validate")
         self.assertNotIn("command", payload, "no command-shaped provenance")
 
     def test_brief_new_renders_and_does_not_write(self):
-        payload = self.call("riel_brief", {"verb": "new", "template": "feature",
+        payload = self.call("riel_contract", {"verb": "new", "template": "feature",
                                            "params": ["name=demo", "one_sentence=do the thing"]})
         self.assertTrue(payload["passed"], payload)
         self.assertIn("# Task: demo", payload["stdout"])
@@ -120,11 +120,11 @@ class TypedToolsTest(unittest.TestCase):
                          "the tool returns the text; the agent decides what to write")
 
     def test_brief_new_rejects_a_parameter_that_is_not_key_equals_value(self):
-        payload = self.call("riel_brief", {"verb": "new", "template": "feature", "params": ["name"]})
+        payload = self.call("riel_contract", {"verb": "new", "template": "feature", "params": ["name"]})
         self.assertIn("key=value", payload["error"])
 
     def test_brief_without_a_target_file_is_refused(self):
-        payload = self.call("riel_brief", {"verb": "digest"})
+        payload = self.call("riel_contract", {"verb": "digest"})
         self.assertIn("needs 'file'", payload["error"])
 
     def test_a_scope_is_not_a_verb_and_the_argv_stays_inside(self):

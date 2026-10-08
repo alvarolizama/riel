@@ -11,7 +11,7 @@
 {{why}}
 <!-- El racional: por qué este objetivo y no otro — qué lo dispara, qué
      alternativa se descartó. Una o dos frases. Viaja al hijo en cada slice
-     (riel_brief(verb="slice") lo hereda); sin él, el delegado sabe qué hacer
+     (riel_contract(verb="slice") lo hereda); sin él, el delegado sabe qué hacer
      pero no por qué. Ante un conflicto con la ejecución, el hijo escala
      (ASK[goal-changing]) en vez de reinterpretar. -->
 

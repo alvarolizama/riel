@@ -64,7 +64,7 @@ def index_line() -> str:
 def _door_line() -> str:
     return (
         "Door: everything Riel does is a tool — riel_guide, riel_note, riel_seam, riel_resume, "
-        "riel_todo, riel_state, riel_context, riel_brief, riel_shaping, riel_clean, riel_fetch, "
+        "riel_todo, riel_state, riel_context, riel_contract, riel_shaping, riel_clean, riel_fetch, "
         'riel_check (deferred: reach them with tool_search "riel"). No command line, no PATH.'
     )
 

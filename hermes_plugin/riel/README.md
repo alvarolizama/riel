@@ -4,7 +4,7 @@ El paquete ES el producto: la prosa, el motor, las tools, el gate y el chip.
 
 **La superficie son tools, nunca una línea de comandos.** Doce tools tipadas —
 `riel_guide` (la prosa), `riel_note`, `riel_seam` (con `anchors`), `riel_resume`,
-`riel_todo`, `riel_state`, `riel_context`, `riel_brief`, `riel_shaping`,
+`riel_todo`, `riel_state`, `riel_context`, `riel_contract`, `riel_shaping`,
 `riel_clean`, `riel_fetch`, `riel_check` — sobre el motor (un archivo stdlib que
 viaja dentro del paquete y decide nada: el formato tiene un solo dueño). Ninguna
 tool recibe argv; el campo `tool` de la respuesta es provenance (qué tool

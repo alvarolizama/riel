@@ -436,38 +436,38 @@ d
 
     def test_rejects_non_verb_execution_node(self):
         bad = self.VALID.replace('S1["RUN ls"]', 'S1["Fetch it"]')
-        rc, out, _ = run("brief", "validate", self._write("b.md", bad))
+        rc, out, _ = run("contract", "validate", self._write("b.md", bad))
         self.assertEqual(rc, 1)
         self.assertIn("closed verb", out)
 
     def test_rejects_br_tag(self):
         bad = self.VALID.replace('{"ok?"}', '{"ok?<br/>x"}')
-        rc, out, _ = run("brief", "validate", self._write("b.md", bad))
+        rc, out, _ = run("contract", "validate", self._write("b.md", bad))
         self.assertEqual(rc, 1)
         self.assertIn("<br/>", out)
 
     def test_rejects_style_in_execution_graph(self):
         bad = self.VALID.replace('  G1 -->|no| S1\n',
                                  '  G1 -->|no| S1\n  style S1 fill:#f00\n')
-        rc, out, _ = run("brief", "validate", self._write("b.md", bad))
+        rc, out, _ = run("contract", "validate", self._write("b.md", bad))
         self.assertEqual(rc, 1)
         self.assertIn("style", out)
 
     def test_rejects_tool_name_in_label(self):
         bad = self.VALID.replace('S1["RUN ls"]', 'S1["RUN read_file x"]')
-        rc, out, _ = run("brief", "validate", self._write("b.md", bad))
+        rc, out, _ = run("contract", "validate", self._write("b.md", bad))
         self.assertEqual(rc, 1)
         self.assertIn("tool name", out)
 
     def test_warns_loop_without_counter(self):
-        rc, out, err = run("brief", "validate",
+        rc, out, err = run("contract", "validate",
                            self._write("ok.md", self.VALID))
         self.assertEqual(rc, 0, out)
         self.assertIn("WARN", err)
 
     def test_digest_lists_structure(self):
         path = self._write("ok.md", self.VALID)
-        rc, out, _ = run("brief", "digest", path)
+        rc, out, _ = run("contract", "digest", path)
         self.assertEqual(rc, 0, out)
         for marker in ("Elements", "Edges", "Branches", "Entry", "Terminals",
                        "S1", "G1", "END"):
@@ -476,14 +476,14 @@ d
     def test_digest_writes_output_file(self):
         path = self._write("ok.md", self.VALID)
         outp = os.path.join(self.tmp, "digest.txt")
-        rc, _, _ = run("brief", "digest", path, "-o", outp)
+        rc, _, _ = run("contract", "digest", path, "-o", outp)
         self.assertEqual(rc, 0)
         with open(outp, encoding="utf-8") as fh:
             self.assertIn("Elements", fh.read())
 
     def test_digest_without_graph_errors(self):
         path = self._write("plain.md", "# Task: x\n\nno graph here\n")
-        rc, _, err = run("brief", "digest", path)
+        rc, _, err = run("contract", "digest", path)
         self.assertEqual(rc, 1)
         self.assertIn("no mermaid", err)
 
@@ -496,14 +496,14 @@ d
     def test_rejects_ask_without_trigger(self):
         bad = self.VALID.replace('S1["RUN ls"]',
                                  'S1["ASK should we proceed?"]')
-        rc, out, _ = run("brief", "validate", self._write("b.md", bad))
+        rc, out, _ = run("contract", "validate", self._write("b.md", bad))
         self.assertEqual(rc, 1)
         self.assertIn("ASK", out)
 
     def test_accepts_ask_with_trigger(self):
         ok = self.VALID.replace('S1["RUN ls"]',
                                 'S1["ASK[irreversible] proceed?"]')
-        rc, out, err = run("brief", "validate", self._write("ok.md", ok))
+        rc, out, err = run("contract", "validate", self._write("ok.md", ok))
         # the ASK node is valid; only the (unrelated) no-RUN-gate issue may fire
         self.assertNotIn("must start with its trigger", out + err)
 
@@ -549,7 +549,7 @@ d
         return path
 
     def test_brief_new_lists_all_builtin(self):
-        rc, out, _ = run("brief", "new", "--list")
+        rc, out, _ = run("contract", "new", "--list")
         self.assertEqual(rc, 0)
         for name in ("feature", "bugfix", "refactor", "research",
                      "writing", "packet"):
@@ -557,7 +557,7 @@ d
 
     def test_brief_new_substitutes_params_leaves_rest(self):
         rc, out, err = run(
-            "brief", "new", "--type", "feature",
+            "contract", "new", "--type", "feature",
             "--param", "name=login fix",
             "--param", "one_sentence=fix login",
         )
@@ -568,7 +568,7 @@ d
 
     def test_brief_new_strict_fails_on_missing_param(self):
         rc, _, err = run(
-            "brief", "new", "--type", "feature",
+            "contract", "new", "--type", "feature",
             "--strict", "--param", "name=x",
         )
         self.assertEqual(rc, 2)
@@ -577,7 +577,7 @@ d
     def test_brief_new_strict_message_not_quoted(self):
         # the message is a plain sentence, not repr()'d
         rc, _, err = run(
-            "brief", "new", "--type", "feature",
+            "contract", "new", "--type", "feature",
             "--strict", "--param", "name=x",
         )
         self.assertEqual(rc, 2)
@@ -586,7 +586,7 @@ d
     def test_brief_new_output_writes_file(self):
         out_path = os.path.join(self.tmp, "packet.md")
         rc, _, err = run(
-            "brief", "new", "--type", "feature",
+            "contract", "new", "--type", "feature",
             "--param", "name=reset flow",
             "--param", "one_sentence=add reset",
             "-o", out_path,
@@ -601,19 +601,19 @@ d
         with open(os.path.join(tdir, "custom.md"), "w",
                   encoding="utf-8") as fh:
             fh.write("# Task: {{name}}\n")
-        rc, out, err = run("brief", "new", "--type", "custom",
+        rc, out, err = run("contract", "new", "--type", "custom",
                            "--param", "name=proj")
         self.assertEqual(rc, 0, err)
         self.assertIn("# Task: proj", out)
 
     def test_brief_new_unknown_type_errors(self):
-        rc, _, err = run("brief", "new", "--type", "no-such")
+        rc, _, err = run("contract", "new", "--type", "no-such")
         self.assertEqual(rc, 2)
         self.assertIn("no template", err)
 
     def test_brief_validate_accepts_minimal_valid(self):
         path = self._write("ok.md", self.MINIMAL_VALID)
-        rc, out, _ = run("brief", "validate", path)
+        rc, out, _ = run("contract", "validate", path)
         self.assertEqual(rc, 0, out)
 
     def test_brief_validate_missing_claims(self):
@@ -621,14 +621,14 @@ d
             "\n## Pre-registered claims\n- P1: a — verify with: true\n", "\n"
         )
         path = self._write("bad.md", bad)
-        rc, out, _ = run("brief", "validate", path)
+        rc, out, _ = run("contract", "validate", path)
         self.assertEqual(rc, 1)
         self.assertIn("Pre-registered claims", out)
 
     def test_brief_validate_rejects_non_we_need_objective(self):
         bad = self.MINIMAL_VALID.replace("We need x", "Make x better")
         path = self._write("bad.md", bad)
-        rc, out, _ = run("brief", "validate", path)
+        rc, out, _ = run("contract", "validate", path)
         self.assertEqual(rc, 1)
         self.assertIn("We need", out)
 
@@ -637,7 +637,7 @@ d
             "We need x",
             "We need x. It matters because y. And also z.")
         path = self._write("multi.md", multi)
-        rc, out, err = run("brief", "validate", path)
+        rc, out, err = run("contract", "validate", path)
         self.assertEqual(rc, 0, out)              # non-fatal: a warn, not a gate
         self.assertIn("more than one sentence", err)
         self.assertIn("### Why", err)            # points at the rationale home
@@ -648,7 +648,7 @@ d
             "We need a password-reset flow that emails a signed link and\n"
             "accepts the new password through that link.")
         path = self._write("wrapped.md", wrapped)
-        rc, out, err = run("brief", "validate", path)
+        rc, out, err = run("contract", "validate", path)
         self.assertEqual(rc, 0, out)
         self.assertNotIn("more than one sentence", err)
 
@@ -657,7 +657,7 @@ d
             "We need x",
             "We need x.\n\nSecond paragraph with more intent.")
         path = self._write("paras.md", paras)
-        rc, out, err = run("brief", "validate", path)
+        rc, out, err = run("contract", "validate", path)
         self.assertEqual(rc, 0, out)
         self.assertIn("more than one sentence", err)
 
@@ -667,13 +667,13 @@ d
             "\n## Constraints\n- r\n\n## Context\nc\n",
         )
         path = self._write("bad.md", bad)
-        rc, out, _ = run("brief", "validate", path)
+        rc, out, _ = run("contract", "validate", path)
         self.assertEqual(rc, 1)
         self.assertIn("out of order", out)
 
     def test_brief_validate_builtin_example(self):
         path = os.path.join(BRIEFS_TEMPLATES, "example-password-reset.md")
-        rc, out, _ = run("brief", "validate", path)
+        rc, out, _ = run("contract", "validate", path)
         self.assertEqual(rc, 0, out)
 
     def test_brief_validate_builtin_skeletons(self):
@@ -682,7 +682,7 @@ d
         for name in ("feature", "bugfix", "refactor",
                      "research", "writing"):
             path = os.path.join(BRIEFS_TEMPLATES, name + ".md")
-            rc, out, _ = run("brief", "validate", path)
+            rc, out, _ = run("contract", "validate", path)
             self.assertEqual(rc, 0, "%s: %s" % (name, out))
 
 
@@ -866,7 +866,7 @@ d
 
     def test_slice_keeps_phase_subgraph_only(self):
         self._contract()
-        rc, out, _ = run("brief", "slice", ".riel/contract.md", "--phase", "F2")
+        rc, out, _ = run("contract", "slice", ".riel/contract.md", "--phase", "F2")
         self.assertEqual(rc, 0)
         self.assertIn('F2["RUN mix test"]', out)
         self.assertIn('G1{"green?"}', out)
@@ -875,16 +875,16 @@ d
 
     def test_slice_default_first_phase(self):
         self._contract()
-        rc, out, _ = run("brief", "slice", ".riel/contract.md")
+        rc, out, _ = run("contract", "slice", ".riel/contract.md")
         self.assertEqual(rc, 0)
         self.assertIn('F1["EDIT a.ex — x"]', out)
 
     def test_slice_output_validates(self):
         self._contract()
-        rc, _, _ = run("brief", "slice", ".riel/contract.md",
+        rc, _, _ = run("contract", "slice", ".riel/contract.md",
                        "--phase", "F2", "-o", "mini.md")
         self.assertEqual(rc, 0)
-        rc2, out2, _ = run("brief", "validate", "mini.md")
+        rc2, out2, _ = run("contract", "validate", "mini.md")
         self.assertEqual(rc2, 0, out2)
 
     def test_slice_carries_constraints_with_suffixed_heading(self):
@@ -892,7 +892,7 @@ d
         self.CONTRACT = self.CONTRACT.replace(
             "## Constraints\n", "## Constraints (hard rules)\n")
         self._contract()
-        rc, out, _ = run("brief", "slice", ".riel/contract.md", "--phase", "F1")
+        rc, out, _ = run("contract", "slice", ".riel/contract.md", "--phase", "F1")
         self.assertEqual(rc, 0)
         self.assertIn("## Constraints\n- no new deps", out)
 
@@ -902,7 +902,7 @@ d
             "## Context\n\n### Why\nSin el racional el hijo reinterpreta.\n\n"
             "### Project\n- c\n")
         self._contract()
-        rc, out, _ = run("brief", "slice", ".riel/contract.md", "--phase", "F1")
+        rc, out, _ = run("contract", "slice", ".riel/contract.md", "--phase", "F1")
         self.assertEqual(rc, 0)
         self.assertIn("### Why", out)
         self.assertIn("Sin el racional el hijo reinterpreta.", out)
@@ -911,7 +911,7 @@ d
 
     def test_slice_without_why_keeps_the_plain_context(self):
         self._contract()
-        rc, out, _ = run("brief", "slice", ".riel/contract.md", "--phase", "F1")
+        rc, out, _ = run("contract", "slice", ".riel/contract.md", "--phase", "F1")
         self.assertEqual(rc, 0)
         self.assertNotIn("### Why", out)
         self.assertIn("<!-- FILL: only what this phase needs -->", out)
@@ -929,14 +929,14 @@ d
         path = os.path.join(self.tmp, "c.md")
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(doc)
-        rc, out, _ = run("brief", "digest", path)
+        rc, out, _ = run("contract", "digest", path)
         self.assertEqual(rc, 0)
         self.assertIn("S1", out)       # the Execution graph block wins
         self.assertNotIn("Z1", out)    # the decoy before it is ignored
 
     def test_slice_unknown_phase_errors(self):
         self._contract()
-        rc, _, err = run("brief", "slice", ".riel/contract.md", "--phase", "F9")
+        rc, _, err = run("contract", "slice", ".riel/contract.md", "--phase", "F9")
         self.assertEqual(rc, 2)
         self.assertIn("no phase node", err)
 
@@ -1063,7 +1063,7 @@ d
 
     def test_slice_inherits_the_keywords(self):
         self._contract()
-        rc, out, _ = run("brief", "slice", ".riel/contract.md", "--phase", "F1")
+        rc, out, _ = run("contract", "slice", ".riel/contract.md", "--phase", "F1")
         self.assertEqual(rc, 0)
         self.assertIn("### Context keywords", out)
         self.assertIn("- login flow → dran", out)
@@ -1071,20 +1071,20 @@ d
 
     def test_slice_without_keywords_keeps_the_plain_fill(self):
         self._contract(self.NO_KEYWORDS)
-        rc, out, _ = run("brief", "slice", ".riel/contract.md", "--phase", "S1")
+        rc, out, _ = run("contract", "slice", ".riel/contract.md", "--phase", "S1")
         self.assertEqual(rc, 0)
         self.assertNotIn("Context keywords", out)
         self.assertIn("<!-- FILL: only what this phase needs -->", out)
 
     def test_validate_warns_but_accepts_when_keywords_are_missing(self):
         path = self._contract(self.NO_KEYWORDS)
-        rc, out, err = run("brief", "validate", path)
+        rc, out, err = run("contract", "validate", path)
         self.assertEqual(rc, 0, out)                  # non-fatal: a warn, not a gate
         self.assertIn("Context keywords", err)        # warnings go to stderr
 
     def test_validate_is_quiet_when_keywords_are_present(self):
         path = self._contract()
-        rc, out, err = run("brief", "validate", path)
+        rc, out, err = run("contract", "validate", path)
         self.assertEqual(rc, 0, out)
         self.assertNotIn("Context keywords", err)
 
@@ -1586,43 +1586,43 @@ d
         return os.path.join(".riel", "contract.md")
 
     def test_a_contract_with_resolvable_anchors_validates_quietly(self):
-        rc, out, err = run("brief", "validate", self._riel())
+        rc, out, err = run("contract", "validate", self._riel())
         self.assertEqual(rc, 0, out + "|" + err)
         self.assertNotIn("WARN", err)
 
     def test_a_claim_without_an_anchor_warns_but_validates(self):
         c = self.CONTRACT.replace(" — anchor: S1", "")
-        rc, _, err = run("brief", "validate", self._riel(c))
+        rc, _, err = run("contract", "validate", self._riel(c))
         self.assertEqual(rc, 0)
         self.assertIn("P2 has no anchor", err)
 
     def test_a_section_anchor_that_does_not_resolve_is_an_issue(self):
         for bad in ("§Nope#1", "§Constraints#9"):
             c = self.CONTRACT.replace("§Constraints#2", bad)
-            rc, out, _ = run("brief", "validate", self._riel(c))
+            rc, out, _ = run("contract", "validate", self._riel(c))
             self.assertEqual(rc, 1, bad)
             self.assertIn("does not resolve", out)
 
     def test_a_node_outside_the_graph_warns(self):
         c = self.CONTRACT.replace(" — anchor: S1", " — anchor: S9")
-        rc, _, err = run("brief", "validate", self._riel(c))
+        rc, _, err = run("contract", "validate", self._riel(c))
         self.assertEqual(rc, 0)
         self.assertIn("not a node of this graph", err)
 
     def test_a_malformed_anchor_is_an_issue(self):
         c = self.CONTRACT.replace(" — anchor: S1", " — anchor: ¿esto?")
-        rc, out, _ = run("brief", "validate", self._riel(c))
+        rc, out, _ = run("contract", "validate", self._riel(c))
         self.assertEqual(rc, 1)
         self.assertIn("not a valid form", out)
 
     def test_a_shaping_anchor_without_the_finding_warns(self):
         c = self.CONTRACT.replace("shaping:F1", "shaping:F9")
-        rc, _, err = run("brief", "validate", self._riel(c))
+        rc, _, err = run("contract", "validate", self._riel(c))
         self.assertEqual(rc, 0)
         self.assertIn("no such finding", err)
 
     def test_a_shaping_anchor_with_no_shaping_file_only_warns(self):
-        rc, _, err = run("brief", "validate", self._riel(shaping=False))
+        rc, _, err = run("contract", "validate", self._riel(shaping=False))
         self.assertEqual(rc, 0)
         self.assertIn("no shaping file", err)
 
@@ -1631,7 +1631,7 @@ d
             "- P2: el nodo lo sostiene — verify with: true — anchor: S1",
             "- P2: el nodo lo sostiene, no su sintaxis `— anchor:`"
             " — verify with: true")
-        rc, _, err = run("brief", "validate", self._riel(c))
+        rc, _, err = run("contract", "validate", self._riel(c))
         self.assertEqual(rc, 0)
         self.assertIn("P2 has no anchor", err)
 
@@ -1645,7 +1645,7 @@ d
 
     def test_a_slice_inherits_the_anchors_verbatim(self):
         path = self._write(self.SLICEABLE)
-        rc, out, _ = run("brief", "slice", path, "--phase", "W1")
+        rc, out, _ = run("contract", "slice", path, "--phase", "W1")
         self.assertEqual(rc, 0, out)
         self.assertIn("— anchor: §Constraints#1", out)
 

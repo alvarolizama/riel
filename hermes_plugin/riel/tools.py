@@ -338,7 +338,7 @@ def riel_context(args: dict, **kwargs) -> str:
 # a command line: no tool takes argv, no flag travels as data. Each one maps its
 # named parameters onto the engine's argv — the mapping is the tool's job, not
 # the model's.
-BRIEF_VERBS = ("new", "validate", "digest", "slice")
+CONTRACT_VERBS = ("new", "validate", "digest", "slice")
 SHAPING_VERBS = ("new", "validate")
 CLEAN_SCOPES = ("ledger", "all", "purge")
 MAX_PARAMS = 24
@@ -353,17 +353,17 @@ def _params(raw) -> "list | str":
     return [part for item in raw[:MAX_PARAMS] for part in ("--param", item)]
 
 
-def riel_brief(args: dict, **kwargs) -> str:
+def riel_contract(args: dict, **kwargs) -> str:
     """Contract and packet artifacts: instantiate, validate, digest, slice."""
     verb = str(args.get("verb") or "").strip().lower()
-    if verb not in BRIEF_VERBS:
-        return _error("unsupported verb for riel_brief", verb=verb, allowed=list(BRIEF_VERBS))
+    if verb not in CONTRACT_VERBS:
+        return _error("unsupported verb for riel_contract", verb=verb, allowed=list(CONTRACT_VERBS))
 
-    argv = ["brief", verb]
+    argv = ["contract", verb]
     if verb == "new":
         kind = str(args.get("template") or args.get("type") or "").strip()
         if not kind:
-            return _error("riel_brief verb='new' needs 'template' (feature, bugfix, packet, …)",
+            return _error("riel_contract verb='new' needs 'template' (feature, bugfix, packet, …)",
                           hint="pass template='<name>'; the engine lists the shipped ones with --list")
         argv += ["--type", kind]
         params = _params(args.get("params"))
@@ -373,13 +373,13 @@ def riel_brief(args: dict, **kwargs) -> str:
     else:
         target = str(args.get("file") or "").strip()
         if not target:
-            return _error(f"riel_brief verb='{verb}' needs 'file' (the contract or packet path)")
+            return _error(f"riel_contract verb='{verb}' needs 'file' (the contract or packet path)")
         argv.append(os.path.expanduser(target))
         if verb == "slice":
             phase = str(args.get("phase") or "").strip()
             if phase:
                 argv += ["--phase", phase]
-    return _run(argv, args, kwargs, tool="riel_brief", verb=verb)
+    return _run(argv, args, kwargs, tool="riel_contract", verb=verb)
 
 
 def riel_shaping(args: dict, **kwargs) -> str:
@@ -572,7 +572,7 @@ HANDLERS = {
     "riel_todo": _guard(riel_todo),
     "riel_context": _guard(riel_context),
     "riel_state": _guard(riel_state),
-    "riel_brief": _guard(riel_brief),
+    "riel_contract": _guard(riel_contract),
     "riel_shaping": _guard(riel_shaping),
     "riel_clean": _guard(riel_clean),
     "riel_fetch": _guard(riel_fetch),
