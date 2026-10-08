@@ -9,9 +9,9 @@ short: it is injected every turn, and the detail lives in the skills.
 ## Frameworks — activation lines
 
 - **Riel (steering)** — when operating any LLM conversation or task, load the
-  `riel-protocol` skill and whichever apply: `riel-ledger` (multi-phase tasks),
-  `riel-contract` (DAGs), `riel-briefs`/`riel-delegate` (delegation),
-  `riel-cli` (ledger, packets and digest via `rielctl`). Riel does not create
+  `riel:protocol` skill and whichever apply: `riel:ledger` (multi-phase tasks),
+  `riel:contract` (DAGs), `riel:briefs`/`riel:delegate` (delegation),
+  `riel:cli` (the ledger, packets and digests, as tools). Riel does not create
   capability — it prevents it from being lost.
 ```
 

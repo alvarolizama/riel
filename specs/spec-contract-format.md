@@ -21,7 +21,7 @@ the plan artifact and its relationship to the ledger.
 ## The format is the packet format
 
 `contract.md` reuses the packet's section set — canonical skeleton in
-`riel-briefs/templates/packet.md`; graph conventions in `riel-contract`.
+`riel-briefs/templates/packet.md`; graph conventions in `riel:contract`.
 **Do not duplicate the structure here.**
 
 The nine sections, in order:
@@ -36,7 +36,7 @@ The nine sections, in order:
 4. `## Constraints` — hard rules
 5. `## Pre-registered claims` — P-ids with a verify-with and their anchor
    (see "Claim anchors")
-6. `## Execution graph` — the mermaid DAG (riel-contract)
+6. `## Execution graph` — the mermaid DAG (riel:contract)
 7. `## Verification gates` — command / expected / on failure, per phase
 8. `## Deliverable`
 9. `## DO NOT`
@@ -58,7 +58,7 @@ that supports it, after the verify-with:
 Three forms and only three: `§<Section>[#<n>]` (the whole section, or its n-th
 bullet), a node id of this contract's execution graph, and `shaping:<F#>`
 (a finding of `.riel/shaping.md`, Spec 7). Canonical syntax and its
-enforcement: `riel-contract`, "Claim anchors".
+enforcement: `riel:contract`, "Claim anchors".
 
 Two mechanical facts bind the form: **the claim stays on ONE line** — the
 ledger seed reads line by line — and `brief slice` copies the section
@@ -143,7 +143,7 @@ only for localhost, or anywhere with `--allow-http` on a trusted transport
 such as a VPN), TLS verified, body bounded, **atomic** write, and the URL is
 never printed — a short-lived, single-use token embedded in the query string
 must not leak into logs. The `sha256` from the reference pins end-to-end
-integrity. Full flags and exit codes: skill `riel-cli`, "Fetch" section.
+integrity. Full flags and exit codes: skill `riel:cli`, "Fetch" section.
 
 **When:** at the *opening* of the task — the moment Riel starts working on the
 contract (`resume` / `seam` / `note --from-contract`), right before the
@@ -156,5 +156,5 @@ leave a non-delegating task without its contract.
 
 - Ledger format: `spec-ledger-format.md` (Spec 1)
 - Session-todo mirror: `spec-todo-hermes.md` (Spec 6)
-- Packet skeleton + templates: skill `riel-briefs`
-- Graph conventions: skill `riel-contract`
+- Packet skeleton + templates: skill `riel:briefs`
+- Graph conventions: skill `riel:contract`
