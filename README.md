@@ -9,7 +9,7 @@
 ### Steering layer for harness/LLM
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.0.0-8B5CF6.svg)](./hermes_plugin/riel/guide/tools.md)
+[![Version](https://img.shields.io/badge/version-0.7.0-8B5CF6.svg)](./hermes_plugin/riel/plugin.yaml)
 [![Python](https://img.shields.io/badge/Python-3-3776AB?logo=python&logoColor=white)](https://www.python.org)
 [![Hermes](https://img.shields.io/badge/Hermes-plugin-5B8DEF)](https://www.nousresearch.com)
 
@@ -39,8 +39,7 @@ Riel ships as two faces over one core:
 | **Specs** | the long form of each format (ledger, contract, shaping, todo, the package itself) | `specs/` |
 
 The prose lives **inside the package** (`hermes_plugin/riel/guide/`) — one tree, no copy: what you edit is what ships.
-The repo is the single source of truth; the plugin's `vendor/` is a build
-tree that ships; the suite covers it in place.
+The repo is the single source of truth and the suite covers the package in place.
 
 ### Components
 
@@ -56,9 +55,9 @@ tree that ships; the suite covers it in place.
 Each component is independent and optional: a short task uses zero; a long
 loop may use all six. Use only the machinery the task earns.
 
-Skills reference each other by name, not version — the installed set is
+The guides reference each other by topic, not version — the installed set is
 expected to come from the same commit. Install all six together; mixing
-versions across skills is unsupported.
+versions across guides is unsupported.
 
 ## What it is for
 
@@ -317,7 +316,7 @@ desktop plugins** if the chip does not appear).
 
 | Piece | Needed at | Requires |
 |---|---|---|
-| The 6 skills (markdown only) | runtime | nothing — they are read by the agent |
+| The 6 guides (markdown only) | runtime | nothing — the agent reads them through `riel_guide` |
 | The engine (`engine/run.py`) | runtime (loop/delegate tasks) | **Python 3, stdlib only** |
 | Task templates (`templates/`) | runtime | nothing — the engine reads them directly |
 | The engine's `mermaid` (via `riel_check(mermaid=true)` or `make validate`) | development (parse graph files) | Node + `mmdc`: `npm install -g @mermaid-js/mermaid-cli` — optional |
@@ -373,7 +372,7 @@ riel/
 make test     # or: python3 -m unittest discover -s tests -v
 ```
 
-Stdlib-only, subprocess-driven. 288 tests cover `riel_note`, `riel_seam` (with
+Stdlib-only, subprocess-driven. 289 tests cover `riel_note`, `riel_seam` (with
 anchors), `riel_resume`, `riel_todo`, `riel_state`, `riel_context`, `riel_brief`
 (new/validate/digest/slice), `riel_shaping` (new/validate), `riel_clean`,
 `riel_fetch`, `riel_check` (dense markers, digest and the `mermaid=true`
@@ -399,8 +398,11 @@ python3 scripts/probe-session-cwd.py     # bootstraps a managed install itself
 ```
 
 It finds the agent tree at `$HERMES_AGENT_ROOT` (default
-`~/.hermes/hermes-agent`) and runs `hermes_bootstrap` the way the launcher does,
-so any Python 3 works.
+`~/.hermes/hermes-agent`) and runs `hermes_bootstrap` the way the launcher
+does. Run it with the interpreter Hermes itself uses (the launcher's python,
+e.g. `~/.hermes/tools/python-*/bin/python3`): the agent tree needs
+Python ≥ 3.10 (`X | Y` annotations), so an older system `python3` cannot
+import it.
 
 Graph docs are validated with mermaid-cli — the engine's own `mermaid`
 subcommand, the same one behind `riel_check(mermaid=true)`:

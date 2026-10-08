@@ -141,5 +141,5 @@ Hermes — el plugin no re-parsea el contrato.
 
 ```bash
 make test          # incluye tests/test_plugin_vendor.py (el árbol + handlers end-to-end)
-hermes plugins doctor hermes_plugin/riel --ci   # mismo discovery/registro que usa Hermes
+hermes plugins validate hermes_plugin/riel   # mismo discovery/registro que usa Hermes
 ```
