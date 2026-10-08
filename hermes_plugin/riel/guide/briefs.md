@@ -1,13 +1,7 @@
 ---
-name: riel-briefs
-description: "Use when writing self-contained agent briefs on the fly — curated context, verb-graph, gates, anchored opening. Dispatch packets for delegate_task."
+topic: briefs
+trigger: "Use when writing self-contained agent briefs on the fly — curated context, verb-graph, gates, anchored opening. Dispatch packets for delegate_task."
 version: 3.8.1
-author: Álvaro Lizama
-license: MIT
-metadata:
-  hermes:
-    tags: [riel, agents, instructions, briefs, mermaid, delegation]
-    related_skills: [riel-protocol, riel-contract, riel-delegate]
 ---
 
 # riel-briefs — Dispatch briefs for agents (Riel)
@@ -20,7 +14,7 @@ This skill owns the **contract** (the plan) and its format. The contract is
 written first, always — solo or delegated — at `.riel/contract.md`; a packet
 is the contract's **delegation form** (see below).
 
-If you need a **durable, reusable skill**, use `riel:contract` — this
+If you need a **durable, reusable skill**, use `riel_guide(topic="contract")` — this
 skill is for one-shot instructions.
 
 ## Core principle
@@ -78,11 +72,11 @@ Full format + rules: `riel/specs/spec-contract-format.md`.
 
 ## Anchored opening
 
-Apply the first-turn conditions of `riel:protocol` in `goal` + `context`:
+Apply the first-turn conditions of `riel_guide(topic="protocol")` in `goal` + `context`:
 `goal` opens with the shared objective ("We need…"), one-line persona,
 `context` carries only what the first action needs, zero irrelevant
 injections. Do not restate them here — the canonical rules live in
-`riel:protocol`.
+`riel_guide(topic="protocol")`.
 
 ## When to use / not use
 
@@ -103,7 +97,7 @@ flowchart TD
   P0 --> P1["Step 1: read the spec\ninternalize what and why"]
   P1 --> P2["Step 2: curate context\nfiles, patterns, snippets"]
   P2 --> P3["Step 3: classify the task\ncode / fix / refactor / research / writing"]
-  P3 --> G1["Step 4: build the graph\nmermaid DAG per riel:contract"]
+  P3 --> G1["Step 4: build the graph\nmermaid DAG per contract"]
   G1 --> G2["Step 5: define gates\nexecutable commands"]
   G2 --> G3["Step 6: write the prompt\nself-contained, anchored opening"]
   G3 --> V1{"Check: covers every\nspec criterion?"}
@@ -145,7 +139,7 @@ not touch, tangential context.
 
 The type changes the **shape of the graph**, not the rules. Every type
 uses the same closed verb vocabulary, edge guards, and verification
-funnel from riel:contract — what varies is the pipeline topology:
+funnel from riel_guide(topic="contract") — what varies is the pipeline topology:
 
 | Type | Graph shape | Typical gates |
 |------|-------------|---------------|
@@ -163,14 +157,14 @@ contract and for a child packet alike) when none of the types fit.
 ## Step 4: Build the instruction graph
 
 The graph is the **agent's execution plan**. `flowchart TD` following
-`riel:contract` conventions — the closed verb vocabulary, predictable IDs,
+`riel_guide(topic="contract")` conventions — the closed verb vocabulary, predictable IDs,
 edge guards, and the verification funnel are all defined there, not here.
 
 - **Always include the graph in the prompt** — it IS the execution plan;
   the agent follows the textual flow even without rendering mermaid
 - On complex tasks (3+ phases), the graph prevents skipped steps
 - Use predictable IDs by node kind — `W1/W2` for waves, `S1/S2` for steps,
-  `G1` for gates (per riel:contract). The agent's parser keys on them.
+  `G1` for gates (per riel_guide(topic="contract")). The agent's parser keys on them.
 - **Pair the graph with its digest** — a Mermaid-only graph is read less
   reliably than the same structure spelled out in text. Include the output
   of `riel_brief(verb="digest")` beside the diagram (elements, edges, branches,
@@ -207,7 +201,7 @@ Every binary criterion of the spec becomes a gate:
 
 ### Gate result format (when dispatched with output_schema)
 
-When the parent dispatches with `output_schema` (riel:delegate), the child
+When the parent dispatches with `output_schema` (riel_guide(topic="delegate")), the child
 must return its gate results as JSON matching the schema — not prose. The
 child still runs the command; the schema constrains how it *reports*. A
 child that claims `"passed": true` with `"exit_code": 1` is caught
@@ -290,7 +284,7 @@ When dispatching, `goal` stays short and `context` carries the packet:
 ## Packet validation checklist
 
 A packet is *valid* when all of the following pass. `riel_brief(verb="validate")`
-(from `riel:cli`) runs them mechanically; review by hand before dispatching.
+(from `riel_guide(topic="cli")`) runs them mechanically; review by hand before dispatching.
 
 Structure:
 
@@ -312,7 +306,7 @@ Graph (validable con `mmdc` / `scripts/validate-mermaid.sh`):
 
 - [ ] The execution graph parses (`mmdc`)
 - [ ] Every execution node starts with a verb from the closed vocabulary
-      (READ/EDIT/CREATE/RUN/VERIFY/ASK) — riel:contract
+      (READ/EDIT/CREATE/RUN/VERIFY/ASK) — riel_guide(topic="contract")
 - [ ] Predictable IDs: `W1/W2` waves, `S1/S2` steps, `G1/G2` gates
 - [ ] Every decision has labeled edges (`|yes|`, `|no|`)
 - [ ] The flow ends in a VERIFY/Check node before `END`
@@ -334,7 +328,7 @@ Content:
 - Format skeleton (contract + packet): `templates/packet.md`
 - Shaping skeleton (the evidence before the plan): `templates/shaping.md`
 - Worked example: `templates/example-password-reset.md`
-- Verb-graph syntax conventions (canonical): `riel:contract`
-- Opening conditions and functional grammar: `riel:protocol`
+- Verb-graph syntax conventions (canonical): `riel_guide(topic="contract")`
+- Opening conditions and functional grammar: `riel_guide(topic="protocol")`
 - The contract (the plan) and its format: `riel/specs/spec-contract-format.md`
-- Delegation end-to-end (plan + dispatch + parent verification): `riel:delegate`
+- Delegation end-to-end (plan + dispatch + parent verification): `riel_guide(topic="delegate")`

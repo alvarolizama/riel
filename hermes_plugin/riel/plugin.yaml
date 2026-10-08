@@ -1,10 +1,11 @@
 name: riel
-version: 0.5.1
-description: "Riel — the whole package: the six protocol skills (bundled, discoverable through the `riel` prompt section and loadable as `riel:<skill>`), the eleven tools that write the ledger, the contract and the shaping, the pre_verify gate and the desktop chip. No command line: the tools are the surface."
+version: 0.6.0
+description: "Riel — the whole package: the prose (read on demand through `riel_guide` and announced by the `riel` prompt section), the twelve typed tools that write the ledger, the contract and the shaping, the pre_verify gate and the desktop chip. No command line and no skills: the tools are the surface."
 author: Álvaro Lizama
 license: MIT
 homepage: https://github.com/alvarolizama/riel
 provides_tools:
+  - riel_guide
   - riel_note
   - riel_seam
   - riel_resume
@@ -21,6 +22,6 @@ provides_hooks:
 config_schema:
   gate: {type: bool, default: true, description: "Enforce the Riel gate: after a turn that edited code in a Riel worktree, keep going while the ledger has no verified checkpoint."}
   gate_attempts: {type: int, default: 1, description: "How many times the gate may nudge per turn (Hermes caps pre_verify continues at agent.max_verify_nudges)."}
-  context: {type: bool, default: true, description: "Publish the `riel` prompt section: the six skill triggers plus the worktree's ledger state. Off ⇒ the section renders empty and Hermes discards it."}
+  context: {type: bool, default: true, description: "Publish the `riel` prompt section: the door to the prose plus the worktree's ledger state. Off ⇒ the section renders empty and Hermes discards it."}
   harness_note: {type: str, default: "", description: "Operator's own line appended to the prompt section — the place for what the model of the day needs (e.g. \"tools are deferred: reach them with tool_search\"). Empty by default."}
-  tools: {type: bool, default: true, description: "Expose the riel_* tools. Off hides them from the model and the handlers refuse, without running rielctl."}
+  tools: {type: bool, default: true, description: "Expose the riel_* tools (the prose included: `riel_guide`). Off hides them from the model and the handlers refuse, without running the engine."}

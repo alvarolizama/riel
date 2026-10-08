@@ -1,35 +1,36 @@
 # Riel — repo tooling
 #
 # The product is the Hermes plugin package at hermes_plugin/riel/: it carries
-# the six skills, the engine that writes the formats, the tools, the gate and
-# the desktop chip, and it installs as a COPY of a commit
-# (`hermes plugins install … --enable`), never as a symlink and with nothing
-# on PATH.
+# the prose (guide/), the engine that writes the formats, the tool that serves
+# the prose, the eleven other tools, the gate and the desktop chip, and it
+# installs as a COPY of a commit (`hermes plugins install … --enable`), never
+# as a symlink and with nothing on PATH.
 #
-# Its `skills/` directory is a BUILD ARTIFACT: `make plugin-skills` regenerates
-# it from this repo's `skills/` and tests/test_plugin_vendor.py pins every file
-# by hash. Edit `skills/` here, never the copy.
+# `guide/`, `engine/` and `templates/` inside the package are BUILD ARTIFACTS:
+# `make plugin-build` regenerates them from this repo's copies and
+# tests/test_plugin_vendor.py pins every file by hash. Edit the repo's, never
+# the package's.
 
 PLUGINS_DIR ?= $(HOME)/.hermes/plugins
 
-SKILLS = riel-cli riel-ledger riel-contract riel-protocol riel-briefs riel-delegate
 PLUGIN_DIR = hermes_plugin/riel
+PARTS = guide engine templates
 
 .DEFAULT_GOAL := help
 
-.PHONY: help plugin-skills plugin-link test validate digest lint
+.PHONY: help plugin-build plugin-link test validate digest lint
 
 ## help: list the available targets
 help:
 	@echo "Riel — make targets:"
 	@grep -hE '^## ' $(MAKEFILE_LIST) | sed -E 's/^## /  /'
 
-## plugin-skills: rebuild the plugin's bundled skills/ from skills/ (build artifact)
-plugin-skills:
-	@rm -rf $(PLUGIN_DIR)/skills
-	@cp -R skills $(PLUGIN_DIR)/skills
-	@rm -rf $(PLUGIN_DIR)/vendor
-	@echo "bundled: $(words $(SKILLS)) skills + scripts/rielctl + $(words $(wildcard skills/riel-briefs/templates/*.md)) templates -> $(PLUGIN_DIR)/skills/"
+## plugin-build: rebuild the package's guide/, engine/ and templates/ (build artifacts)
+plugin-build:
+	@rm -rf $(PLUGIN_DIR)/skills $(PLUGIN_DIR)/vendor
+	@for part in $(PARTS); do rm -rf $(PLUGIN_DIR)/$$part; cp -R $$part $(PLUGIN_DIR)/$$part; done
+	@chmod +x $(PLUGIN_DIR)/engine/rielctl
+	@echo "bundled: $(words $(wildcard guide/*.md)) topics + engine/rielctl + $(words $(wildcard templates/*.md)) templates -> $(PLUGIN_DIR)/"
 
 ## plugin-link: symlink the package into a plugins dir — DEV ONLY, never a real install
 plugin-link:
@@ -48,14 +49,14 @@ validate:
 
 ## digest: print the explicit graph digest for every skill, README and spec
 digest:
-	@for f in README.md specs/*.md skills/*/SKILL.md; do \
-		R="$$(python3 skills/riel-cli/scripts/rielctl digest "$$f" 2>/dev/null)"; \
+	@for f in README.md specs/*.md guide/*.md; do \
+		R="$$(python3 engine/rielctl digest "$$f" 2>/dev/null)"; \
 		if [ -n "$$R" ]; then printf '\n===== %s =====\n%s\n' "$$f" "$$R"; fi; \
 	done
 
 ## lint: byte-compile the Python tooling; shellcheck the shell scripts if present
 lint:
-	python3 -m compileall -q scripts skills/riel-cli/scripts/rielctl tests $(PLUGIN_DIR)
+	python3 -m compileall -q scripts engine/rielctl tests $(PLUGIN_DIR)
 	@if command -v shellcheck >/dev/null 2>&1; then \
 		shellcheck scripts/*.sh; \
 	else \

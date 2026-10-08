@@ -2,7 +2,8 @@
 
 Machinery only: every tool delegates to the bundled `rielctl`, which is the
 sole writer of `.riel/ledger.md`. Descriptions state when to use the tool, not
-how the ledger is formatted (that belongs to the `riel-ledger` skill).
+how the ledger is formatted — the format, the rules and the recipes live in the
+package's prose, which `riel_guide` serves.
 """
 
 _WORKTREE = {
@@ -296,5 +297,38 @@ RIEL_CHECK = {
     },
 }
 
+RIEL_GUIDE = {
+    "name": "riel_guide",
+    "description": (
+        "Read Riel's prose on demand — the only door to it. Call it with NO topic for "
+        "the index (each topic with when to use it), with a topic for one guide, or with "
+        "a topic and a section for just that slice. Read the guide that matches the work "
+        "in front of you: 'contract' before authoring a plan, 'ledger' before running a "
+        "loop task, 'briefs' before dispatching a packet, 'delegate' before delegating, "
+        "'protocol' when opening a conversation, 'tools' for the tool surface."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "topic": {
+                "type": "string",
+                "description": (
+                    "protocol | ledger | contract | briefs | delegate | tools. "
+                    "Omit for the index."
+                ),
+            },
+            "section": {
+                "type": "string",
+                "description": (
+                    "A '## <heading>' of that guide, matched case-insensitively, "
+                    "e.g. 'Claim anchors' — the slice you need, not the whole body."
+                ),
+            },
+        },
+        "required": [],
+    },
+}
+
 SCHEMAS = (RIEL_NOTE, RIEL_SEAM, RIEL_RESUME, RIEL_TODO, RIEL_CONTEXT,
-           RIEL_STATE, RIEL_BRIEF, RIEL_SHAPING, RIEL_CLEAN, RIEL_FETCH, RIEL_CHECK)
+           RIEL_STATE, RIEL_BRIEF, RIEL_SHAPING, RIEL_CLEAN, RIEL_FETCH, RIEL_CHECK,
+           RIEL_GUIDE)

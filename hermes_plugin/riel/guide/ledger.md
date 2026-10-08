@@ -1,13 +1,7 @@
 ---
-name: riel-ledger
-description: "Use when running a loop-mode task — write the local Goal/Core/Verified/Open/Next ledger in the worktree, re-read at every seam, verify before done. No remote dependency."
+topic: ledger
+trigger: "Use when running a loop-mode task — write the local Goal/Core/Verified/Open/Next ledger in the worktree, re-read at every seam, verify before done. No remote dependency."
 version: 1.15.1
-author: Álvaro Lizama
-license: MIT
-metadata:
-  hermes:
-    tags: [riel, ledger, agent-state, verification, worktree]
-    related_skills: [riel-protocol, riel-contract, riel-briefs]
 ---
 
 # riel-ledger — Local verified state for long tasks (Riel)
@@ -112,7 +106,7 @@ The ledger is local state, not a deliverable. When working inside a repo:
 | Goal | One sentence; updated only if the goal changes |
 | Claims | Pre-registered before first action; P-ids; **never edited after execution begins** — a failed claim is refuted, not reinterpreted; the seed copies the line whole, anchor included (`— anchor: §Section#n` \| a node id \| `shaping:F#`) |
 | Source | Optional; present when the task came from a tracked item |
-| Phase | Derived from the phases graph (riel:contract); pointer to the active phase |
+| Phase | Derived from the phases graph (riel_guide(topic="contract")); pointer to the active phase |
 | Core | Max 2 live items; change only via explicit swap; each with its defining fact |
 | Verified | Numbered ✓NN, append-only; never deleted or renumbered; critical checkpoints may carry `confidence X/20` |
 | Open | Numbered ?NN; closed against a checkpoint; the number is never reused |
@@ -207,7 +201,7 @@ Not everything fades at the same rate, so refresh frequency is not uniform:
 | **The ledger** — Goal/Core/Verified/Open/Next | **Every seam** | It changes constantly and is the only thing carrying state forward |
 | **Failure invariants + mode gate** | **Every 3 seams, and after any red-line event** | Short, cheap, and they decay with distance, not with change |
 | **The anchored regions of the claims** (`riel_seam(anchors=true)`) | **Every seam** | Support rots under a claim; re-read the region, not the memory of it |
-| **The active phase graph** (riel:contract) | **Only on phase change, or when the flow starts feeling mechanical** | Re-reading a graph you're inside of buys nothing |
+| **The active phase graph** (riel_guide(topic="contract")) | **Only on phase change, or when the flow starts feeling mechanical** | Re-reading a graph you're inside of buys nothing |
 | **Other skills' rules** | **Never** | They load when the task routes to them |
 
 Refreshing everything every seam is waste; refreshing nothing is how a long
@@ -428,4 +422,4 @@ live in `.riel/ledger.md`. Remote task systems are out of scope.
 - The evidence a claim points back into: `riel/specs/spec-shaping-format.md`
 - Session-todo mirror (Spec 6, `riel_todo`): `riel/specs/spec-todo-hermes.md`
 - Phase advancement: `riel/specs/spec-ledger-format.md` (Phase advance)
-- The phases graph the ledger navigates: `riel:contract`
+- The phases graph the ledger navigates: `riel_guide(topic="contract")`

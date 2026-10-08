@@ -103,8 +103,8 @@ The pointer is never set by hand.
 
 | Face | Component | Meaning |
 |---|---|---|
-| Contract | riel:contract | "The phase's VERIFY node passed" |
-| Ledger | riel:ledger | "Append this phase's ✓NN to the LOCAL ledger" |
+| Contract | riel_guide(topic="contract") | "The phase's VERIFY node passed" |
+| Ledger | riel_guide(topic="ledger") | "Append this phase's ✓NN to the LOCAL ledger" |
 
 Gate content (verifiers + coverage):
 

@@ -1,4 +1,4 @@
-"""Regression tests for skills/riel-cli/scripts/rielctl.
+"""Regression tests for engine/rielctl.
 
 Stdlib-only (unittest). Each test runs the CLI in a fresh tempdir via
 subprocess so we exercise exactly what an agent would invoke.
@@ -18,8 +18,8 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
-RIELCTL = os.path.join(REPO, "skills", "riel-cli", "scripts", "rielctl")
-BRIEFS_TEMPLATES = os.path.join(REPO, "skills", "riel-briefs", "templates")
+RIELCTL = os.path.join(REPO, "engine", "rielctl")
+BRIEFS_TEMPLATES = os.path.join(REPO, "templates")
 EXTRACT_MERMAID = os.path.join(REPO, "scripts", "extract-mermaid.py")
 
 

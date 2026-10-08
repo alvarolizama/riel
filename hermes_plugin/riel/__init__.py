@@ -1,15 +1,14 @@
 """Riel — Hermes plugin registration.
 
-The package is the whole product: the six skills (`skills/`, bundled from the
-repo by `make plugin-skills`), the `rielctl` they call, the ledger/contract
-tools, the `pre_verify` gate and the desktop chip.
+The package is the whole product: the prose (`guide/`, bundled from the repo by
+`make plugin-build`), the engine it documents, the twelve typed tools, the
+`pre_verify` gate and the desktop chip. No command line and no skills.
 
-The prose reaches the agent two ways, because they answer different questions:
-`register_skill` puts each SKILL.md behind `skill_view("riel:<short>")` (the
-bodies, by tool), and the `riel` prompt section publishes the INDEX — the six
-one-line triggers plus the worktree's ledger state. Neither one alone is enough:
-a plugin-registered skill never enters `<available_skills>`, so without the
-section the agent would have no reason to look.
+The prose reaches the agent through ONE door: the `riel_guide` tool reads
+`guide/<topic>.md` on demand, and the `riel` prompt section publishes what the
+tool catalog cannot — that the prose exists at all, plus the topic list and the
+worktree's ledger state. Nothing registers a skill: a plugin skill never enters
+`<available_skills>`, so it would need this section anyway to be found.
 """
 
 import logging
@@ -57,11 +56,6 @@ def register(ctx) -> None:
             handler=tools.HANDLERS[name],
             check_fn=_group_check("tools"),
         )
-    for skill_name, skill_path, description in section.skill_entries():
-        try:
-            ctx.register_skill(skill_name, skill_path, description)
-        except Exception as exc:
-            logger.warning("riel: could not register the skill %s: %s", skill_name, exc)
     try:
         ctx.register_system_prompt_section(
             section.SECTION_ID,

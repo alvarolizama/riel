@@ -24,7 +24,7 @@ if REPO not in sys.path:
 
 from hermes_plugin.riel import section  # noqa: E402  (path set above)
 
-SHORT_NAMES = ("protocol", "ledger", "contract", "briefs", "delegate", "cli")
+TOPICS = ("protocol", "ledger", "contract", "briefs", "delegate", "tools")
 
 
 def fake_hermes_config(settings=None):
@@ -53,30 +53,45 @@ class SectionTest(unittest.TestCase):
 
     # -- the index ---------------------------------------------------------
 
-    def test_indexes_the_six_skills_by_short_name(self):
+    def test_names_the_one_door_and_the_topics_that_exist(self):
         block = self.block()
-        for short in SHORT_NAMES:
-            self.assertIn(f"riel:{short}", block, block)
-        self.assertIn("skill_view(\"riel:<name>\")", block)
+        self.assertIn("riel_guide()", block)
         self.assertIn("everything Riel does is a tool", block)
-        self.assertNotIn("CLI the prose calls", block)
+        for topic in TOPICS:
+            self.assertIn(topic, block, block)
+        self.assertIn("riel_guide", block)
+        self.assertNotIn("skill_view", block)
+        self.assertNotIn("riel:", block)
 
     def test_stays_within_the_section_budget(self):
         block = self.block()
         self.assertTrue(block)
         self.assertLessEqual(len(block), section.SECTION_MAX_CHARS)
 
-    def test_declares_the_lines_the_budget_dropped(self):
+    def test_the_state_and_the_note_yield_to_the_budget(self):
+        """Nothing is cut mid-sentence: the volatile parts are dropped whole."""
         original = section.SECTION_MAX_CHARS
         try:
-            # Room for the fixed parts and three index lines, not for six.
-            section.SECTION_MAX_CHARS = len(section.HEAD) + len(section._door_line()) + 3 * 120
+            # Room for the core block and the state, not for the operator's note.
+            core = len(section.HEAD) + len(section.index_line()) + len(section._door_line()) + 4
+            section.SECTION_MAX_CHARS = core + 120
             block = section.render({"cwd": self.tmp})
             self.assertTrue(block)
             self.assertLessEqual(len(block), section.SECTION_MAX_CHARS)
-            self.assertIn("more: run skills_list", block)
+            self.assertNotIn("\u2026", block.splitlines()[-1])  # no truncated tail
+            # Now: not even the state fits.
+            section.SECTION_MAX_CHARS = core + 1
+            tight = section.render({"cwd": self.tmp})
+            self.assertEqual(tight.splitlines()[0], section.HEAD)
+            self.assertLessEqual(len(tight), section.SECTION_MAX_CHARS)
         finally:
             section.SECTION_MAX_CHARS = original
+
+    def test_the_note_still_renders_under_a_generous_budget(self):
+        fake_hermes_config({"harness_note": "your harness defers tools: use tool_search"})
+        block = self.render()
+        self.assertIn("your harness defers tools: use tool_search", block)
+        self.assertLessEqual(len(block), section.SECTION_MAX_CHARS)
 
     def test_returns_empty_when_not_even_one_line_fits(self):
         original = section.SECTION_MAX_CHARS
@@ -149,18 +164,20 @@ class SectionTest(unittest.TestCase):
         self.assertIn("Worktree state — Goal: ship the package", self.render())
 
 
-class NameMappingTest(unittest.TestCase):
-    """Every bundled skill registers under its SHORT name; the file keeps the long one."""
+class GuideWiringTest(unittest.TestCase):
+    """The section reads the guide's own files — the index cannot drift from them."""
 
-    def test_six_entries_with_short_names_and_existing_paths(self):
-        entries = section.skill_entries()
-        self.assertEqual([short for short, _path, _desc in entries], list(SHORT_NAMES))
-        rows = dict(section.index_rows())
-        for short, path, description in entries:
-            self.assertTrue(os.path.isfile(path), path)
-            self.assertTrue(description)
-            self.assertEqual(os.path.basename(os.path.dirname(path)), f"riel-{short}")
-            self.assertEqual(rows[short], section._cap(description, section.DESC_MAX_CHARS))
+    def test_the_index_line_names_every_shipped_topic(self):
+        line = section.index_line()
+        topics = section.guide.topics()
+        self.assertEqual(sorted(topics), sorted(TOPICS))
+        for topic in topics:
+            self.assertIn(topic, line)
+        self.assertIn("riel_guide(topic=\"contract\")", line)
+
+    def test_the_engine_the_section_runs_is_in_the_package(self):
+        self.assertTrue(os.path.isfile(section.RIELCTL), section.RIELCTL)
+        self.assertEqual(os.path.basename(os.path.dirname(section.RIELCTL)), "engine")
 
     def test_no_hermes_import_at_module_level(self):
         for name in ("section.py", "settings.py"):

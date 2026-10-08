@@ -80,7 +80,7 @@ instead of after it has been "verified".
 
 ## The handoff
 
-`riel_shaping(verb="new")` instantiates `riel-briefs/templates/shaping.md`. The
+`riel_shaping(verb="new")` instantiates `templates/shaping.md`. The
 handoff into the contract is authored, never generated: the Verdict seeds
 `## Objective`, the `### Why` and `## Pre-registered claims`, and each claim
 keeps its provenance anchor.
@@ -90,5 +90,5 @@ keeps its provenance anchor.
 - `spec-contract-format.md` (Spec 2) — the plan the shaping seeds; Claim anchors
 - `spec-ledger-format.md` (Spec 1) — the state the plan advances
 - `spec-todo-hermes.md` (Spec 6) — the plan mirror
-- `riel:briefs` — the template, and the shaping step before the contract
-- `riel:cli` — `shaping validate`, `shaping new`, `anchor`
+- `riel_guide(topic="briefs")` — the template, and the shaping step before the contract
+- `riel_guide(topic="tools")` — `shaping validate`, `shaping new`, the seam's anchors

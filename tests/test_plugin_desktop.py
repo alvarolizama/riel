@@ -41,7 +41,7 @@ REPO = HERE.parent
 PLUGIN = REPO / "hermes_plugin" / "riel"
 DASHBOARD = PLUGIN / "dashboard"
 DESKTOP = PLUGIN / "desktop"
-BUNDLED_RIELCTL = PLUGIN / "skills" / "riel-cli" / "scripts" / "rielctl"
+BUNDLED_RIELCTL = PLUGIN / "engine" / "rielctl"
 
 CLIENT_CWD = "/tmp/riel-statusbar-test-worktree"
 ALLOWED_SPECIFIERS = {"@hermes/plugin-sdk", "react", "react/jsx-runtime"}

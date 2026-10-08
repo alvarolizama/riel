@@ -6,7 +6,8 @@ against the **bundled** rielctl — the same copy a user gets when installing
 the plugin.
 
 Two things are pinned here:
-  * `skills/` matches the repo sources (hash), so the build artifact cannot drift;
+  * `guide/`, `engine/` and `templates/` match the repo sources (hash), so the
+    build artifacts cannot drift;
   * manifest, schemas and handlers agree, and the handlers actually run.
 
 Run:
@@ -27,15 +28,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 PLUGIN = os.path.join(REPO, "hermes_plugin", "riel")
 
-SOURCE_SKILLS = os.path.join(REPO, "skills")
-BUNDLED_SKILLS = os.path.join(PLUGIN, "skills")
 MANIFEST = os.path.join(PLUGIN, "plugin.yaml")
 
-# The six skills the package ships, by directory name (the load name is the
-# short form: `riel:ledger` for `skills/riel-ledger/SKILL.md`).
-SKILL_SLUGS = (
-    "riel-cli", "riel-ledger", "riel-contract", "riel-protocol", "riel-briefs", "riel-delegate",
-)
+# The three build artifacts the package carries. Each is a copy of the repo's
+# same-named directory: the prose (`guide/`), the engine the tools run
+# (`engine/`) and the packet templates (`templates/`).
+PARTS = ("guide", "engine", "templates")
+
+# The topics the prose ships today: ONE door (`riel_guide`) reads them.
+TOPICS = ("briefs", "contract", "delegate", "ledger", "protocol", "tools")
 
 
 def sha256(path):
@@ -108,34 +109,47 @@ def _frontmatter(path):
 
 
 class PackageTest(unittest.TestCase):
-    """`make plugin-skills` output must equal the repo's skills/, byte for byte."""
+    """`make plugin-build` output must equal the repo's copies, byte for byte."""
 
-    def test_skills_tree_matches_the_repo(self):
-        source = _tree(SOURCE_SKILLS)
-        bundled = _tree(BUNDLED_SKILLS)
-        self.assertTrue(bundled, "run: make plugin-skills")
-        self.assertEqual(sorted(bundled), sorted(source), "the bundle drifted from skills/")
-        for rel, digest in source.items():
-            self.assertEqual(bundled[rel], digest, f"{rel} drifted from skills/")
+    def test_every_part_matches_the_repo(self):
+        for part in PARTS:
+            source = _tree(os.path.join(REPO, part))
+            bundled = _tree(os.path.join(PLUGIN, part))
+            self.assertTrue(bundled, f"run: make plugin-build ({part} is missing)")
+            self.assertEqual(sorted(bundled), sorted(source), f"the bundle drifted from {part}/")
+            for rel, digest in source.items():
+                self.assertEqual(bundled[rel], digest, f"{part}/{rel} drifted from the repo")
 
-    def test_the_six_skills_ship_with_loadable_frontmatter(self):
-        for slug in SKILL_SLUGS:
-            path = os.path.join(BUNDLED_SKILLS, slug, "SKILL.md")
-            self.assertTrue(os.path.isfile(path), f"missing bundled skill: {slug}")
+    def test_the_prose_ships_with_its_frontmatter(self):
+        guide_dir = os.path.join(PLUGIN, "guide")
+        self.assertEqual(sorted(f for f in os.listdir(guide_dir) if f.endswith(".md")),
+                         sorted(f"{topic}.md" for topic in TOPICS))
+        for topic in TOPICS:
+            path = os.path.join(guide_dir, f"{topic}.md")
             meta = _frontmatter(path)
-            self.assertEqual(meta.get("name"), slug, path)
-            self.assertTrue(meta.get("description"), f"{slug} has no description")
+            self.assertEqual(meta.get("topic"), topic, path)
+            self.assertTrue(meta.get("trigger"), f"{topic} has no trigger")
+            self.assertTrue(meta.get("version"), f"{topic} has no version")
 
     def test_the_bundle_carries_the_machinery_the_prose_calls(self):
-        rielctl = os.path.join(BUNDLED_SKILLS, "riel-cli", "scripts", "rielctl")
-        templates = os.path.join(BUNDLED_SKILLS, "riel-briefs", "templates")
+        rielctl = os.path.join(PLUGIN, "engine", "rielctl")
+        templates = os.path.join(PLUGIN, "templates")
         self.assertTrue(os.path.isfile(rielctl))
-        self.assertEqual(sha256(rielctl), sha256(os.path.join(SOURCE_SKILLS, "riel-cli", "scripts", "rielctl")))
+        self.assertEqual(sha256(rielctl), sha256(os.path.join(REPO, "engine", "rielctl")))
         shipped = sorted(f for f in os.listdir(templates) if f.endswith(".md"))
-        self.assertEqual(shipped, sorted(f for f in os.listdir(os.path.join(SOURCE_SKILLS, "riel-briefs", "templates")) if f.endswith(".md")))
+        self.assertEqual(shipped, sorted(f for f in os.listdir(os.path.join(REPO, "templates")) if f.endswith(".md")))
+        self.assertTrue(os.access(rielctl, os.X_OK), "the bundled engine must stay executable")
 
-    def test_no_vendor_directory(self):
+    def test_no_vendor_or_skills_directory(self):
         self.assertFalse(os.path.exists(os.path.join(PLUGIN, "vendor")), "vendor/ was retired")
+        self.assertFalse(os.path.exists(os.path.join(PLUGIN, "skills")),
+                         "skills/ was retired: the prose is served by riel_guide")
+
+    def test_the_package_registers_no_skill(self):
+        """One door: nothing in the package calls `register_skill`."""
+        with open(os.path.join(PLUGIN, "__init__.py"), encoding="utf-8") as fh:
+            source = fh.read()
+        self.assertNotIn("register_skill", source)
 
 
 class WiringTest(unittest.TestCase):

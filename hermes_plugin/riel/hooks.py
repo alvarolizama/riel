@@ -1,7 +1,7 @@
 """`pre_verify` — the Riel checkpoint rule, enforced by the runtime.
 
 Riel's own rule (`riel-ledger`): a ✓ checkpoint exists only with the real gate
-output behind it. Until now that was prose in a skill; this hook makes the turn
+output behind it. That prose lives in the guide; this hook makes the turn
 loop hold the line — after a turn that edited code inside a Riel-tracked
 worktree, if the ledger carries claims and no verified checkpoint with evidence,
 the plugin answers `{"action": "continue", "message": …}` and the agent keeps
@@ -30,7 +30,7 @@ import sys
 from pathlib import Path
 
 PLUGIN_DIR = Path(__file__).resolve().parent
-RIELCTL = PLUGIN_DIR / "skills" / "riel-cli" / "scripts" / "rielctl"
+RIELCTL = PLUGIN_DIR / "engine" / "rielctl"
 LEDGER_PARTS = (".riel", "ledger.md")
 EVIDENCE_MARKER = "verified by:"
 MAX_ANCESTOR_DEPTH = 12
@@ -158,7 +158,7 @@ def assess(worktree, rielctl: Path = RIELCTL, timeout: int = TIMEOUT_SECS) -> di
         return facts
     facts["present"] = True
     if not rielctl.exists():
-        facts["error"] = "bundled rielctl is missing (run: make plugin-skills)"
+        facts["error"] = "bundled engine is missing (run: make plugin-build)"
         return facts
     try:
         proc = subprocess.run(

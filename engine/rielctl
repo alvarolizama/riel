@@ -1071,15 +1071,15 @@ def cmd_ship(args):
 
 # ---------------------------------------------------------------- brief ----
 
-SKILL_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PKG_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Template search order (first match wins — most specific first):
-#  1. user-level override in the active Hermes profile
+#  1. user-level override (~/.hermes/riel/templates)
 #  2. project-level, versioned with the code
-#  3. built-in, shipped with riel-briefs
+#  3. built-in, shipped inside the package next to the engine
 DEFAULT_TEMPLATE_DIRS = [
-    os.path.expanduser("~/.hermes/skills/riel-briefs/templates"),
+    os.path.expanduser("~/.hermes/riel/templates"),
     os.path.join(os.getcwd(), ".riel", "templates"),
-    os.path.normpath(os.path.join(SKILL_ROOT, "..", "riel-briefs", "templates")),
+    os.path.join(PKG_ROOT, "templates"),
 ]
 
 

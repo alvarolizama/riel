@@ -155,7 +155,7 @@ function chipStep(ledger, busy, tool) {
 const GROUPS = [
   { key: 'gate', label: 'Gate', hint: 'turno que editó código no cierra sin un ✓ verificado' },
   { key: 'tools', label: 'Tools', hint: 'las seis riel_* (note, seam, resume, todo, context, cli)' },
-  { key: 'context', label: 'Prompt', hint: 'el bloque de Riel: índice de skills + estado del worktree' }
+  { key: 'context', label: 'Prompt', hint: 'el bloque de Riel: la puerta al guide + estado del worktree' }
 ]
 
 /** The three switches and the operator's note, from the status bar.
@@ -652,7 +652,7 @@ export default {
       data: {
         id: 'riel.toggle-context',
         label: 'Riel: encender/apagar el bloque del prompt',
-        keywords: ['riel', 'prompt', 'section', 'skills'],
+        keywords: ['riel', 'prompt', 'section', 'guide'],
         run: () => void flip('context', 'prompt')
       }
     })

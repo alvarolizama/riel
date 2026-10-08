@@ -1,13 +1,7 @@
 ---
-name: riel-delegate
-description: "Use when delegating to subagents — entry router for the delegation flow: plan phases, dispatch riel-briefs packets in waves, parent verifies returns. Orchestrates the other Riel skills."
+topic: delegate
+trigger: "Use when delegating to subagents — entry router for the delegation flow: plan phases, dispatch riel-briefs packets in waves, parent verifies returns. Orchestrates the other Riel skills."
 version: 1.3.1
-author: Álvaro Lizama
-license: MIT
-metadata:
-  hermes:
-    tags: [riel, delegation, subagents, waves, verification, orchestration]
-    related_skills: [riel-protocol, riel-briefs, riel-contract, riel-ledger]
 ---
 
 # riel-delegate — Delegation router (Riel)
@@ -22,10 +16,10 @@ generators; the parent is the verifier.
 
 ```mermaid
 flowchart TD
-  Q{What do you need?} -->|"Plan phases as\ndeliverables"| P["PLAN\nload riel:contract"]
-  Q -->|"Write a dispatch\npacket"| B["BRIEF\nload riel:briefs"]
+  Q{What do you need?} -->|"Plan phases as\ndeliverables"| P["PLAN\nload contract"]
+  Q -->|"Write a dispatch\npacket"| B["BRIEF\nload briefs"]
   Q -->|"Dispatch waves"| D[DISPATCH]
-  Q -->|"Verify what\ncame back"| V["VERIFY\nload riel:ledger"]
+  Q -->|"Verify what\ncame back"| V["VERIFY\nload ledger"]
   Q -->|"Integrate + commit"| I[INTEGRATE]
   P --> D
   B --> D
@@ -45,21 +39,21 @@ only what dispatching itself adds.
 - A task to delegate (feature, fix, research, tests)
 
 ### What this skill PRODUCES
-- A routed plan: phases (riel:contract) → packets (riel:briefs) → waves
-- A parent-side verification verdict per criterion (riel:ledger)
+- A routed plan: phases (riel_guide(topic="contract")) → packets (riel_guide(topic="briefs")) → waves
+- A parent-side verification verdict per criterion (riel_guide(topic="ledger"))
 - Commits per logical concern
 
 ## The cycle at a glance
 
-1. **PLAN** — load `riel:contract`. Every phase is a complete deliverable
+1. **PLAN** — load `riel_guide(topic="contract")`. Every phase is a complete deliverable
    with a literal definition of done; subagents get disjoint file scopes,
    grouped in waves (Wave 2 depends on Wave 1). Any cross-edge between
    scopes means they are NOT parallel-safe.
-2. **BRIEF** — load `riel:briefs`. The parent contract (`.riel/contract.md`)
+2. **BRIEF** — load `riel_guide(topic="briefs")`. The parent contract (`.riel/contract.md`)
    is sliced into a **mini contract** per child: a standalone packet with
    anchored goal, curated context, exact files, verification command, DO NOT.
 3. **DISPATCH** — waves, bounded and disjoint (rules below).
-4. **VERIFY** — load `riel:ledger`. The **parent owns and validates the
+4. **VERIFY** — load `riel_guide(topic="ledger")`. The **parent owns and validates the
    ledger**; children never do. Decompose the phase's definition of done
    into criteria; run each gate yourself; `confidence X/20` per criterion;
    borderline (< 12/20) re-sampled with variation before accepting.
@@ -173,26 +167,26 @@ starts clean.
   children (zombies may have finished and written their files).
 - **Piping the gate into `tail`/`head`.** Masks the exit code.
 - **No ledger on the parent.** If the wave spans phases, the parent keeps
-  a local ledger (riel:ledger) — the parent's state is as loss-prone as a
+  a local ledger (riel_guide(topic="ledger")) — the parent's state is as loss-prone as a
   child's.
 
 ## Checklist
 
-- [ ] Phases are complete deliverables with definition of done (riel:contract)
+- [ ] Phases are complete deliverables with definition of done (riel_guide(topic="contract"))
 - [ ] Scopes disjoint at file level; shared files are parent work
-- [ ] Every child gets a self-contained packet (riel:briefs)
+- [ ] Every child gets a self-contained packet (riel_guide(topic="briefs"))
 - [ ] Packet includes pre-registered claims (P-ids) that cannot be edited post-execution
 - [ ] Dispatch uses output_schema — child returns JSON, not prose
 - [ ] Children never touch a ledger; the parent is its only writer (seed: `riel_note(from_contract=true)`)
 - [ ] Children never commit, never run the full suite
-- [ ] Parent verified: decomposed criteria + `confidence X/20` per criterion (riel:ledger)
+- [ ] Parent verified: decomposed criteria + `confidence X/20` per criterion (riel_guide(topic="ledger"))
 - [ ] Failures triaged A/B/C; B fixed by parent, not re-dispatched
 - [ ] Re-dispatch brief describes target state, never the previous failure
 - [ ] Full gate re-run unpiped; commit per logical concern
 
 ## Cross-references
 
-- The packet format: `riel:briefs`
-- Opening conditions and functional grammar: `riel:protocol`
-- Mermaid contract conventions: `riel:contract`
-- The ✓NN + confidence + re-sample rules: `riel:ledger`
+- The packet format: `riel_guide(topic="briefs")`
+- Opening conditions and functional grammar: `riel_guide(topic="protocol")`
+- Mermaid contract conventions: `riel_guide(topic="contract")`
+- The ✓NN + confidence + re-sample rules: `riel_guide(topic="ledger")`

@@ -23,7 +23,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
 PLUGIN = REPO / "hermes_plugin" / "riel"
-BUNDLED_RIELCTL = PLUGIN / "skills" / "riel-cli" / "scripts" / "rielctl"
+BUNDLED_RIELCTL = PLUGIN / "engine" / "rielctl"
 
 HAND_WRITTEN_NO_EVIDENCE = """# Riel ledger
 
@@ -135,7 +135,7 @@ class AssessTest(GateTestCase):
         self.seed("note", "--goal", "g", "--next", "n")
         facts = self.hooks.assess(self.tmp, rielctl=Path("/nope/rielctl"))
         self.assertTrue(facts["present"])
-        self.assertIn("rielctl", facts["error"])
+        self.assertIn("engine", facts["error"])
         self.assertIsNone(self.hooks.nudge_message(self.tmp, facts))
 
     def test_junk_worktree_never_raises(self):

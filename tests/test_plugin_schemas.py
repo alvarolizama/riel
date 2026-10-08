@@ -47,11 +47,17 @@ class SchemaContractTest(unittest.TestCase):
         for schema in schemas.SCHEMAS:
             self.assertLessEqual(len(schema["description"]), DESC_MAX_CHARS, schema["name"])
 
-    def test_every_tool_declares_a_worktree_and_an_object_schema(self):
+    def test_every_tool_declares_an_object_schema(self):
         for schema in schemas.SCHEMAS:
-            params = schema["parameters"]
-            self.assertEqual(params["type"], "object", schema["name"])
-            self.assertIn("worktree", params["properties"], schema["name"])
+            self.assertEqual(schema["parameters"]["type"], "object", schema["name"])
+
+    def test_every_task_tool_declares_a_worktree_and_the_guide_does_not(self):
+        """`riel_guide` reads the package's prose: it needs no worktree state."""
+        for schema in schemas.SCHEMAS:
+            if schema["name"] == "riel_guide":
+                self.assertNotIn("worktree", schema["parameters"]["properties"])
+                continue
+            self.assertIn("worktree", schema["parameters"]["properties"], schema["name"])
 
 
 class TypedToolsTest(unittest.TestCase):
@@ -76,13 +82,19 @@ class TypedToolsTest(unittest.TestCase):
             for banned in ("args", "argv", "flags"):
                 self.assertNotIn(banned, props, f"{schema['name']} smuggles a command line ({banned})")
 
-    def test_the_surface_covers_every_verb_the_prose_calls(self):
+    def test_the_surface_is_the_twelve_tools_the_prose_calls(self):
         self.assertEqual(
-            sorted(h for h in tools.HANDLERS),
-            sorted(["riel_note", "riel_seam", "riel_resume", "riel_todo", "riel_context",
-                    "riel_state", "riel_brief", "riel_shaping", "riel_clean", "riel_fetch",
-                    "riel_check"]),
+            sorted(tools.HANDLERS),
+            sorted(["riel_guide", "riel_note", "riel_seam", "riel_resume", "riel_todo",
+                    "riel_context", "riel_state", "riel_brief", "riel_shaping", "riel_clean",
+                    "riel_fetch", "riel_check"]),
         )
+
+    def test_the_guide_is_the_door_the_prose_names(self):
+        """Whatever the guide's own topics say, the tool exists and takes a topic."""
+        described = self.schema("riel_guide")["parameters"]["properties"]
+        self.assertIn("topic", described)
+        self.assertIn("section", described)
 
     def test_verb_enums_are_declared_and_refused(self):
         for name, allowed in (("riel_brief", tools.BRIEF_VERBS), ("riel_shaping", tools.SHAPING_VERBS)):

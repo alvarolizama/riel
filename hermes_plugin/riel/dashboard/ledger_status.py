@@ -20,7 +20,7 @@ import time
 from pathlib import Path
 
 PLUGIN_DIR = Path(__file__).resolve().parent.parent
-RIELCTL = PLUGIN_DIR / "skills" / "riel-cli" / "scripts" / "rielctl"
+RIELCTL = PLUGIN_DIR / "engine" / "rielctl"
 TIMEOUT_SECS = 15
 
 _LEDGER_SUFFIX = (".riel", "ledger.md")
@@ -113,7 +113,7 @@ def read_status(worktree: str, rielctl: Path = RIELCTL, timeout: int = TIMEOUT_S
     status["present"] = True
 
     if not rielctl.exists():
-        status["error"] = "bundled rielctl is missing (run: make plugin-skills)"
+        status["error"] = "bundled engine is missing (run: make plugin-build)"
         return status
     try:
         proc = subprocess.run(

@@ -2,18 +2,24 @@
 
 El paquete ES el producto: la prosa, el motor, las tools, el gate y el chip.
 
-**La superficie son tools, nunca una línea de comandos.** Once tools tipadas —
-`riel_note`, `riel_seam` (con `anchors`), `riel_resume`, `riel_todo`,
-`riel_state`, `riel_context`, `riel_brief`, `riel_shaping`, `riel_clean`,
-`riel_fetch`, `riel_check` — sobre el motor (`rielctl`, stdlib) que viaja dentro
-del paquete y decide nada: el formato tiene un solo dueño. Ninguna tool recibe
-argv; el campo `command` de la respuesta es provenance, no una interfaz.
+**La superficie son tools, nunca una línea de comandos.** Doce tools tipadas —
+`riel_guide` (la prosa), `riel_note`, `riel_seam` (con `anchors`), `riel_resume`,
+`riel_todo`, `riel_state`, `riel_context`, `riel_brief`, `riel_shaping`,
+`riel_clean`, `riel_fetch`, `riel_check` — sobre el motor (`rielctl`, stdlib) que
+viaja dentro del paquete y decide nada: el formato tiene un solo dueño. Ninguna
+tool recibe argv; el campo `command` de la respuesta es provenance, no una
+interfaz.
 
-**La prosa viaja acá.** Los seis skills viven en `skills/` y se registran con su
-nombre corto — `riel:protocol`, `riel:ledger`, `riel:contract`, `riel:briefs`,
-`riel:delegate`, `riel:cli` — más la sección `riel` del prompt, que publica una
-línea por skill y el estado del worktree. Nada que copiar a un directorio de
-skills, nada de `external_dirs`, nada de symlinks.
+**La prosa viaja acá, y se lee por una sola puerta.** `guide/` trae seis topics
+(`protocol`, `ledger`, `contract`, `briefs`, `delegate`, `tools`): sin argumento
+`riel_guide()` devuelve el índice, `riel_guide(topic="contract")` el cuerpo y
+`riel_guide(topic="contract", section="Claim anchors")` sólo esa rebanada. La
+sección `riel` del prompt publica lo que el catálogo de tools no puede —que la
+prosa existe— más el estado del worktree. **No se registra ningún skill**: un
+skill de plugin nunca entra en `<available_skills>` y necesitaría la sección
+igual, así que habría dos puertas y dos formas de que la prosa se desincronice.
+Nada que copiar a un directorio de skills, nada de `external_dirs`, nada de
+symlinks.
 
 ## Instalación (usuario)
 
@@ -24,15 +30,15 @@ hermes plugins update riel
 
 El instalador clona el repo y **mueve solo este subdirectorio** a
 `~/.hermes/plugins/riel` — el checkout no sobrevive. Por eso el paquete es
-autocontenido: `skills/` trae la prosa, el motor y los templates, generada
-desde el repo (`make plugin-skills`) y verificada por hash, archivo por archivo,
-en `tests/test_plugin_vendor.py`. El repo es la fuente; `skills/` acá es un
-artefacto de build.
+autocontenido: `guide/`, `engine/` y `templates/` viajan adentro, generados
+desde el repo (`make plugin-build`) y verificados por hash, archivo por archivo,
+en `tests/test_plugin_vendor.py`. El repo es la fuente; esas tres carpetas acá
+son artefactos de build.
 
 ## Instalación (desarrollo)
 
 ```bash
-make plugin-skills                     # hermes_plugin/riel/skills/ desde skills/
+make plugin-build                      # hermes_plugin/riel/{guide,engine,templates}/ desde el repo
 make plugin-link PLUGINS_DIR=~/.hermes/profiles/coder/plugins   # symlink, sólo dev
 hermes plugins enable riel
 ```

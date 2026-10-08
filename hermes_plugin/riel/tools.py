@@ -27,10 +27,11 @@ import sys
 from pathlib import Path
 
 _PLUGIN_DIR = Path(__file__).resolve().parent
-RIELCTL = _PLUGIN_DIR / "skills" / "riel-cli" / "scripts" / "rielctl"
+RIELCTL = _PLUGIN_DIR / "engine" / "rielctl"
 TIMEOUT_SECS = 60
 
 _SETTINGS_MODULE = None
+_GUIDE_MODULE = None
 
 
 def plugin_settings():
@@ -51,6 +52,21 @@ def plugin_settings():
         spec.loader.exec_module(module)
         _SETTINGS_MODULE = module
     return _SETTINGS_MODULE
+
+
+def plugin_guide():
+    """`guide.py` beside this file, loaded by path (same reason as settings.py)."""
+    global _GUIDE_MODULE
+    if _GUIDE_MODULE is None:
+        spec = importlib.util.spec_from_file_location(
+            "riel_plugin_guide", _PLUGIN_DIR / "guide.py"
+        )
+        if spec is None or spec.loader is None:  # pragma: no cover - defensive
+            raise RuntimeError("guide.py is missing from the package")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _GUIDE_MODULE = module
+    return _GUIDE_MODULE
 
 
 _STR_FLAGS = {
@@ -119,9 +135,9 @@ def _run(argv: list, args: dict, kwargs: dict) -> str:
         return _error(f"worktree is not a directory: {worktree}", worktree=worktree)
     if not RIELCTL.exists():
         return _error(
-            "bundled rielctl is missing — the package has no skills/ tree",
+            "bundled engine is missing — the package has no engine/ tree",
             path=str(RIELCTL),
-            hint="from the repo checkout: make plugin-skills",
+            hint="from the repo checkout: make plugin-build",
         )
     try:
         proc = subprocess.run(
@@ -423,6 +439,68 @@ def riel_check(args: dict, **kwargs) -> str:
     )
 
 
+def riel_guide(args: dict, **kwargs) -> str:
+    """Riel's prose — the index (no `topic`), one guide, or one section of it.
+
+    Reads the package's own `guide/`, so it needs no worktree state and runs no
+    engine: the prose ships with the plugin. The envelope is the same shape as
+    every other tool's, with the text in `stdout` (and `content`).
+    """
+    module = plugin_guide()
+    worktree = _worktree(args, kwargs)
+    topic = str(args.get("topic") or "").strip()
+    section = str(args.get("section") or "").strip() or None
+
+    if not topic:
+        rows = module.entries()
+        if not rows:
+            return _error(
+                "the package ships no guide/ prose",
+                path=str(module.GUIDE_DIR),
+                hint="from the repo checkout: make plugin-build",
+            )
+        text = module.index_text()
+        return json.dumps(
+            {
+                "command": ["guide"],
+                "worktree": worktree,
+                "exit_code": 0,
+                "passed": True,
+                "topic": None,
+                "topics": module.topics(),
+                "bytes": len(text),
+                "stdout": text,
+                "content": text,
+                "stderr": "",
+            },
+            ensure_ascii=False,
+        )
+
+    text, error = module.read(topic, section)
+    if error:
+        payload = dict(error)
+        payload["command"] = ["guide", topic]
+        payload["worktree"] = worktree
+        payload["exit_code"] = 1
+        payload["passed"] = False
+        return json.dumps(payload, ensure_ascii=False)
+    return json.dumps(
+        {
+            "command": ["guide", topic] + ([section] if section else []),
+            "worktree": worktree,
+            "exit_code": 0,
+            "passed": True,
+            "topic": topic,
+            "section": section,
+            "bytes": len(text),
+            "stdout": text,
+            "content": text,
+            "stderr": "",
+        },
+        ensure_ascii=False,
+    )
+
+
 # ------------------------------------------------------------------- guard ---
 # The `tools` group switch. The check_fn Hermes runs hides a tool from the
 # model, but `dispatch` does not re-evaluate it — a prompt frozen before the
@@ -466,4 +544,5 @@ HANDLERS = {
     "riel_clean": _guard(riel_clean),
     "riel_fetch": _guard(riel_fetch),
     "riel_check": _guard(riel_check),
+    "riel_guide": _guard(riel_guide),
 }

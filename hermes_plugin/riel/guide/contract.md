@@ -1,13 +1,7 @@
 ---
-name: riel-contract
-description: "Use when authoring mermaid verb-graph contracts for skills and todos — 3-layer pattern, closed verb vocabulary, verification funnel, ASK escalation, machine-checkable."
+topic: contract
+trigger: "Use when authoring mermaid verb-graph contracts for skills and todos — 3-layer pattern, closed verb vocabulary, verification funnel, ASK escalation, machine-checkable."
 version: 3.7.1
-author: Álvaro Lizama
-license: MIT
-metadata:
-  hermes:
-    tags: [riel, mermaid, skills, authoring, verb-graph, contract]
-    related_skills: [riel-protocol, riel-ledger, riel-briefs]
 ---
 
 # riel-contract — Mermaid as an executable contract (Riel)
@@ -55,7 +49,7 @@ not the capability.
 
 This pattern applies to skills that **route** — that pick a sub-flow or hand
 off to another skill. A skill whose graph is a *lifecycle or protocol*
-(e.g. `riel:ledger`'s seam loop) carries the graph **without** an Entry
+(e.g. `riel_guide(topic="ledger")`'s seam loop) carries the graph **without** an Entry
 router / Parse contract: there is nothing to route, and an artificial router
 is noise.
 
@@ -320,6 +314,6 @@ label. (`mmdc` is the parser-level check; the rest are greps in the engine.)
 
 ## Cross-references
 
-- One-shot agent instructions with the same vocabulary: `riel:briefs`
+- One-shot agent instructions with the same vocabulary: `riel_guide(topic="briefs")`
 - The evidence the claims point back into: `riel/specs/spec-shaping-format.md`
-- The ledger that the VERIFY nodes feed: `riel:ledger`
+- The ledger that the VERIFY nodes feed: `riel_guide(topic="ledger")`

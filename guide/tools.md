@@ -1,13 +1,7 @@
 ---
-name: riel-cli
-description: "Use when Riel needs its mechanical helper — writes the ledger with the exact format, instantiates and validates packets, expands a graph digest, derives the session-todo mirror. No command line: the agent calls the tools in RUN nodes instead of handwriting state files."
-version: 1.13.1
-author: Álvaro Lizama
-license: MIT
-metadata:
-  hermes:
-    tags: [riel, cli, ledger, briefs, tooling]
-    related_skills: [riel-ledger, riel-briefs, riel-contract, riel-delegate]
+topic: tools
+trigger: "Use when you need Riel's tool surface — which of the eleven tools writes what, the engine's exit codes, the template and fetch rules. No command line: the tools are the interface."
+version: 1.14.0
 ---
 
 # riel-cli — Mechanical helper for Riel (Riel)
@@ -112,7 +106,7 @@ clean it reports success and says so.
 **The agent asks the user before cleaning** — a `.riel/` found at the
 opening holds another task's state, and the choice (back up / purge /
 continue the existing ledger via `riel_resume`) is the user's, not a silent
-default (rule in `riel:ledger`, "Opening over an existing `.riel/`").
+default (rule in `riel_guide(topic="ledger")`, "Opening over an existing `.riel/`").
 
 ### Shaping (Spec 7)
 
@@ -208,8 +202,9 @@ riel_brief(verb="slice", file=".riel/contract.md", phase="F2")
 
 `verb="new"` searches templates in order:
 
-1. `<worktree>/.riel/templates/<type>.md`
-2. `<package>/skills/riel-briefs/templates/<type>.md` (the shipped set)
+1. `~/.hermes/riel/templates/<type>.md` (a user-level override)
+2. `<worktree>/.riel/templates/<type>.md` (versioned with the code)
+3. `<package>/templates/<type>.md` (the shipped set)
 
 Double-curly placeholders `{{param}}` are replaced with the `params` values;
 unknown params abort non-zero so typos never silently produce broken
@@ -217,7 +212,7 @@ packets. Fill in the remaining content by hand with `patch` afterwards — the
 template is the skeleton, not the final packet.
 
 `verb="validate"` checks the structure, the Objective/claims/DO-NOT, and the
-execution graph against `riel:contract` — predictable ids, a RUN + VERIFY
+execution graph against `riel_guide(topic="contract")` — predictable ids, a RUN + VERIFY
 funnel, labeled decision edges, **every execution node starting with a
 closed verb** (READ/EDIT/CREATE/RUN/VERIFY/ASK), **an `ASK` node naming its
 trigger** (`ASK[irreversible|outside-claims|goal-changing]`), no `<br/>`, no
