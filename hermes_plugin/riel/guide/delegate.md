@@ -12,22 +12,14 @@ It does not recreate the framework — it routes to it. The parent is the
 capability that must not be lost: it plans, dispatches, verifies and
 integrates. Children are generators; the parent is the verifier.
 
-This guide owns the **contract** (the plan, written first — solo or
-delegated) and its **delegation form** (the packet). The full cycle is
-PLAN → BRIEF → DISPATCH → VERIFY → INTEGRATE, in order — never skip VERIFY.
-
-
-
-To **land a process on the fly** as a self-contained instruction for an
-agent/subagent: dispatch packets for `delegate_task`, execution specs with
-phases, prompts another agent runs without you.
-
-This skill owns the **contract** (the plan) and its format. The contract is
-written first, always — solo or delegated — at `.riel/contract.md`; a packet
-is the contract's **delegation form** (see below).
+The full cycle is **PLAN → BRIEF → DISPATCH → VERIFY → INTEGRATE**, in
+order — never skip VERIFY. The first half of this guide owns the packet
+(the contract's **delegation form**: `.riel/contract.md` sliced per child);
+the second half owns the dispatch and verification rules. The contract
+(the plan) is written first, always — solo or delegated.
 
 If you need a **durable, reusable skill**, use `riel_guide(topic="contract")` — this
-skill is for one-shot instructions.
+guide is for one-shot instructions.
 
 ## Core principle
 
@@ -142,7 +134,7 @@ funnel from riel_guide(topic="contract") — what varies is the pipeline topolog
 | **Research** | Search → Extract → Synthesize → Validate | cited sources, complete answer |
 | **Writing** | Outline → Draft → Review → Polish | structure, tone, accuracy |
 
-Each type has a ready-made skeleton at `templates/<type>.md` in this skill
+Each type has a ready-made skeleton at `templates/<type>.md` in the package
 — start from that instead of writing the contract from scratch. The
 `packet.md` template is the empty base **of the format** (used for the
 contract and for a child packet alike) when none of the types fit.
@@ -202,7 +194,7 @@ mechanically, without the parent reading any prose.
 
 ## Step 6: Write the dispatch prompt
 
-The **format skeleton** lives at `templates/packet.md` in this skill — copy
+The **format skeleton** lives at `templates/packet.md` in the package — copy
 it and fill the `{{placeholders}}`. It is the skeleton of the **contract**
 (the plan) and of a child **packet** alike. A complete worked example
 (password-reset) lives at `templates/example-password-reset.md`.
@@ -343,7 +335,7 @@ flowchart TD
 ```
 
 The full cycle is PLAN → BRIEF → DISPATCH → VERIFY → INTEGRATE, in order —
-never skip VERIFY. Each step's rules live in its own skill; what follows is
+never skip VERIFY. Each step's rules live in their own guide; what follows is
 only what dispatching itself adds.
 
 ## Parse contract
@@ -480,7 +472,7 @@ starts clean.
   children (zombies may have finished and written their files).
 - **Piping the gate into `tail`/`head`.** Masks the exit code.
 - **No ledger on the parent.** If the wave spans phases, the parent keeps
-  a local ledger (riel_guide(topic="ledger")) — the parent's state is as loss-prone as a
+  a local ledger (`riel_guide(topic="ledger")`) — the parent's state is as loss-prone as a
   child's.
 
 ## Checklist

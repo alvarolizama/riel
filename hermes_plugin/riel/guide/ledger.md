@@ -11,7 +11,7 @@ state. It does not solve anything — it lets the agent **restore the same
 task state** after every seam: a tool call, a file change, a context
 compaction, an hours-long gap. This is the heart of the Riel framework.
 
-**Local-first:** this skill operates entirely inside the task worktree.
+**Local-first:** this guide operates entirely inside the task worktree.
 It depends on no remote task system. The plan it navigates lives in
 `.riel/contract.md` (spec-contract-format); the ledger holds the state.
 
@@ -209,7 +209,7 @@ Not everything fades at the same rate, so refresh frequency is not uniform:
 | **Failure invariants + mode gate** | **Every 3 seams, and after any red-line event** | Short, cheap, and they decay with distance, not with change |
 | **The anchored regions of the claims** (`riel_seam(anchors=true)`) | **Every seam** | Support rots under a claim; re-read the region, not the memory of it |
 | **The active phase graph** (riel_guide(topic="contract")) | **Only on phase change, or when the flow starts feeling mechanical** | Re-reading a graph you're inside of buys nothing |
-| **Other skills' rules** | **Never** | They load when the task routes to them |
+| **Other guides' rules** | **Never** | They load when the task routes to them |
 
 Refreshing everything every seam is waste; refreshing nothing is how a long
 task quietly stops being the task you were given.
@@ -386,7 +386,7 @@ The ledger is **state**; the **plan** it navigates lives in
 written first (spec-contract-format). The ledger's `Phase` pointer selects
 which of the contract's phases is live (spec-ledger-format, Phase advance).
 
-This skill is local-only: `Goal` / `Core` / `Verified` / `Open` / `Next`
+This guide is local-only: `Goal` / `Core` / `Verified` / `Open` / `Next`
 live in `.riel/ledger.md`. Remote task systems are out of scope.
 
 ## Pitfalls

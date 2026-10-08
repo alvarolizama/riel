@@ -6,13 +6,13 @@ version: 3.7.5
 
 # contract — mermaid verb-graph contracts (Riel)
 
-How to structure a **skill or todo** that uses mermaid diagrams: 3-layer
+How to structure a **guide, todo or contract** that uses mermaid diagrams: 3-layer
 pattern (Entry router → Parse contract → Work), closed vocabulary of 6
 verbs, strict syntax conventions so diagrams are parseable by small models
-and CI-verifiable. **This skill is the single source of truth** for verb
-vocabulary and graph conventions — every other Riel skill references it.
+and CI-verifiable. **This guide is the single source of truth** for verb
+vocabulary and graph conventions — every other Riel guide references it.
 
-**When to use:** creating a new skill with decision flows, hand-offs, or
+**When to use:** creating a new guide with decision flows, hand-offs, or
 pipelines; adding mermaid to an existing skill; authoring the `## Phases`
 graph of a dev todo.
 
@@ -37,7 +37,7 @@ not the capability.
 
 ```
 ┌─────────────────────────────────────────┐
-│ LAYER 0: Entry router                   │  "Am I in the right skill?"
+│ LAYER 0: Entry router                   │  "Am I in the right guide?"
 │ mermaid: need → sub-flow                │  "Which section do I run?"
 ├─────────────────────────────────────────┤
 │ LAYER 1: Parse contract                 │  "How do I read my input?"
@@ -48,7 +48,7 @@ not the capability.
 ```
 
 This pattern applies to skills that **route** — that pick a sub-flow or hand
-off to another skill. A skill whose graph is a *lifecycle or protocol*
+off to another guide. A guide whose graph is a *lifecycle or protocol*
 (e.g. `riel_guide(topic="ledger")`'s seam loop) carries the graph **without** an Entry
 router / Parse contract: there is nothing to route, and an artificial router
 is noise.
@@ -62,10 +62,10 @@ The two routing layers are templated — the working examples are the
 what follows is only what those examples must satisfy:
 
 - **Entry router.** Run ONLY the sub-flow you landed on: if the diagram sends
-  you to another skill, **stop here** and hand off — do not absorb that work.
-  Destinations that are ANOTHER skill carry the **real name**, never "other
-  skill"; the current skill is highlighted in green (`#d1fae5`/`#059669`).
-- **Parse contract.** `### What this skill PRODUCES` names the artifact with
+  you to another guide, **stop here** and hand off — do not absorb that work.
+  Destinations that are ANOTHER guide carry the **real name**, never "other
+  guide"; the current guide is highlighted in green (`#d1fae5`/`#059669`).
+- **Parse contract.** `### What this guide PRODUCES` names the artifact with
   its exact structure — **without <artifact>, the output is malformed** and
   the consumer rejects it.
 
@@ -185,7 +185,7 @@ Loops with bounded exit conditions: `-->|"< 3 attempts"|` /
 ### Styles: only on illustrative diagrams
 
 Routing/state mermaids (entry routers, lifecycles) DO carry `style` —
-colors by meaning: green `#d1fae5`/`#059669` (this skill / terminal ok),
+colors by meaning: green `#d1fae5`/`#059669` (this guide / terminal ok),
 amber `#fef3c7`/`#d97706` (in progress / gate), red `#fee2e2`/`#dc2626`
 (cancelled), blue `#dbeafe`/`#2563eb` (dispatch / external action).
 
@@ -289,7 +289,7 @@ label. (`mmdc` is the parser-level check; the rest are checks `riel_contract(ver
 - **A graph without decisions, branches, or parallel work is a numbered
   list wearing a costume.** Prose carries sequences better than boxes do.
 - **Do not duplicate contracts.** If statuses/tables already live in
-  another skill, reference, do not redefine.
+  another guide, reference, do not redefine.
 - **Syntax pitfalls:** `==`, `!=`, `<=`, `$`, `&` break the mermaid parser
   → quote labels containing them.
 
@@ -299,7 +299,7 @@ label. (`mmdc` is the parser-level check; the rest are checks `riel_contract(ver
       chars), `version`, `author`, `license`,
       `metadata.hermes.{tags, related_skills}`
 - [ ] Entry router + Parse contract before Work
-- [ ] Hand-offs name destination skill + sub-flow and stop (do not absorb)
+- [ ] Hand-offs name destination guide + sub-flow and stop (do not absorb)
 - [ ] Predictable IDs, fixed-structure labels, one type per purpose
 - [ ] Line breaks with `\n`, zero `<br/>`
 - [ ] Execution DAGs carry NO `style`; routers/lifecycles do
