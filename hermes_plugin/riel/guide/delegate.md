@@ -1,7 +1,7 @@
 ---
 topic: delegate
 trigger: "Use when delegating to subagents — write the packet (curated context, verb-graph, gates, ### Why), slice phases, dispatch waves with output_schema, parent verifies returns. Orchestrates the other Riel guides."
-version: 2.0.0
+version: 2.0.1
 ---
 
 # delegate — Delegating to subagents (Riel)
@@ -202,11 +202,11 @@ it and fill the `{{placeholders}}`. It is the skeleton of the **contract**
 The packet is a markdown document with these sections, in this order:
 
 1. `# Task:` — the name.
-2. `## Objective` — one sentence, opens with "We need…". `brief validate`
+2. `## Objective` — one sentence, opens with "We need…". `contract validate`
    WARNs when it runs past one sentence — move the rationale to `### Why`.
 3. `## Context` — **starting with `### Why`**: one or two sentences of
    rationale (what triggers this objective, which alternative was
-   discarded). `brief slice` inherits it into every child packet, so the
+   discarded). `contract slice` inherits it into every child packet, so the
    delegated agent knows *why*, not only *what* — and escalates
    (`ASK[goal-changing]`) instead of reinterpreting on a conflict. Then
    Project (path, stack, conventions), existing code to
@@ -246,7 +246,7 @@ When dispatching, `goal` stays short and `context` carries the packet:
 - **Parallel subagents:** only if tasks touch disjoint files; if they
   share a file or commit to the same repo, serialize (git index race)
 
-## Pitfalls
+## Pitfalls (packet authoring)
 
 - **Context dump instead of curated snippets.** Agents drown on 2000-line
   dumps. 3-5 snippets of 10-30 lines.
@@ -266,7 +266,7 @@ When dispatching, `goal` stays short and `context` carries the packet:
 - **Dumping the full tool/skill catalog in the first turn.** Minimal
   surface first.
 
-## Packet validation checklist
+## Packet validation checklist (authoring)
 
 A packet is *valid* when all of the following pass. `riel_contract(verb="validate")`
 (read `riel_guide(topic="tools")`) runs them mechanically; review by hand before dispatching.
@@ -308,7 +308,7 @@ Content:
 - [ ] Claims cannot be satisfied by editing the packet (claims are
       pre-registered; if speculation appears, split)
 
-## Cross-references
+## Cross-references (packet authoring)
 
 - Format skeleton (contract + packet): `templates/packet.md`
 - Shaping skeleton (the evidence before the plan): `templates/shaping.md`
@@ -365,7 +365,7 @@ only what dispatching itself adds.
    Children are self-reports, not ground truth.
 5. **INTEGRATE** — commits per logical concern (rules below).
 
-## DISPATCH — the operational rules this skill owns
+## DISPATCH — the operational rules this guide owns
 
 - 2-3 children per wave; **max 2 concurrent on a shared provider** (429s).
   "Shared" means same provider account / same API key / same rate pool as
@@ -426,7 +426,7 @@ A job that returns `"passed": true` with `"exit_code": 1` is caught
 mechanically — no prose reading required. A job missing `claim_id`s from
 the pre-registered list is incomplete by construction.
 
-## INTEGRATE — the rules this skill owns
+## INTEGRATE — the rules this guide owns
 
 - Run the full gate **unpiped** — check the exit code explicitly. Piping
   into `tail`/`head` masks the exit status and commits a red gate.
@@ -457,7 +457,7 @@ probability of the same failure. Describe where you want to arrive, not
 what went wrong. The ledger keeps the failure context privately; the brief
 starts clean.
 
-## Pitfalls (the ones that cost the most)
+## Pitfalls (dispatch)
 
 - **Trusting the child's "all tests pass".** Re-run everything yourself.
 - **Overlapping scopes.** File-level disjointness, not task-level. A child
@@ -475,7 +475,7 @@ starts clean.
   a local ledger (`riel_guide(topic="ledger")`) — the parent's state is as loss-prone as a
   child's.
 
-## Checklist
+## Checklist (the cycle)
 
 - [ ] Phases are complete deliverables with definition of done (riel_guide(topic="contract"))
 - [ ] Scopes disjoint at file level; shared files are parent work
@@ -489,7 +489,7 @@ starts clean.
 - [ ] Re-dispatch brief describes target state, never the previous failure
 - [ ] Full gate re-run unpiped; commit per logical concern
 
-## Cross-references
+## Cross-references (the cycle)
 
 - The packet format: the BRIEF half above
 - Opening conditions and functional grammar: `riel_guide(topic="protocol")`

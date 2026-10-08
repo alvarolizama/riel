@@ -46,9 +46,9 @@ The repo is the single source of truth and the suite covers the package in place
 | Component | What it steers | Status |
 |---|---|---|
 | riel_guide(topic="ledger") | **State** — Goal/Claims/Core/Verified/Open/Next, re-read at every seam, recovery via checkpoints, opening rules over an existing `.riel/`, auto-backup before every engine write, mirrors to the session todo | ✅ guide v1.16.0 |
-| riel_guide(topic="contract") | **Structure** — mermaid as contract: closed verb vocabulary, verification funnel, graph digest, machine-checkable | ✅ guide v3.7.5 |
+| riel_guide(topic="contract") | **Structure** — mermaid as contract: closed verb vocabulary, verification funnel, graph digest, machine-checkable | ✅ guide v3.7.6 |
 | riel_guide(topic="protocol") | **Trajectory** — functional grammar, persona, minimal surface on the first turn | ✅ guide v1.8.0 |
-| riel_guide(topic="delegate") | **Delegation end-to-end** — the packet (curated context + `### Why` + keywords, verb-graph, anchored claims, gates) and the cycle: plan, dispatch waves, JSON-schema'd returns, parent verifies | ✅ guide v2.0.0 |
+| riel_guide(topic="delegate") | **Delegation end-to-end** — the packet (curated context + `### Why` + keywords, verb-graph, anchored claims, gates) and the cycle: plan, dispatch waves, JSON-schema'd returns, parent verifies | ✅ guide v2.0.1 |
 | riel_guide(topic="shaping") | **Evidence before the plan** — findings with sources, alternatives with verdicts, the verdict that seeds the contract; claim anchors point back here | ✅ guide v1.0.0 |
 | riel_guide(topic="tools") | **Tooling** — the tool surface: `riel_note` writes the ledger mechanically, `riel_clean` archives the worktree state with flat in-`.riel/` backups, `riel_contract` instantiates/validates packets, slices a phase into a child packet (inheriting the Objective, the `### Why` rationale and the keywords) and expands the graph digest, `riel_todo` derives the session-todo mirror (the plan: the contract's goal, phases and steps), `riel_state` the ledger mirror the chip and the gate fold, `riel_context` emits the context keywords, `riel_fetch` fetches a remote contract to disk (HTTPS, atomic, sha256-verified), `riel_shaping` validates a shaping (Spec 7) and `riel_seam(anchors=true)` re-reads each claim beside the anchored region that supports it | ✅ guide v1.17.0 |
 
@@ -354,7 +354,7 @@ riel/
 │   │   ├── engine/run.py  ← the machine behind the tools (stdlib, no user surface)
 │   │   ├── templates/     ← the packet and shaping templates
 │   │   ├── dashboard/     ← backend routes (/api/plugins/riel/*)
-│   │   └── desktop/       ← statusbar chip + switches (opt-in)
+│   │   └── desktop/       ← the one statusbar chip + the ⌘K switches (opt-in)
 ├── specs/             ← the long form of each format
 │   ├── spec-plugin-package.md   ← what the package is, and what it refuses to be
 │   ├── spec-ledger-format.md    ← .riel/ledger.md format + rules + phase advance
@@ -373,7 +373,7 @@ riel/
 make test     # or: python3 -m unittest discover -s tests -v
 ```
 
-Stdlib-only, subprocess-driven. 282 tests cover `riel_note`, `riel_seam` (with
+Stdlib-only, subprocess-driven. 285 tests cover `riel_note`, `riel_seam` (with
 anchors), `riel_resume`, `riel_todo`, `riel_state`, `riel_context`, `riel_contract`
 (new/validate/digest/slice), `riel_shaping` (new/validate), `riel_clean`,
 `riel_fetch`, `riel_check` (dense markers, digest and the `mermaid=true`

@@ -27,7 +27,7 @@ the plan artifact and its relationship to the ledger.
 The nine sections, in order:
 
 1. `# Task:` — the name
-2. `## Objective` — one sentence, opens with "We need…"; `brief validate`
+2. `## Objective` — one sentence, opens with "We need…"; `contract validate`
    WARNs (non-fatal) when it runs past one sentence — rationale belongs in
    `### Why`, not here
 3. `## Context` — project, code to read/modify, reference snippets, plus the
@@ -61,7 +61,7 @@ bullet), a node id of this contract's execution graph, and `shaping:<F#>`
 enforcement: riel_guide(topic="contract"), "Claim anchors".
 
 Two mechanical facts bind the form: **the claim stays on ONE line** — the
-ledger seed reads line by line — and `brief slice` copies the section
+ledger seed reads line by line — and `contract slice` copies the section
 verbatim, so an anchor written here reaches the child for free.
 `riel_seam(anchors=true)` resolves a claim's anchor into its excerpt, which is what a seam
 re-reads; a missing anchor is a `WARN` (the shipped templates carry none),
@@ -74,7 +74,7 @@ triggers this objective, which alternative was discarded. The Objective says
 *what done looks like*; the claims make it falsifiable; `### Why` is the only
 home for *why this and not something else*.
 
-It is a `###` subsection on purpose: `brief validate` pins the nine `##`
+It is a `###` subsection on purpose: `contract validate` pins the nine `##`
 sections and ignores `###`, so the format stays stable. It is **inherited
 mechanically by `riel_contract(verb="slice")`** (like `### Context keywords` and the
 Objective itself), so a delegated child receives the rationale instead of a
@@ -97,7 +97,7 @@ nowhere else, so no tool call pays for a search the task does not need:
 |---|---|
 | Opening the task (`resume`, `seam`, `note --from-contract`) | the keywords are searched and the answers seed `Core` (max 2) |
 | Advancing a phase (spec-ledger-format, Phase advance) | the incoming phase's `Core` comes from the same search |
-| Slicing a packet for a child | `brief slice` carries the keywords into the packet, so the child searches the same index with its own budget |
+| Slicing a packet for a child | `contract slice` carries the keywords into the packet, so the child searches the same index with its own budget |
 
 Missing keywords are a `WARN`, never an error: a contract without them still
 validates — the fetch simply has nothing to search.
@@ -148,7 +148,7 @@ integrity. Full flags and exit codes: riel_guide(topic="tools"), "Fetch" section
 **When:** at the *opening* of the task — the moment Riel starts working on the
 contract (`resume` / `seam` / `note --from-contract`), right before the
 context fetch. **Independent of delegation:** a solo task fetches its contract
-the same way, and slicing a packet for a child (`brief slice`) is a later,
+the same way, and slicing a packet for a child (`contract slice`) is a later,
 separate moment — never the trigger. Tying the download to delegation would
 leave a non-delegating task without its contract.
 

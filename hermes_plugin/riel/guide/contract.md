@@ -1,7 +1,7 @@
 ---
 topic: contract
 trigger: "Use when authoring mermaid verb-graph contracts for skills and todos — 3-layer pattern, closed verb vocabulary, verification funnel, ASK escalation, machine-checkable."
-version: 3.7.5
+version: 3.7.6
 ---
 
 # contract — mermaid verb-graph contracts (Riel)
@@ -233,7 +233,7 @@ keeps pointing at what it rests on, so a support that moved is noticed while
 the claim is still refutable.
 
 The claim stays on ONE line — the ledger seed reads line by line, and
-`brief slice` copies the section verbatim, so an anchor written there travels
+`contract slice` copies the section verbatim, so an anchor written there travels
 to the child for free.
 
 `riel_contract(verb="validate")` enforces it: no anchor is a `WARN` (never fatal — the

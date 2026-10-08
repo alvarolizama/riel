@@ -1,7 +1,7 @@
 ---
 topic: tools
 trigger: "Use when you need Riel's tool surface — which of the twelve tools writes what, what each returns, and the template, fetch and exit-code rules. There is no command line: the tools are the interface."
-version: 1.17.0
+version: 1.17.1
 ---
 
 # tools — Riel's tool surface (Riel)
@@ -106,6 +106,13 @@ The backup is a **flat timestamped file INSIDE `.riel/`**
 (`ledger-<ts>.bak.md`) — never a subdirectory. A second clean within the
 same second appends `-N` instead of clobbering. Idempotent: with nothing to
 clean it reports success and says so.
+
+The same convention runs on **every engine write that overwrites an existing
+artifact** — a second `riel_note`, a `contract new -o` over an existing
+contract, a re-`fetch`: the previous version lands beside the live one
+(`name-<ts>.bak.md`) before the write, best-effort. Recovery from a clobbered
+ledger is `grep`-simple; hand edits are NOT covered (the engine only sees
+its own writes).
 
 **The agent asks the user before cleaning** — a `.riel/` found at the
 opening holds another task's state, and the choice (back up / purge /
