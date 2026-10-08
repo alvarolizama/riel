@@ -1,6 +1,6 @@
 name: riel
-version: 0.4.1
-description: "Riel — ledger/contract machinery as Hermes tools plus the pre_verify gate (a turn that edited code in a Riel worktree does not close without a verified checkpoint). The protocol prose ships as a skill tap, not here."
+version: 0.5.0
+description: "Riel — the whole package: the six protocol skills (bundled, discoverable through the `riel` prompt section and loadable as `riel:<skill>`), the `rielctl` they call, the ledger/contract tools, the pre_verify gate and the desktop chip."
 author: Álvaro Lizama
 license: MIT
 homepage: https://github.com/alvarolizama/riel
@@ -10,8 +10,17 @@ provides_tools:
   - riel_resume
   - riel_todo
   - riel_context
+  - riel_state
+  - riel_brief
+  - riel_shaping
+  - riel_clean
+  - riel_fetch
+  - riel_check
 provides_hooks:
   - pre_verify
 config_schema:
   gate: {type: bool, default: true, description: "Enforce the Riel gate: after a turn that edited code in a Riel worktree, keep going while the ledger has no verified checkpoint."}
   gate_attempts: {type: int, default: 1, description: "How many times the gate may nudge per turn (Hermes caps pre_verify continues at agent.max_verify_nudges)."}
+  context: {type: bool, default: true, description: "Publish the `riel` prompt section: the six skill triggers plus the worktree's ledger state. Off ⇒ the section renders empty and Hermes discards it."}
+  harness_note: {type: str, default: "", description: "Operator's own line appended to the prompt section — the place for what the model of the day needs (e.g. \"tools are deferred: reach them with tool_search\"). Empty by default."}
+  tools: {type: bool, default: true, description: "Expose the riel_* tools. Off hides them from the model and the handlers refuse, without running rielctl."}

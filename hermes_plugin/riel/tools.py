@@ -1,16 +1,17 @@
 """Tool handlers — machinery for the Riel plugin.
 
-Every handler runs the **vendored** `rielctl` in a fresh subprocess whose cwd
-is the session's worktree. `rielctl` stays the sole writer of
-`.riel/ledger.md`: this module adds no ledger semantics, no format, no state of
-its own.
+Every handler runs the **bundled** `rielctl` in a fresh subprocess whose cwd is
+the session's worktree. That script is the engine, never an interface: the agent
+sees tools, and no tool accepts argv — every parameter is typed. `rielctl` stays
+the sole writer of `.riel/ledger.md`: this module adds no ledger semantics, no
+format, no state of its own.
 
-Why a subprocess instead of importing rielctl in-process: rielctl resolves
+Why a subprocess instead of importing the engine in-process: rielctl resolves
 `.riel/` relative to the process cwd, and its `DEFAULT_TEMPLATE_DIRS` freezes
 `os.getcwd()` at import time. Inside a long-lived Hermes process (a gateway
 serving several sessions) an `os.chdir` would be global state shared by every
-session; a subprocess gives each call its own cwd, so concurrent sessions
-cannot write into each other's ledger.
+session; a subprocess gives each call its own cwd, so concurrent sessions cannot
+write into each other's ledger.
 
 Stdlib only, and importable outside Hermes: nothing here imports Hermes at
 module level, so the repo's test suite can exercise these handlers directly.
@@ -18,6 +19,7 @@ module level, so the repo's test suite can exercise these handlers directly.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import subprocess
@@ -25,8 +27,31 @@ import sys
 from pathlib import Path
 
 _PLUGIN_DIR = Path(__file__).resolve().parent
-RIELCTL = _PLUGIN_DIR / "vendor" / "riel-cli" / "scripts" / "rielctl"
+RIELCTL = _PLUGIN_DIR / "skills" / "riel-cli" / "scripts" / "rielctl"
 TIMEOUT_SECS = 60
+
+_SETTINGS_MODULE = None
+
+
+def plugin_settings():
+    """`settings.py` beside this file, loaded by path.
+
+    By path, not by import: this module is loaded under whatever loader the
+    host picked (package, `hermes_plugins.<name>`, the repo suite) and must stay
+    importable without Hermes.
+    """
+    global _SETTINGS_MODULE
+    if _SETTINGS_MODULE is None:
+        spec = importlib.util.spec_from_file_location(
+            "riel_plugin_settings", _PLUGIN_DIR / "settings.py"
+        )
+        if spec is None or spec.loader is None:  # pragma: no cover - defensive
+            raise RuntimeError("settings.py is missing from the package")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _SETTINGS_MODULE = module
+    return _SETTINGS_MODULE
+
 
 _STR_FLAGS = {
     "goal": "--goal",
@@ -88,15 +113,15 @@ def _worktree(args: dict, kwargs: dict) -> str:
 
 
 def _run(argv: list, args: dict, kwargs: dict) -> str:
-    """Run rielctl in the worktree; always return a JSON string, never raise."""
+    """Run the engine in the worktree; always return a JSON string, never raise."""
     worktree = _worktree(args, kwargs)
     if not os.path.isdir(worktree):
         return _error(f"worktree is not a directory: {worktree}", worktree=worktree)
     if not RIELCTL.exists():
         return _error(
-            "vendored rielctl is missing — the plugin package was built without it",
+            "bundled rielctl is missing — the package has no skills/ tree",
             path=str(RIELCTL),
-            hint="from the repo checkout: make plugin-vendor",
+            hint="from the repo checkout: make plugin-skills",
         )
     try:
         proc = subprocess.run(
@@ -123,7 +148,7 @@ def _run(argv: list, args: dict, kwargs: dict) -> str:
 
 
 def _flag_args(args: dict) -> list:
-    """Map tool arguments onto rielctl's flags (values only, no interpretation)."""
+    """Map tool arguments onto the engine's flags (values only, no interpretation)."""
     argv: list = []
     for key, flag in _STR_FLAGS.items():
         value = args.get(key)
@@ -153,8 +178,17 @@ def _from_contract_args(args: dict) -> list:
     return ["--from-contract", os.path.expanduser(value)]
 
 
+def _str_list(raw, field: str) -> "list | str":
+    """A typed list of strings from the caller, or an error string."""
+    if raw is None:
+        return []
+    if not isinstance(raw, list) or any(not isinstance(item, str) for item in raw):
+        return _error(f"{field} must be an array of strings")
+    return raw
+
+
 def riel_note(args: dict, **kwargs) -> str:
-    """Append/update ledger entries via `rielctl note`."""
+    """Append/update ledger entries via the engine's `note` verb."""
     try:
         argv = _flag_args(args) + _from_contract_args(args)
     except ValueError as exc:
@@ -164,7 +198,7 @@ def riel_note(args: dict, **kwargs) -> str:
         return _error(
             "riel_note needs at least one content flag (or from_contract)",
             accepted=keys,
-            note="with no flags rielctl note just re-prints the ledger; use riel_seam for that",
+            note="with no flags the engine just re-prints the ledger; use riel_seam for that",
         )
     return _run(["note", *argv], args, kwargs)
 
@@ -179,7 +213,18 @@ def _passthrough(verb: str, extra_note: "str | None" = None):
     return handler
 
 
-riel_seam = _passthrough("seam")
+def riel_seam(args: dict, **kwargs) -> str:
+    """The seam re-read: the ledger, and — when asked — each claim beside its support."""
+    payload = json.loads(_run(["seam"], args, kwargs))
+    if args.get("anchors") and payload.get("exit_code") == 0:
+        anchors = json.loads(_run(["anchor"], args, kwargs))
+        payload["anchors"] = {"exit_code": anchors.get("exit_code"),
+                              "passed": anchors.get("passed"),
+                              "stdout": anchors.get("stdout"),
+                              "stderr": anchors.get("stderr")}
+    return json.dumps(payload, ensure_ascii=False)
+
+
 riel_resume = _passthrough("resume")
 riel_todo = _passthrough(
     "todo",
@@ -187,6 +232,8 @@ riel_todo = _passthrough(
     "todo_list tool (todos=<array>) so the UI shows the plan — the contract's "
     "goal, its phases and their steps.",
 )
+riel_state = _passthrough("status")
+
 
 # ------------------------------------------------------------------ context ---
 # The tool is an INDEX provider, not a searcher: a plugin cannot reach the
@@ -200,7 +247,7 @@ MAX_KEYWORDS = 12
 
 
 def _contract_keywords(worktree: str):
-    """(keywords, error) from the worktree's contract, via `rielctl context`."""
+    """(keywords, error) from the worktree's contract, via the engine's `context`."""
     payload = json.loads(_run(["context"], {"worktree": worktree}, {}))
     if payload.get("error"):
         return None, payload["error"]
@@ -254,10 +301,169 @@ def riel_context(args: dict, **kwargs) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
+# --------------------------------------------------------------- the plan ---
+# Typed doors to the verbs the prose uses, so nothing the agent calls looks like
+# a command line: no tool takes argv, no flag travels as data. Each one maps its
+# named parameters onto the engine's argv — the mapping is the tool's job, not
+# the model's.
+BRIEF_VERBS = ("new", "validate", "digest", "slice")
+SHAPING_VERBS = ("new", "validate")
+CLEAN_SCOPES = ("ledger", "all", "purge")
+MAX_PARAMS = 24
+
+
+def _params(raw) -> "list | str":
+    """`["key=value", …]` from the caller as the engine's `--param` pairs."""
+    if raw is None:
+        return []
+    if not isinstance(raw, list) or any(not isinstance(item, str) or "=" not in item for item in raw):
+        return _error('params must be an array of "key=value" strings')
+    return [part for item in raw[:MAX_PARAMS] for part in ("--param", item)]
+
+
+def riel_brief(args: dict, **kwargs) -> str:
+    """Contract and packet artifacts: instantiate, validate, digest, slice."""
+    verb = str(args.get("verb") or "").strip().lower()
+    if verb not in BRIEF_VERBS:
+        return _error("unsupported verb for riel_brief", verb=verb, allowed=list(BRIEF_VERBS))
+
+    argv = ["brief", verb]
+    if verb == "new":
+        kind = str(args.get("template") or args.get("type") or "").strip()
+        if not kind:
+            return _error("riel_brief verb='new' needs 'template' (feature, bugfix, packet, …)",
+                          hint="pass template='<name>'; the engine lists the shipped ones with --list")
+        argv += ["--type", kind]
+        params = _params(args.get("params"))
+        if isinstance(params, str):
+            return params
+        argv += params
+    else:
+        target = str(args.get("file") or "").strip()
+        if not target:
+            return _error(f"riel_brief verb='{verb}' needs 'file' (the contract or packet path)")
+        argv.append(os.path.expanduser(target))
+        if verb == "slice":
+            phase = str(args.get("phase") or "").strip()
+            if phase:
+                argv += ["--phase", phase]
+    return _run(argv, args, kwargs)
+
+
+def riel_shaping(args: dict, **kwargs) -> str:
+    """The pre-contract research: instantiate the skeleton or check it (Spec 7)."""
+    verb = str(args.get("verb") or "").strip().lower()
+    if verb not in SHAPING_VERBS:
+        return _error("unsupported verb for riel_shaping", verb=verb, allowed=list(SHAPING_VERBS))
+
+    argv = ["shaping", verb]
+    if verb == "new":
+        params = _params(args.get("params"))
+        if isinstance(params, str):
+            return params
+        argv += params
+        if args.get("force"):
+            argv.append("--force")
+    else:
+        target = str(args.get("file") or "").strip()
+        if target:
+            argv.append(os.path.expanduser(target))
+    return _run(argv, args, kwargs)
+
+
+def riel_clean(args: dict, **kwargs) -> str:
+    """Archive the worktree's Riel state. `ledger` backs up the ledger only;
+    `all` adds the contract and the shaping; `purge` deletes without a backup."""
+    scope = str(args.get("scope") or "ledger").strip().lower()
+    if scope not in CLEAN_SCOPES:
+        return _error("unsupported scope for riel_clean", scope=scope, allowed=list(CLEAN_SCOPES))
+    argv = ["clean"] + (["--all"] if scope == "all" else ["--purge"] if scope == "purge" else [])
+    return _run(argv, args, kwargs)
+
+
+def riel_fetch(args: dict, **kwargs) -> str:
+    """Materialize a remote contract into the worktree (HTTPS, atomic, sha256)."""
+    url = str(args.get("url") or "").strip()
+    out = str(args.get("out") or ".riel/contract.md").strip()
+    if not url:
+        return _error("riel_fetch needs 'url' and writes to 'out' (default .riel/contract.md)")
+    argv = ["fetch", url, "-o", os.path.expanduser(out)]
+    sha = str(args.get("sha256") or "").strip()
+    if sha:
+        argv += ["--sha256", sha]
+    headers = _str_list(args.get("headers"), "headers")
+    if isinstance(headers, str):
+        return headers
+    for header in headers:
+        argv += ["--header", header]
+    if args.get("allow_http"):
+        argv.append("--allow-http")
+    return _run(argv, args, kwargs)
+
+
+def riel_check(args: dict, **kwargs) -> str:
+    """A file's delivery check: dense-register markers plus its mermaid digest."""
+    target = str(args.get("file") or "").strip()
+    if not target:
+        return _error("riel_check needs 'file'")
+    path = os.path.expanduser(target)
+    ship = json.loads(_run(["ship", path], args, kwargs))
+    digest = json.loads(_run(["digest", path], args, kwargs))
+    return json.dumps(
+        {
+            "file": path,
+            "worktree": ship.get("worktree"),
+            "ship": {"exit_code": ship.get("exit_code"), "passed": ship.get("passed"),
+                     "stdout": ship.get("stdout"), "stderr": ship.get("stderr")},
+            "digest": {"exit_code": digest.get("exit_code"), "passed": digest.get("passed"),
+                       "stdout": digest.get("stdout"), "stderr": digest.get("stderr")},
+            "passed": bool(ship.get("passed")) and bool(digest.get("passed")),
+        },
+        ensure_ascii=False,
+    )
+
+
+# ------------------------------------------------------------------- guard ---
+# The `tools` group switch. The check_fn Hermes runs hides a tool from the
+# model, but `dispatch` does not re-evaluate it — a prompt frozen before the
+# switch still knows the tool — so the handler refuses too, BEFORE the
+# subprocess. Fail-open on the read; explicit refusal on the call.
+def _group_off_error(group: str) -> str:
+    return _error(
+        f"the '{group}' group is off — this tool would not run",
+        group=group,
+        hint=(
+            "re-enable it in the Riel chip (status bar) or run: /riel on "
+            f"{group} — it applies to the NEXT session; the switch on the chip "
+            "is immediate for nothing but the refusal you just got"
+        ),
+    )
+
+
+def _guard(fn):
+    def handler(args: dict, **kwargs) -> str:
+        try:
+            enabled = plugin_settings().read_bool("tools", True)
+        except Exception:
+            enabled = True  # fail-open: a broken settings read never disables work
+        if not enabled:
+            return _group_off_error("tools")
+        return fn(args, **kwargs)
+
+    handler.__name__ = getattr(fn, "__name__", "handler")
+    return handler
+
+
 HANDLERS = {
-    "riel_note": riel_note,
-    "riel_seam": riel_seam,
-    "riel_resume": riel_resume,
-    "riel_todo": riel_todo,
-    "riel_context": riel_context,
+    "riel_note": _guard(riel_note),
+    "riel_seam": _guard(riel_seam),
+    "riel_resume": _guard(riel_resume),
+    "riel_todo": _guard(riel_todo),
+    "riel_context": _guard(riel_context),
+    "riel_state": _guard(riel_state),
+    "riel_brief": _guard(riel_brief),
+    "riel_shaping": _guard(riel_shaping),
+    "riel_clean": _guard(riel_clean),
+    "riel_fetch": _guard(riel_fetch),
+    "riel_check": _guard(riel_check),
 }

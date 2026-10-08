@@ -1,18 +1,15 @@
-# Riel — rielctl installer + repo tooling
+# Riel — repo tooling
 #
-# The 6 skills are plain markdown read by the agent from wherever they
-# are deployed (default: ~/Workspace/Skills). `rielctl` additionally
-# gets a symlink in ~/.local/bin so any shell (human or agent, in any
-# worktree) can call it without resolving the skill path first.
+# The product is the Hermes plugin package at hermes_plugin/riel/: it carries
+# the six skills, the engine that writes the formats, the tools, the gate and
+# the desktop chip, and it installs as a COPY of a commit
+# (`hermes plugins install … --enable`), never as a symlink and with nothing
+# on PATH.
 #
-# The symlink points at THIS checkout, so `git pull` is enough to keep
-# rielctl current — no re-install needed.
+# Its `skills/` directory is a BUILD ARTIFACT: `make plugin-skills` regenerates
+# it from this repo's `skills/` and tests/test_plugin_vendor.py pins every file
+# by hash. Edit `skills/` here, never the copy.
 
-# Destinations are overridable — the skills dir is machine/user-specific:
-#   make skills SKILLS_DIR=~/.hermes/skills
-#   make install BIN_DIR=/other/bin
-BIN_DIR ?= $(HOME)/.local/bin
-SKILLS_DIR ?= $(HOME)/Workspace/Skills
 PLUGINS_DIR ?= $(HOME)/.hermes/plugins
 
 SKILLS = riel-cli riel-ledger riel-contract riel-protocol riel-briefs riel-delegate
@@ -20,46 +17,26 @@ PLUGIN_DIR = hermes_plugin/riel
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install skills plugin-vendor plugin-link uninstall test validate digest lint
+.PHONY: help plugin-skills plugin-link test validate digest lint
 
 ## help: list the available targets
 help:
 	@echo "Riel — make targets:"
 	@grep -hE '^## ' $(MAKEFILE_LIST) | sed -E 's/^## /  /'
 
-## install: symlink rielctl into ~/.local/bin (PATH)
-install:
-	@mkdir -p $(BIN_DIR)
-	@ln -sf $(CURDIR)/skills/riel-cli/scripts/rielctl $(BIN_DIR)/rielctl
-	@echo "installed: $(BIN_DIR)/rielctl -> $(CURDIR)/skills/riel-cli/scripts/rielctl"
-
-## skills: sync the 6 skills to SKILLS_DIR (deploy copies, not symlinks)
-skills:
-	@mkdir -p $(SKILLS_DIR)
-	@for s in $(SKILLS); do \
-		mkdir -p $(SKILLS_DIR)/$$s && cp -R skills/$$s/. $(SKILLS_DIR)/$$s/; \
-	done
-	@echo "synced 6 skills -> $(SKILLS_DIR)/"
-
-## plugin-vendor: rebuild the plugin's vendored copy from skills/ (build artifact)
-plugin-vendor:
+## plugin-skills: rebuild the plugin's bundled skills/ from skills/ (build artifact)
+plugin-skills:
+	@rm -rf $(PLUGIN_DIR)/skills
+	@cp -R skills $(PLUGIN_DIR)/skills
 	@rm -rf $(PLUGIN_DIR)/vendor
-	@mkdir -p $(PLUGIN_DIR)/vendor/riel-cli/scripts $(PLUGIN_DIR)/vendor/riel-briefs/templates
-	@cp skills/riel-cli/scripts/rielctl $(PLUGIN_DIR)/vendor/riel-cli/scripts/rielctl
-	@cp skills/riel-briefs/templates/*.md $(PLUGIN_DIR)/vendor/riel-briefs/templates/
-	@echo "vendored: rielctl + $(words $(wildcard skills/riel-briefs/templates/*.md)) templates -> $(PLUGIN_DIR)/vendor/"
+	@echo "bundled: $(words $(SKILLS)) skills + scripts/rielctl + $(words $(wildcard skills/riel-briefs/templates/*.md)) templates -> $(PLUGIN_DIR)/skills/"
 
-## plugin-link: symlink the plugin package into a Hermes plugins dir (dev)
+## plugin-link: symlink the package into a plugins dir — DEV ONLY, never a real install
 plugin-link:
 	@mkdir -p $(PLUGINS_DIR)
 	@ln -sfn $(CURDIR)/$(PLUGIN_DIR) $(PLUGINS_DIR)/riel
 	@echo "linked: $(PLUGINS_DIR)/riel -> $(CURDIR)/$(PLUGIN_DIR)"
-	@echo "enable it with: hermes plugins enable riel"
-
-## uninstall: remove the rielctl symlink (deployed skills stay in place)
-uninstall:
-	@rm -f $(BIN_DIR)/rielctl
-	@echo "removed $(BIN_DIR)/rielctl (deployed skills left in place)"
+	@echo "a real install is a copy: hermes plugins install \"file://$(CURDIR)#hermes_plugin/riel\" --enable"
 
 ## test: run the stdlib regression suite (discovery — picks up new test files)
 test:

@@ -4,7 +4,7 @@ Three layers, each with the cheapest honest check available:
 
   * package wiring — manifest/paths, and the two rules the SDK enforces on a
     disk plugin (allowed import specifiers, no hardcoded colors);
-  * `ledger_status.read_status` — stdlib-only, driven by the **vendored**
+  * `ledger_status.read_status` — stdlib-only, driven by the **bundled**
     rielctl against a real temp worktree;
   * the chip itself — the plugin file is loaded by a real Node process against
     stubbed `@hermes/plugin-sdk` / `react` modules, `register()` is called, the
@@ -41,7 +41,7 @@ REPO = HERE.parent
 PLUGIN = REPO / "hermes_plugin" / "riel"
 DASHBOARD = PLUGIN / "dashboard"
 DESKTOP = PLUGIN / "desktop"
-VENDOR_RIELCTL = PLUGIN / "vendor" / "riel-cli" / "scripts" / "rielctl"
+BUNDLED_RIELCTL = PLUGIN / "skills" / "riel-cli" / "scripts" / "rielctl"
 
 CLIENT_CWD = "/tmp/riel-statusbar-test-worktree"
 ALLOWED_SPECIFIERS = {"@hermes/plugin-sdk", "react", "react/jsx-runtime"}
@@ -119,6 +119,12 @@ export const Popover = makeStub('popover')
 export const PopoverContent = makeStub('popover-content')
 export const PopoverTrigger = makeStub('popover-trigger')
 export const ScrollArea = makeStub('scroll-area')
+// Interactive stubs: the plugin imports them, so the stub must EXPORT them or
+// the ESM link step fails before any assertion runs.
+export const Switch = makeStub('switch')
+export const Input = makeStub('input')
+export const Button = makeStub('button')
+export const PALETTE_AREA = 'palette'
 """
 
 REACT_STUB = """\
@@ -156,8 +162,17 @@ let restCalls = 0
 const contributions = []
 // Path-aware rest stub: /contract answers only when the harness was told a
 // contract exists (RIEL_TEST_CONTRACT=1); /ledger always answers the fixture.
-const restStub = async (path) => {
+const settingsState = { ok: true, gate: true, tools: true, context: true, harness_note: '' }
+const settingsCalls = []
+const restStub = async (path, options) => {
   restCalls += 1
+  if (path.startsWith('/settings')) {
+    settingsCalls.push(path + ((options && options.method) || ''))
+    if (options && options.method === 'POST' && options.body) {
+      for (const [key, value] of Object.entries(options.body)) settingsState[key] = value
+    }
+    return { ...settingsState }
+  }
   if (path.startsWith('/ledger')) globalThis.__RIEL_LAST_LEDGER_URL__ = path
   if (path.startsWith('/session_cwd')) {
     // Resolve the focused session's stored cwd (the DB fallback)
@@ -325,8 +340,10 @@ const contractVisible = (() => {
 console.log(JSON.stringify({
   id: plugin.id,
   name: plugin.name,
-  defaultEnabled: plugin.defaultEnabled,
   areas: contributions.map((c) => c.area),
+  palette_ids: contributions.filter((c) => c.area === 'palette').map((c) => c.data && c.data.id),
+  settings_calls: settingsCalls,
+  defaultEnabled: plugin.defaultEnabled,
   order: chip.order,
   session_cwd: (() => {
     // The cwd the chips resolved to, captured from the last /ledger rest call
@@ -434,7 +451,7 @@ class DesktopWiringTest(unittest.TestCase):
 
 
 class LedgerStatusTest(unittest.TestCase):
-    """`ledger_status` driven through the vendored rielctl."""
+    """`ledger_status` driven through the bundled rielctl."""
 
     @classmethod
     def setUpClass(cls):
@@ -448,7 +465,7 @@ class LedgerStatusTest(unittest.TestCase):
 
     def _seed(self, *argv):
         proc = subprocess.run(
-            [sys.executable, str(VENDOR_RIELCTL), *argv],
+            [sys.executable, str(BUNDLED_RIELCTL), *argv],
             cwd=self.tmp,
             capture_output=True,
             text=True,
@@ -574,7 +591,7 @@ class PluginApiRouteTest(unittest.TestCase):
     def test_ledger_route_returns_the_summary(self):
         with tempfile.TemporaryDirectory(prefix="riel-route-") as tmp:
             subprocess.run(
-                [sys.executable, str(VENDOR_RIELCTL), "note", "--goal", "route goal"],
+                [sys.executable, str(BUNDLED_RIELCTL), "note", "--goal", "route goal"],
                 cwd=tmp,
                 capture_output=True,
                 text=True,
@@ -590,7 +607,7 @@ class PluginApiRouteTest(unittest.TestCase):
             self.assertEqual(missing.status_code, 200)
             self.assertFalse(missing.json()["present"])
 
-    def test_health_reports_the_vendored_rielctl(self):
+    def test_health_reports_the_bundled_rielctl(self):
         payload = self._client().get("/health").json()
         self.assertTrue(payload["ok"], payload)
         self.assertTrue(payload["rielctl"].endswith("rielctl"))
@@ -650,8 +667,15 @@ class ChipTest(unittest.TestCase):
     def test_registers_a_statusbar_chip(self):
         result = self.run_chip(ledger=self.LEDGER)
         self.assertEqual(result["id"], "riel")
-        self.assertEqual(result["areas"], ["statusBar.right"])
+        self.assertEqual(result["areas"].count("statusBar.right"), 1, result["areas"])
         self.assertFalse(result["defaultEnabled"], "the desktop half ships opt-in")
+
+    def test_registers_the_palette_switches(self):
+        """⌘K carries the two switches a status bar has room to show but not to explain."""
+        result = self.run_chip(ledger=self.LEDGER)
+        self.assertEqual(result["areas"].count("palette"), 2, result["areas"])
+        self.assertEqual(sorted(result["palette_ids"]), ["riel.toggle-context", "riel.toggle-gate"])
+        self.assertTrue(all(call.startswith("/settings") for call in result["settings_calls"]))
 
     def test_idle_chip_shows_counters(self):
         result = self.run_chip(ledger=self.LEDGER)

@@ -2,11 +2,11 @@
 
 Stdlib-only and Hermes-free on purpose: the plugin's handler module imports
 nothing from Hermes at module level, so these tests exercise the real handlers
-against the **vendored** rielctl — the same copy a user gets when installing
+against the **bundled** rielctl — the same copy a user gets when installing
 the plugin.
 
 Two things are pinned here:
-  * `vendor/` matches the repo sources (hash), so the build artifact cannot drift;
+  * `skills/` matches the repo sources (hash), so the build artifact cannot drift;
   * manifest, schemas and handlers agree, and the handlers actually run.
 
 Run:
@@ -27,11 +27,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 PLUGIN = os.path.join(REPO, "hermes_plugin", "riel")
 
-SOURCE_RIELCTL = os.path.join(REPO, "skills", "riel-cli", "scripts", "rielctl")
-SOURCE_TEMPLATES = os.path.join(REPO, "skills", "riel-briefs", "templates")
-VENDOR_RIELCTL = os.path.join(PLUGIN, "vendor", "riel-cli", "scripts", "rielctl")
-VENDOR_TEMPLATES = os.path.join(PLUGIN, "vendor", "riel-briefs", "templates")
+SOURCE_SKILLS = os.path.join(REPO, "skills")
+BUNDLED_SKILLS = os.path.join(PLUGIN, "skills")
 MANIFEST = os.path.join(PLUGIN, "plugin.yaml")
+
+# The six skills the package ships, by directory name (the load name is the
+# short form: `riel:ledger` for `skills/riel-ledger/SKILL.md`).
+SKILL_SLUGS = (
+    "riel-cli", "riel-ledger", "riel-contract", "riel-protocol", "riel-briefs", "riel-delegate",
+)
 
 
 def sha256(path):
@@ -69,24 +73,69 @@ def _manifest_tools():
     return tools
 
 
-class VendoringTest(unittest.TestCase):
-    """`make plugin-vendor` output must equal the repo sources, byte for byte."""
+def _tree(root):
+    """`{relative path: sha256}` for every file under *root*, skipping bytecode."""
+    files = {}
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d != "__pycache__"]
+        for name in sorted(filenames):
+            if name.endswith(".pyc"):
+                continue
+            full = os.path.join(dirpath, name)
+            files[os.path.relpath(full, root)] = sha256(full)
+    return files
 
-    def test_vendored_rielctl_matches_source(self):
-        self.assertTrue(os.path.isfile(VENDOR_RIELCTL), "run: make plugin-vendor")
-        self.assertEqual(sha256(VENDOR_RIELCTL), sha256(SOURCE_RIELCTL))
 
-    def test_vendored_templates_match_source(self):
-        self.assertTrue(os.path.isdir(VENDOR_TEMPLATES), "run: make plugin-vendor")
-        source = sorted(f for f in os.listdir(SOURCE_TEMPLATES) if f.endswith(".md"))
-        vendored = sorted(f for f in os.listdir(VENDOR_TEMPLATES) if f.endswith(".md"))
-        self.assertEqual(vendored, source)
-        for name in source:
-            self.assertEqual(
-                sha256(os.path.join(VENDOR_TEMPLATES, name)),
-                sha256(os.path.join(SOURCE_TEMPLATES, name)),
-                f"{name} drifted from skills/riel-briefs/templates/",
-            )
+def _frontmatter(path):
+    """The YAML frontmatter of a SKILL.md as a flat `{key: value}` map (stdlib only)."""
+    meta, lines, inside = {}, [], False
+    with open(path, encoding="utf-8") as fh:
+        for raw in fh:
+            line = raw.rstrip("\n")
+            if line.strip() == "---":
+                if inside:
+                    break
+                inside = True
+                continue
+            if inside:
+                lines.append(line)
+    for line in lines:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        key, _, value = line.partition(":")
+        meta[key.strip()] = value.strip().strip('"').strip("'")
+    return meta
+
+
+class PackageTest(unittest.TestCase):
+    """`make plugin-skills` output must equal the repo's skills/, byte for byte."""
+
+    def test_skills_tree_matches_the_repo(self):
+        source = _tree(SOURCE_SKILLS)
+        bundled = _tree(BUNDLED_SKILLS)
+        self.assertTrue(bundled, "run: make plugin-skills")
+        self.assertEqual(sorted(bundled), sorted(source), "the bundle drifted from skills/")
+        for rel, digest in source.items():
+            self.assertEqual(bundled[rel], digest, f"{rel} drifted from skills/")
+
+    def test_the_six_skills_ship_with_loadable_frontmatter(self):
+        for slug in SKILL_SLUGS:
+            path = os.path.join(BUNDLED_SKILLS, slug, "SKILL.md")
+            self.assertTrue(os.path.isfile(path), f"missing bundled skill: {slug}")
+            meta = _frontmatter(path)
+            self.assertEqual(meta.get("name"), slug, path)
+            self.assertTrue(meta.get("description"), f"{slug} has no description")
+
+    def test_the_bundle_carries_the_machinery_the_prose_calls(self):
+        rielctl = os.path.join(BUNDLED_SKILLS, "riel-cli", "scripts", "rielctl")
+        templates = os.path.join(BUNDLED_SKILLS, "riel-briefs", "templates")
+        self.assertTrue(os.path.isfile(rielctl))
+        self.assertEqual(sha256(rielctl), sha256(os.path.join(SOURCE_SKILLS, "riel-cli", "scripts", "rielctl")))
+        shipped = sorted(f for f in os.listdir(templates) if f.endswith(".md"))
+        self.assertEqual(shipped, sorted(f for f in os.listdir(os.path.join(SOURCE_SKILLS, "riel-briefs", "templates")) if f.endswith(".md")))
+
+    def test_no_vendor_directory(self):
+        self.assertFalse(os.path.exists(os.path.join(PLUGIN, "vendor")), "vendor/ was retired")
 
 
 class WiringTest(unittest.TestCase):
@@ -120,7 +169,7 @@ class WiringTest(unittest.TestCase):
 
 
 class HandlerTest(unittest.TestCase):
-    """The handlers drive the vendored rielctl end-to-end."""
+    """The handlers drive the bundled rielctl end-to-end."""
 
     @classmethod
     def setUpClass(cls):

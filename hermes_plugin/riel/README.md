@@ -1,45 +1,44 @@
 # Riel — plugin de Hermes
 
-Mecánica de Riel como tools de Hermes: `riel_note`, `riel_seam`, `riel_resume`,
-`riel_todo`, sobre un `rielctl` **vendorizado** dentro de este directorio.
+El paquete ES el producto: la prosa, el motor, las tools, el gate y el chip.
 
-**La prosa NO viaja acá.** Las seis skills (`riel-ledger`, `riel-contract`,
-`riel-protocol`, `riel-briefs`, `riel-delegate`, `riel-cli`) se instalan desde
-este mismo repo como skill tap — un solo lugar para el markdown, indexado por
-Hermes y con auto-trigger:
+**La superficie son tools, nunca una línea de comandos.** Once tools tipadas —
+`riel_note`, `riel_seam` (con `anchors`), `riel_resume`, `riel_todo`,
+`riel_state`, `riel_context`, `riel_brief`, `riel_shaping`, `riel_clean`,
+`riel_fetch`, `riel_check` — sobre el motor (`rielctl`, stdlib) que viaja dentro
+del paquete y decide nada: el formato tiene un solo dueño. Ninguna tool recibe
+argv; el campo `command` de la respuesta es provenance, no una interfaz.
 
-```bash
-hermes skills tap add alvarolizama/riel
-```
+**La prosa viaja acá.** Los seis skills viven en `skills/` y se registran con su
+nombre corto — `riel:protocol`, `riel:ledger`, `riel:contract`, `riel:briefs`,
+`riel:delegate`, `riel:cli` — más la sección `riel` del prompt, que publica una
+línea por skill y el estado del worktree. Nada que copiar a un directorio de
+skills, nada de `external_dirs`, nada de symlinks.
 
 ## Instalación (usuario)
 
 ```bash
-hermes plugins install alvarolizama/riel/hermes_plugin/riel
-hermes plugins enable riel
+hermes plugins install "git@github.com:alvarolizama/riel.git#hermes_plugin/riel" --enable
+hermes plugins update riel
 ```
 
 El instalador clona el repo y **mueve solo este subdirectorio** a
 `~/.hermes/plugins/riel` — el checkout no sobrevive. Por eso el paquete es
-autocontenido: `vendor/` trae su propia copia de `rielctl` y de los templates,
-generada desde el repo (`make plugin-vendor`) y verificada por hash en el suite
-(`tests/test_plugin_vendor.py`). El repo es la fuente; `vendor/` es un artefacto
-de build.
+autocontenido: `skills/` trae la prosa, el motor y los templates, generada
+desde el repo (`make plugin-skills`) y verificada por hash, archivo por archivo,
+en `tests/test_plugin_vendor.py`. El repo es la fuente; `skills/` acá es un
+artefacto de build.
 
-## Instalación (desarrollo, symlink al checkout)
-
-El plugin resuelve su `rielctl` desde `vendor/`, así que en dev se puede
-symlinkear el paquete completo y tener la última versión del checkout:
+## Instalación (desarrollo)
 
 ```bash
-make plugin-vendor                     # genera vendor/ desde skills/
-make plugin-link                       # ~/.hermes/plugins/riel -> repo
-make plugin-link PLUGINS_DIR=~/.hermes/profiles/coder/plugins
+make plugin-skills                     # hermes_plugin/riel/skills/ desde skills/
+make plugin-link PLUGINS_DIR=~/.hermes/profiles/coder/plugins   # symlink, sólo dev
 hermes plugins enable riel
 ```
 
-Los plugins son **por perfil** (`$HERMES_HOME/plugins/`): no se comparten como
-las skills vía `external_dirs` — hay que symlinkear en cada perfil que lo use.
+Los plugins son **por perfil** (`$HERMES_HOME/plugins/`). El symlink es
+comodidad de desarrollo; una instalación real es una copia de un commit.
 
 ## Cómo resuelve el worktree
 

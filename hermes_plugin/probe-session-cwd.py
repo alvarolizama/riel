@@ -33,7 +33,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 PLUGIN = REPO / "hermes_plugin" / "riel"
-RIELCTL = PLUGIN / "vendor" / "riel-cli" / "scripts" / "rielctl"
+RIELCTL = PLUGIN / "skills" / "riel-cli" / "scripts" / "rielctl"
 
 
 def _dispatch(registry, tool: str, args: dict, task: str) -> dict:

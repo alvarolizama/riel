@@ -23,7 +23,7 @@
 
 import { host, haptic, useValue } from '@hermes/plugin-sdk'
 import { Streamdown } from '@hermes/plugin-sdk'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@hermes/plugin-sdk'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Switch, Input, Button, PALETTE_AREA } from '@hermes/plugin-sdk'
 import { jsx, jsxs } from 'react/jsx-runtime'
 import { useEffect, useState } from 'react'
 
@@ -150,7 +150,125 @@ function chipStep(ledger, busy, tool) {
   return null
 }
 
-function LedgerChip({ ledger, busy, tool }) {
+/* ---------------------------------------------------------------- switches */
+
+const GROUPS = [
+  { key: 'gate', label: 'Gate', hint: 'turno que editó código no cierra sin un ✓ verificado' },
+  { key: 'tools', label: 'Tools', hint: 'las seis riel_* (note, seam, resume, todo, context, cli)' },
+  { key: 'context', label: 'Prompt', hint: 'el bloque de Riel: índice de skills + estado del worktree' }
+]
+
+/** The three switches and the operator's note, from the status bar.
+ *
+ *  A switch written here is obeyed by the NEXT session: a session keeps the
+ *  prompt and the tool list it started with, so the copy says so instead of
+ *  pretending the running turn changed. */
+function SwitchesPanel({ ctx }) {
+  const [state, setState] = useState(null)
+  const [error, setError] = useState('')
+  const [note, setNote] = useState('')
+
+  const adopt = data => {
+    if (data && data.ok) {
+      setState(data)
+      setNote(data.harness_note || '')
+      setError('')
+    } else {
+      setError((data && data.error) || 'el backend no contestó')
+    }
+  }
+
+  useEffect(() => {
+    let alive = true
+    const load = async () => {
+      try {
+        const data = await ctx.rest('/settings')
+        if (alive) adopt(data)
+      } catch (e) {
+        if (alive) setError(String((e && e.message) || e))
+      }
+    }
+    load()
+    return () => {
+      alive = false
+    }
+  }, [ctx])
+
+  const flip = async (key, value) => {
+    haptic('tap')
+    try {
+      adopt(await ctx.rest('/settings', { method: 'POST', body: { [key]: value } }))
+    } catch (e) {
+      setError(String((e && e.message) || e))
+    }
+  }
+
+  const saveNote = async () => {
+    try {
+      adopt(await ctx.rest('/settings', { method: 'POST', body: { harness_note: note } }))
+    } catch (e) {
+      setError(String((e && e.message) || e))
+    }
+  }
+
+  if (!state) {
+    return jsx('div', {
+      className: 'text-[0.6875rem] text-(--ui-text-quaternary)',
+      children: error || 'leyendo ajustes…'
+    })
+  }
+
+  return jsxs('div', {
+    className: 'flex flex-col gap-1.5 text-xs',
+    children: [
+      jsx('div', {
+        key: 'title',
+        className: 'text-[0.6875rem] font-medium tracking-wide text-(--ui-text-quaternary)',
+        children: 'Ajustes de Riel'
+      }),
+      ...GROUPS.map(group =>
+        jsxs('div', {
+          className: 'flex items-baseline justify-between gap-3',
+          children: [
+            jsxs('div', {
+              className: 'min-w-0',
+              children: [
+                jsx('span', { className: 'text-(--ui-text-secondary)', children: group.label }),
+                jsx('span', { className: 'ml-2 text-(--ui-text-quaternary)', children: group.hint })
+              ]
+            }),
+            jsx(Switch, {
+              checked: !!state[group.key],
+              onCheckedChange: value => flip(group.key, value)
+            })
+          ]
+        }, group.key)
+      ),
+      jsxs('div', {
+        key: 'note',
+        className: 'mt-1 flex items-center gap-1.5',
+        children: [
+          jsx(Input, {
+            value: note,
+            placeholder: 'nota de harness (va al final del bloque del prompt)',
+            onChange: event => setNote((event && event.target && event.target.value) || '')
+          }),
+          jsx(Button, { size: 'sm', variant: 'secondary', onClick: saveNote, children: 'Guardar' })
+        ]
+      }),
+      jsx('div', {
+        key: 'caveat',
+        className: 'text-[0.6875rem] text-(--ui-text-quaternary)',
+        children: 'Aplica en la PRÓXIMA sesión: esta conserva el prompt y las tools con las que arrancó.'
+      }),
+      error
+        ? jsx('div', { key: 'error', className: 'text-[0.6875rem] text-amber-600', children: error })
+        : null
+    ]
+  })
+}
+
+function LedgerChip({ ledger, busy, tool, ctx }) {
   const [open, setOpen] = useState(false)
   const step = chipStep(ledger, busy, tool)
 
@@ -224,10 +342,14 @@ function LedgerChip({ ledger, busy, tool }) {
               })
             ]
           }),
-          jsx('div', {
+          jsxs('div', {
             key: 'body',
             className: 'min-h-0 flex-1 overflow-y-auto pr-1',
-            children: jsx(LedgerPanel, { ledger, busy, tool })
+            children: [
+              jsx(LedgerPanel, { key: 'ledger', ledger, busy, tool }),
+              jsx('div', { key: 'sep', className: 'mt-2 border-t border-(--ui-stroke-secondary) pt-2' }),
+              jsx(SwitchesPanel, { key: 'switches', ctx })
+            ]
           })
         ]
       })
@@ -476,7 +598,7 @@ function RielChips({ ctx }) {
   return jsxs('span', {
     className: 'inline-flex items-center',
     children: [
-      jsx(LedgerChip, { key: 'ledger', ledger, busy, tool }),
+      jsx(LedgerChip, { key: 'ledger', ledger, busy, tool, ctx }),
       jsx(ContractChip, { key: 'contract', ctx, cwd, sessionId: focusedId })
     ]
   })
@@ -487,11 +609,52 @@ export default {
   name: 'Riel',
   defaultEnabled: false,
   register(ctx) {
+    const readState = async () => {
+      try {
+        return (await ctx.rest('/settings')) || {}
+      } catch {
+        return {}
+      }
+    }
+    const flip = async (key, label) => {
+      const current = await readState()
+      try {
+        const saved = await ctx.rest('/settings', { method: 'POST', body: { [key]: !current[key] } })
+        const on = saved && saved.ok ? !!saved[key] : null
+        host.notify({
+          kind: 'info',
+          message: `Riel ${label}: ${on === null ? 'no se pudo escribir' : on ? 'on' : 'off'} — aplica en la próxima sesión`
+        })
+      } catch (e) {
+        host.notify({ kind: 'error', message: `Riel ${label}: ${(e && e.message) || e}` })
+      }
+    }
+
     ctx.register({
       id: 'ledger-chip',
       area: 'statusBar.right',
       order: 120,
       render: () => jsx(RielChips, { ctx })
+    })
+    ctx.register({
+      id: 'toggle-gate',
+      area: PALETTE_AREA,
+      data: {
+        id: 'riel.toggle-gate',
+        label: 'Riel: encender/apagar el gate',
+        keywords: ['riel', 'gate', 'ledger', 'verify'],
+        run: () => void flip('gate', 'gate')
+      }
+    })
+    ctx.register({
+      id: 'toggle-context',
+      area: PALETTE_AREA,
+      data: {
+        id: 'riel.toggle-context',
+        label: 'Riel: encender/apagar el bloque del prompt',
+        keywords: ['riel', 'prompt', 'section', 'skills'],
+        run: () => void flip('context', 'prompt')
+      }
     })
   }
 }

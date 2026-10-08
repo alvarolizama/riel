@@ -13,7 +13,7 @@ Bounds that keep it honest:
     files → never nudge. This hook is not a global nag.
   * **Self-throttled.** At most `gate_attempts` nudges per turn (default 1), on
     top of Hermes' own cap (`agent.max_verify_nudges`, 3 by default).
-  * **Never blocks.** Every failure path — no ledger, missing vendored rielctl,
+  * **Never blocks.** Every failure path — no ledger, missing bundled rielctl,
     unparseable `status` JSON, subprocess timeout — returns `None` and lets
     the turn finish. A gate that jams is worse than no gate.
 
@@ -30,14 +30,58 @@ import sys
 from pathlib import Path
 
 PLUGIN_DIR = Path(__file__).resolve().parent
-RIELCTL = PLUGIN_DIR / "vendor" / "riel-cli" / "scripts" / "rielctl"
+RIELCTL = PLUGIN_DIR / "skills" / "riel-cli" / "scripts" / "rielctl"
 LEDGER_PARTS = (".riel", "ledger.md")
 EVIDENCE_MARKER = "verified by:"
 MAX_ANCESTOR_DEPTH = 12
 TIMEOUT_SECS = 15
 
-# Filled by register(); the defaults keep the module usable standalone (tests).
+# Install defaults, filled by register(); the live value is read per call so a
+# chip toggle lands on the next turn's gate without a restart.
 SETTINGS = {"enabled": True, "attempts": 1}
+_SETTINGS_MODULE = None
+
+
+def plugin_settings():
+    """`settings.py` beside this file, loaded by path (same reason as in tools.py)."""
+    global _SETTINGS_MODULE
+    if _SETTINGS_MODULE is None:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "riel_plugin_settings_hooks", PLUGIN_DIR / "settings.py"
+        )
+        if spec is None or spec.loader is None:  # pragma: no cover - defensive
+            raise RuntimeError("settings.py is missing from the package")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _SETTINGS_MODULE = module
+    return _SETTINGS_MODULE
+
+
+def gate_enabled() -> bool:
+    """The `gate` group right now; an unreadable config falls back to ON."""
+    try:
+        return plugin_settings().read_bool("gate", SETTINGS.get("enabled", True))
+    except Exception:
+        return bool(SETTINGS.get("enabled", True))
+
+
+def gate_attempts() -> int:
+    """How many nudges this turn may get.
+
+    The manifest types this as `int`, so an int or a digit string is honoured and
+    anything else falls back to 1 — a hand-edited `"many"` must not become an
+    unbounded gate.
+    """
+    try:
+        value = plugin_settings().read("gate_attempts", SETTINGS.get("attempts", 1))
+    except Exception:
+        value = SETTINGS.get("attempts", 1)
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 1
 
 
 def _has_ledger(directory: Path) -> bool:
@@ -114,7 +158,7 @@ def assess(worktree, rielctl: Path = RIELCTL, timeout: int = TIMEOUT_SECS) -> di
         return facts
     facts["present"] = True
     if not rielctl.exists():
-        facts["error"] = "vendored rielctl is missing (run: make plugin-vendor)"
+        facts["error"] = "bundled rielctl is missing (run: make plugin-skills)"
         return facts
     try:
         proc = subprocess.run(
@@ -198,12 +242,9 @@ def pre_verify(session_id: str = "", coding: bool = False, attempt: int = 0,
     break registration). `coding` is accepted but not required — the ledger
     check is the real scope.
     """
-    if not SETTINGS.get("enabled", True):
+    if not gate_enabled():
         return None
-    try:
-        if attempt >= int(SETTINGS.get("attempts", 1)):
-            return None
-    except (TypeError, ValueError):
+    if attempt >= gate_attempts():
         return None
     try:
         worktree = find_worktree(changed_paths, session_cwd=_session_cwd(session_id))

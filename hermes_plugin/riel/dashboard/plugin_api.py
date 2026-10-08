@@ -2,7 +2,7 @@
 
 Three read-only endpoints, answering the statusbar chip:
 
-  GET /health            → is the backend up and does it have its vendored rielctl
+  GET /health            → is the backend up and does it have its bundled rielctl
   GET /ledger?worktree=  → the ledger summary for one worktree (the chip's counters)
   GET /contract?worktree= → the contract.md verbatim (the chip's click dialog)
 
@@ -27,6 +27,7 @@ from fastapi import APIRouter, Query
 _PLUGIN_DIR = Path(__file__).resolve().parent.parent
 _STATUS_PATH = Path(__file__).resolve().parent / "ledger_status.py"
 _SESSION_CWD_PATH = Path(__file__).resolve().parent / "session_cwd.py"
+_SETTINGS_PATH = _PLUGIN_DIR / "settings.py"
 
 _spec = importlib.util.spec_from_file_location("riel_dashboard_ledger_status", _STATUS_PATH)
 if _spec is None or _spec.loader is None:  # pragma: no cover - defensive
@@ -39,6 +40,12 @@ if _spec2 is None or _spec2.loader is None:  # pragma: no cover - defensive
     raise RuntimeError(f"cannot load {_SESSION_CWD_PATH}")
 _session_cwd = importlib.util.module_from_spec(_spec2)
 _spec2.loader.exec_module(_session_cwd)
+
+_spec3 = importlib.util.spec_from_file_location("riel_dashboard_settings", _SETTINGS_PATH)
+if _spec3 is None or _spec3.loader is None:  # pragma: no cover - defensive
+    raise RuntimeError(f"cannot load {_SETTINGS_PATH}")
+_settings = importlib.util.module_from_spec(_spec3)
+_spec3.loader.exec_module(_settings)
 
 router = APIRouter()
 MAX_WORKTREE_CHARS = 4096
@@ -64,6 +71,23 @@ async def contract(worktree: str = Query("", max_length=MAX_WORKTREE_CHARS)) -> 
     if not worktree.strip():
         return {"present": False, "worktree": "", "error": "worktree query parameter is required"}
     return _ledger_status.read_contract(worktree)
+
+
+@router.get("/settings")
+async def read_settings() -> dict:
+    """The switch surface: the three groups plus the operator's note (never the config)."""
+    return {"ok": True, **_settings.state()}
+
+
+@router.post("/settings")
+async def write_settings(payload: dict) -> dict:
+    """Flip one or more switches. Validated here; written through Hermes' own writer."""
+    try:
+        return {"ok": True, **_settings.apply(payload)}
+    except _settings.Rejected as exc:
+        return {"ok": False, "error": str(exc)}
+    except Exception as exc:  # PermissionError in a managed install, unreadable config, ...
+        return {"ok": False, "error": f"could not write: {exc}"}
 
 
 @router.get("/session_cwd")

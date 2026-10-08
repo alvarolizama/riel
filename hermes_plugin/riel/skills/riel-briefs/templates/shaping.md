@@ -8,7 +8,7 @@
 ## Findings
 <!-- What was actually learned, and how we know it. One F# per line, each with
      its source and a confidence. A finding without a source is a hypothesis:
-     `rielctl shaping validate` WARNs on it, and nothing downstream should
+     `riel_shaping(verb="validate")` WARNs on it, and nothing downstream should
      rest on it.
        - F1: <finding> — source: path/to/file.py:120, confidence high
        - F2: <finding> — source: https://… (2026-01-15), confidence med

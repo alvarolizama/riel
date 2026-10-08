@@ -1,6 +1,6 @@
 """Tool schemas — what the LLM reads to decide when to call these tools.
 
-Machinery only: every tool delegates to the vendored `rielctl`, which is the
+Machinery only: every tool delegates to the bundled `rielctl`, which is the
 sole writer of `.riel/ledger.md`. Descriptions state when to use the tool, not
 how the ledger is formatted (that belongs to the `riel-ledger` skill).
 """
@@ -17,12 +17,11 @@ _WORKTREE = {
 RIEL_NOTE = {
     "name": "riel_note",
     "description": (
-        "Write or update the Riel ledger (.riel/ledger.md) in a worktree: the goal, "
-        "the next action, core facts, claims (each with the command that would verify it), "
-        "verified checkpoints with their real gate output, open questions, and closures. "
-        "Use this on loop-mode tasks and on every delegated task, instead of hand-editing "
-        "the ledger — rielctl owns the format. Pass at least one of the content flags; "
-        "running it with no flags just re-prints the ledger."
+        "Write or update the Riel ledger (.riel/ledger.md) in a worktree: goal, next "
+        "action, core facts, claims with their verifying command, verified checkpoints "
+        "with real gate output, open questions and closures. Use it on loop-mode tasks and "
+        "on every delegated task, instead of hand-editing the ledger — rielctl owns the "
+        "format. Pass at least one content flag; with no flags it just re-prints the ledger."
     ),
     "parameters": {
         "type": "object",
@@ -93,9 +92,21 @@ RIEL_SEAM = {
         "Re-read the Riel ledger at a seam: prints the goal, claims, verified checkpoints, "
         "open questions, next action and which invariants are due. Use it before continuing "
         "work after a gap, before a decision, or when unsure of the current state — it is the "
-        "cheap way to reload verified state instead of guessing from memory."
+        "cheap way to reload verified state instead of guessing from memory. Pass anchors=true "
+        "to also re-read every claim beside the region that supports it (the contract section, "
+        "the graph node or the shaping finding its anchor names) — that pair is the seam: state "
+        "plus the support under it."
     ),
-    "parameters": {"type": "object", "properties": {"worktree": _WORKTREE}},
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "anchors": {
+                "type": "boolean",
+                "description": "Also re-read each claim beside the region its anchor names.",
+            },
+            "worktree": _WORKTREE,
+        },
+    },
 }
 
 RIEL_RESUME = {
@@ -111,8 +122,8 @@ RIEL_RESUME = {
 RIEL_TODO = {
     "name": "riel_todo",
     "description": (
-        "Derive the session-todo mirror from the PLAN: the contract's Objective is the root "
-        "item, its phases are rows and each phase's steps are nested subtasks; the ledger "
+        "Derive the Riel session-todo mirror from the PLAN: the contract's Objective is the "
+        "root item, its phases are rows and each phase's steps are nested subtasks. The ledger "
         "only sets the statuses (the step the Next points at is the only in_progress). The "
         "ledger's own facts — next, claims, open questions, verified checkpoints — are NOT "
         "rows here. THEN INJECT IT: pass the returned items array to the todo_list tool "
@@ -127,7 +138,7 @@ RIEL_TODO = {
 RIEL_CONTEXT = {
     "name": "riel_context",
     "description": (
-        "Hand you the contract's context index — `### Context keywords` (or explicit keywords) "
+        "Riel contract's context index, for the memory search YOU run — `### Context keywords` "
         "as a list of terms with an optional source hint. Call it when opening a Riel task and "
         "when advancing to a new phase, then do the searching YOURSELF with the memory tools you "
         "have configured (DRAN, your own memory, search_files) and keep the answers in the "
@@ -151,4 +162,139 @@ RIEL_CONTEXT = {
     },
 }
 
-SCHEMAS = (RIEL_NOTE, RIEL_SEAM, RIEL_RESUME, RIEL_TODO, RIEL_CONTEXT)
+RIEL_STATE = {
+    "name": "riel_state",
+    "description": (
+        "Riel ledger state as JSON — the machine-readable mirror the desktop chip and the "
+        "pre_verify gate fold. One item per claim, verified checkpoint and open question, with "
+        "the evidence each carries. Use it to decide mechanically — counts and ids — where "
+        "riel_seam is the prose re-read."
+    ),
+    "parameters": {"type": "object", "properties": {"worktree": _WORKTREE}},
+}
+
+RIEL_BRIEF = {
+    "name": "riel_brief",
+    "description": (
+        "Riel plan artifacts — instantiate, validate, digest or slice a contract or a "
+        "delegated packet. `verb='new'` renders the shipped template for `template` (feature, "
+        "bugfix, refactor, research, writing, packet, shaping) with `params` as [\"key=value\"] "
+        "placeholders and RETURNS the text — write it to .riel/contract.md yourself. "
+        "`verb='validate'` runs the structural rules (closed verb vocabulary, funnel, ids, "
+        "claim anchors) over `file` and exits 1 on an ISSUE. `verb='digest'` expands the "
+        "graph of `file` into explicit text (the agent reads the digest, not the diagram). "
+        "`verb='slice'` extracts one phase of `file` as a child packet — pass `phase`."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "verb": {"type": "string", "description": "One of: new, validate, digest, slice."},
+            "template": {"type": "string", "description": "For verb='new': the template name."},
+            "params": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": 'For verb=new: placeholder values as ["key=value", …].',
+            },
+            "file": {"type": "string", "description": "For validate/digest/slice: the contract or packet path."},
+            "phase": {"type": "string", "description": "For verb='slice': the phase id (e.g. F2)."},
+            "worktree": _WORKTREE,
+        },
+        "required": ["verb"],
+    },
+}
+
+RIEL_SHAPING = {
+    "name": "riel_shaping",
+    "description": (
+        "Riel shaping — the research that precedes the contract: instantiate the skeleton "
+        "(`verb='new'`, with `params`) and check it against Spec 7 (`verb='validate'`, with "
+        "`file`, default .riel/shaping.md). A shaped task writes findings with their sources "
+        "and a confidence, the alternatives that lost, and a verdict that opens the contract; "
+        "validate exits 1 on an ISSUE and warns on a finding without a source."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "verb": {"type": "string", "description": "One of: new, validate."},
+            "params": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": 'For verb=new: placeholder values as ["key=value", …].',
+            },
+            "file": {"type": "string", "description": "For verb=validate: the shaping path."},
+            "force": {
+                "type": "boolean",
+                "description": "For verb=new: overwrite an existing .riel/shaping.md (a shaping is research).",
+            },
+            "worktree": _WORKTREE,
+        },
+        "required": ["verb"],
+    },
+}
+
+RIEL_CLEAN = {
+    "name": "riel_clean",
+    "description": (
+        "Riel housekeeping — archive the worktree's .riel/ state so a new task starts clean. "
+        "`scope='ledger'` backs up and removes the ledger; `'all'` also the contract and the "
+        "shaping; `'purge'` deletes without a backup. The backups are flat, timestamped files "
+        "inside .riel/ — never a subdirectory. Ask the user before cleaning a worktree whose "
+        "state is not yours."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "scope": {"type": "string", "description": "One of: ledger, all, purge (default ledger)."},
+            "worktree": _WORKTREE,
+        },
+    },
+}
+
+RIEL_FETCH = {
+    "name": "riel_fetch",
+    "description": (
+        "Riel remote contract — materialize a contract that lives on a server into the "
+        "worktree (default .riel/contract.md), without routing the body through the model's "
+        "context. HTTPS only (plain http needs allow_http on a trusted transport), the body is "
+        "bounded, the write is atomic, and the URL is never printed — a short-lived token in "
+        "the query string must not leak. Pass sha256 to pin integrity end to end."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "url": {"type": "string", "description": "The export URL (single-use, short-lived token)."},
+            "out": {"type": "string", "description": "Destination path (default .riel/contract.md)."},
+            "sha256": {"type": "string", "description": "Expected sha256 of the body, if the server gave one."},
+            "headers": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": 'Extra headers as ["Name: value", …], when the export needs them.',
+            },
+            "allow_http": {"type": "boolean", "description": "Allow plain http (localhost or a trusted VPN)."},
+            "worktree": _WORKTREE,
+        },
+        "required": ["url"],
+    },
+}
+
+RIEL_CHECK = {
+    "name": "riel_check",
+    "description": (
+        "Riel delivery check on ONE file — the dense-register markers an outer deliverable "
+        "must not leak, plus the explicit text digest of its mermaid graph. Run it before "
+        "handing a packet, a brief or a contract to someone else: a doc that fails `ship` has "
+        "internal shorthand in it, and the digest is what the receiving agent should read "
+        "instead of re-deriving the graph from the diagram."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "file": {"type": "string", "description": "The file to check, relative to the worktree."},
+            "worktree": _WORKTREE,
+        },
+        "required": ["file"],
+    },
+}
+
+SCHEMAS = (RIEL_NOTE, RIEL_SEAM, RIEL_RESUME, RIEL_TODO, RIEL_CONTEXT,
+           RIEL_STATE, RIEL_BRIEF, RIEL_SHAPING, RIEL_CLEAN, RIEL_FETCH, RIEL_CHECK)

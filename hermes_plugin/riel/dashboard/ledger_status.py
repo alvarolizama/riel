@@ -1,7 +1,7 @@
 """Normalize a worktree's Riel ledger into the small summary the statusbar chip shows.
 
 Stdlib only, and importable without FastAPI so the repo suite can test it
-directly. It shells out to the **vendored** `rielctl status` — the ledger's own
+directly. It shells out to the **bundled** `rielctl status` — the ledger's own
 facts as JSON — instead of re-parsing `.riel/ledger.md` here, so the ledger
 format keeps exactly one owner (`rielctl`). The plan the session todo mirrors
 (phases and their steps) is `rielctl todo`'s business, not the chip's.
@@ -20,7 +20,7 @@ import time
 from pathlib import Path
 
 PLUGIN_DIR = Path(__file__).resolve().parent.parent
-RIELCTL = PLUGIN_DIR / "vendor" / "riel-cli" / "scripts" / "rielctl"
+RIELCTL = PLUGIN_DIR / "skills" / "riel-cli" / "scripts" / "rielctl"
 TIMEOUT_SECS = 15
 
 _LEDGER_SUFFIX = (".riel", "ledger.md")
@@ -113,7 +113,7 @@ def read_status(worktree: str, rielctl: Path = RIELCTL, timeout: int = TIMEOUT_S
     status["present"] = True
 
     if not rielctl.exists():
-        status["error"] = "vendored rielctl is missing (run: make plugin-vendor)"
+        status["error"] = "bundled rielctl is missing (run: make plugin-skills)"
         return status
     try:
         proc = subprocess.run(
