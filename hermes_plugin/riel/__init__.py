@@ -1,7 +1,7 @@
 """Riel — Hermes plugin registration.
 
-The package is the whole product: the prose (`guide/`, bundled from the repo by
-`make plugin-build`), the engine it documents, the twelve typed tools, the
+The package is the whole product: the prose (`guide/`, which lives here — the
+tree IS the source, no build step), the engine it documents, the ten typed tools, the
 `pre_verify` gate and the desktop chip. No command line and no skills.
 
 The prose reaches the agent through ONE door: the `riel_guide` tool reads
@@ -13,7 +13,7 @@ worktree's ledger state. Nothing registers a skill: a plugin skill never enters
 
 import logging
 
-from . import commands, hooks, schemas, section, tools
+from . import _load, commands, hooks, schemas, section, tools
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ def _group_check(key: str):
 
     def _enabled() -> bool:
         try:
-            return tools.plugin_settings().read_bool(key, True)
+            return _load.settings().read_bool(key, True)
         except Exception:
             return True
 

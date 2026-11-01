@@ -29,6 +29,17 @@ import subprocess
 import sys
 from pathlib import Path
 
+try:  # a package import when the host loaded us as one …
+    from . import _load
+except ImportError:  # … and a by-path load when it did not (repo suite, dashboard)
+    import importlib.util as _ilu
+    import pathlib as _pl
+
+    _spec = _ilu.spec_from_file_location(
+        "riel_plugin_load", _pl.Path(__file__).resolve().with_name("_load.py"))
+    _load = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_load)
+
 PLUGIN_DIR = Path(__file__).resolve().parent
 ENGINE = PLUGIN_DIR / "engine" / "run.py"
 LEDGER_PARTS = (".riel", "ledger.md")
@@ -39,30 +50,12 @@ TIMEOUT_SECS = 15
 # Install defaults, filled by register(); the live value is read per call so a
 # chip toggle lands on the next turn's gate without a restart.
 SETTINGS = {"enabled": True, "attempts": 1}
-_SETTINGS_MODULE = None
-
-
-def plugin_settings():
-    """`settings.py` beside this file, loaded by path (same reason as in tools.py)."""
-    global _SETTINGS_MODULE
-    if _SETTINGS_MODULE is None:
-        import importlib.util
-
-        spec = importlib.util.spec_from_file_location(
-            "riel_plugin_settings_hooks", PLUGIN_DIR / "settings.py"
-        )
-        if spec is None or spec.loader is None:  # pragma: no cover - defensive
-            raise RuntimeError("settings.py is missing from the package")
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        _SETTINGS_MODULE = module
-    return _SETTINGS_MODULE
 
 
 def gate_enabled() -> bool:
     """The `gate` group right now; an unreadable config falls back to ON."""
     try:
-        return plugin_settings().read_bool("gate", SETTINGS.get("enabled", True))
+        return _load.settings().read_bool("gate", SETTINGS.get("enabled", True))
     except Exception:
         return bool(SETTINGS.get("enabled", True))
 
@@ -75,7 +68,7 @@ def gate_attempts() -> int:
     unbounded gate.
     """
     try:
-        value = plugin_settings().read("gate_attempts", SETTINGS.get("attempts", 1))
+        value = _load.settings().read("gate_attempts", SETTINGS.get("attempts", 1))
     except Exception:
         value = SETTINGS.get("attempts", 1)
     try:
@@ -158,11 +151,11 @@ def assess(worktree, engine: Path = ENGINE, timeout: int = TIMEOUT_SECS) -> dict
         return facts
     facts["present"] = True
     if not engine.exists():
-        facts["error"] = "bundled engine is missing (run: make plugin-build)"
+        facts["error"] = "bundled engine is missing (reinstall: hermes plugins update riel)"
         return facts
     try:
         proc = subprocess.run(
-            [sys.executable, str(engine), "status"],
+            [sys.executable, str(engine), "--worktree", str(root), "status"],
             cwd=str(root),
             capture_output=True,
             text=True,
@@ -223,14 +216,8 @@ def nudge_message(worktree: str, facts: dict) -> str | None:
 
 
 def _session_cwd(session_id) -> str | None:
-    """The session's recorded cwd (the terminal tool's record), if Hermes is around."""
-    try:
-        from tools.terminal_tool import get_session_cwd
-
-        recorded = get_session_cwd(session_id)
-        return str(recorded) if recorded else None
-    except Exception:
-        return None
+    """The session's recorded cwd — one resolver for the whole package (`_load`)."""
+    return _load.session_cwd(session_id)
 
 
 def pre_verify(session_id: str = "", coding: bool = False, attempt: int = 0,

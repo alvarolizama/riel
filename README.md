@@ -9,7 +9,7 @@
 ### Steering layer for harness/LLM
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.7.0-8B5CF6.svg)](./hermes_plugin/riel/plugin.yaml)
+[![Version](https://img.shields.io/badge/version-0.8.0-8B5CF6.svg)](./hermes_plugin/riel/plugin.yaml)
 [![Python](https://img.shields.io/badge/Python-3-3776AB?logo=python&logoColor=white)](https://www.python.org)
 [![Hermes](https://img.shields.io/badge/Hermes-plugin-5B8DEF)](https://www.nousresearch.com)
 
@@ -33,9 +33,9 @@ Riel ships as two faces over one core:
 
 | Face | What it is | Where |
 |---|---|---|
-| **The prose** | six guides the agent reads on demand — protocol, ledger, contract, shaping, delegate, tools | `hermes_plugin/riel/guide/*.md` |
-| **The engine** (one stdlib file) | not a user surface: the sole writer of the ledger format; instantiates, validates and slices packets; derives the todo/state mirrors; fetches remote contracts — reached only through the twelve tools | `engine/run.py` |
-| **The Hermes plugin** | the whole product: the prose (read through `riel_guide`), the engine, twelve typed tools (`riel_guide`, `riel_note` … `riel_check`), the `pre_verify` gate and a statusbar chip — installed as a copy of a commit, updated the same way | `hermes_plugin/riel/` |
+| **The prose** | six guides the agent reads on demand, **by section** — protocol, ledger, contract, shaping, delegate, tools | `hermes_plugin/riel/guide/*.md` |
+| **The engine** (stdlib, no dependencies) | not a user surface: the sole writer of the ledger format; instantiates, validates and slices packets; derives the todo/state mirrors; fetches remote contracts — reached only through the ten tools | `hermes_plugin/riel/engine/` |
+| **The Hermes plugin** | the whole product: the prose (read through `riel_guide`), the engine, ten typed tools (`riel_guide`, `riel_note` … `riel_check`), the `pre_verify` gate and a statusbar chip — installed as a copy of a commit, updated the same way | `hermes_plugin/riel/` |
 | **Specs** | the long form of each format (ledger, contract, shaping, todo, the package itself) | `specs/` |
 
 The prose lives **inside the package** (`hermes_plugin/riel/guide/`) — one tree, no copy: what you edit is what ships.
@@ -50,7 +50,7 @@ The repo is the single source of truth and the suite covers the package in place
 | riel_guide(topic="protocol") | **Trajectory** — functional grammar, persona, minimal surface on the first turn | ✅ guide v1.8.0 |
 | riel_guide(topic="delegate") | **Delegation end-to-end** — the packet (curated context + `### Why` + keywords, verb-graph, anchored claims, gates) and the cycle: plan, dispatch waves, JSON-schema'd returns, parent verifies | ✅ guide v2.0.1 |
 | riel_guide(topic="shaping") | **Evidence before the plan** — findings with sources, alternatives with verdicts, the verdict that seeds the contract; claim anchors point back here | ✅ guide v1.0.0 |
-| riel_guide(topic="tools") | **Tooling** — the tool surface: `riel_note` writes the ledger mechanically, `riel_clean` archives the worktree state with flat in-`.riel/` backups, `riel_contract` instantiates/validates packets, slices a phase into a child packet (inheriting the Objective, the `### Why` rationale and the keywords) and expands the graph digest, `riel_todo` derives the session-todo mirror (the plan: the contract's goal, phases and steps), `riel_state` the ledger mirror the chip and the gate fold, `riel_context` emits the context keywords, `riel_fetch` fetches a remote contract to disk (HTTPS, atomic, sha256-verified), `riel_shaping` validates a shaping (Spec 7) and `riel_seam(anchors=true)` re-reads each claim beside the anchored region that supports it | ✅ guide v1.17.0 |
+| riel_guide(topic="tools") | **Tooling** — the tool surface: `riel_note` writes the ledger mechanically, `riel_clean` archives the worktree state with flat in-`.riel/` backups, `riel_contract` instantiates/validates packets, slices a phase into a child packet (inheriting the Objective, the `### Why` rationale and the keywords) and expands the graph digest, `riel_todo` derives the session-todo mirror (the plan: the contract's goal, phases and steps), `riel_seam(mode="json")` the ledger mirror the chip and the gate fold, `riel_context` emits the context keywords, `riel_fetch` fetches a remote contract to disk (HTTPS, atomic, sha256-verified), `riel_shaping` validates a shaping (Spec 7) and `riel_seam(anchors=true)` re-reads each claim beside the anchored region that supports it | ✅ guide v1.18.0 |
 
 Each component is independent and optional: a short task uses zero; a long
 loop may use all six. Use only the machinery the task earns.
@@ -205,7 +205,7 @@ riel_note(check="suite green", by="make test: 264 OK", covering="plugin, engine"
 riel_contract(verb="slice", file=".riel/contract.md", phase="F2")
 
 # 7. Done-check: every Goal line and Claim maps to a ✓NN
-riel_resume
+riel_seam(mode="resume")
 ```
 
 ### The tool surface
@@ -213,21 +213,19 @@ riel_resume
 Riel has no command line to call: the engine ships inside the plugin and the
 **tools are the interface**. Every tool runs it against the worktree of the
 session you are in (session cwd, never the host process cwd), and every one
-returns the same envelope — `{command, worktree, exit_code, passed, stdout,
-stderr}` plus its own keys. `command` is provenance, never something to type.
+returns the same envelope — `{tool, worktree, exit_code, passed, stdout,
+stderr}` plus its own keys. `tool` is provenance, never something to type.
 
 | Tool | Does |
 |---|---|
 | `riel_note` | write/update `.riel/ledger.md` — goal, next, core, claim+verify_with, check+by+covering, open+settled_by, close; `from_contract=true` seeds Goal/Phase/Claims/Next from `.riel/contract.md` |
-| `riel_seam` | re-print the ledger + which invariants are due; `anchors=true` also re-reads each claim beside the region that supports it |
-| `riel_resume` | post-gap bootstrap (ledger → invariants → mode → next) |
+| `riel_seam` | re-read the ledger + the invariants due now — `mode="resume"` adds the post-gap restore order, `mode="json"` answers the ledger's own facts (the mirror the chip and the `pre_verify` gate fold); `anchors=true` also re-reads each claim beside the region that supports it |
 | `riel_todo` | session-todo mirror (JSON) — the PLAN: the contract's goal (its Objective), its phases as rows and their steps as nested subtasks; the ledger sets the statuses (the current step is the only in_progress) |
-| `riel_state` | ledger mirror (JSON) — the ledger's own facts for the desktop chip and the `pre_verify` gate: goal, phase, next, opens, claims, verified checkpoints |
 | `riel_context` | context keywords of a contract (JSON) — the index the memory search reads |
 | `riel_contract` | `new` renders a template (returns the text — you write it), `validate` runs the structural rules, `digest` expands a graph, `slice` extracts one phase as a child packet |
 | `riel_shaping` | `new` drops the Spec 7 skeleton, `validate` checks a shaping |
 | `riel_clean` | archive the worktree's `.riel/` state — flat timestamped backups inside `.riel/` (`ledger-<ts>.bak.md`, never a subdirectory); `all` includes the contract and the shaping, `purge` removes without backup; ask the user before cleaning (rule in riel_guide(topic="ledger")) |
-| `riel_fetch` | download a contract into the worktree — run it at the **task opening** (`riel_resume`/`riel_seam`/`riel_note(from_contract=true)`), not only when delegating; atomic, sha256-pinned, HTTPS by default (`allow_http` for a trusted transport such as a VPN); the URL may carry a short-lived single-use token instead of the API key, and is never printed |
+| `riel_fetch` | download a contract into the worktree — run it at the **task opening** (`riel_seam(mode="resume")`/`riel_note(from_contract=true)`), not only when delegating; atomic, sha256-pinned, HTTPS by default (`allow_http` for a trusted transport such as a VPN); the URL may carry a short-lived single-use token instead of the API key, and is never printed |
 | `riel_check` | dense-register check on one file before delivery + the explicit text digest of its graph; `mermaid=true` also parses every block with mermaid-cli |
 
 ### The Hermes plugin
@@ -235,15 +233,20 @@ stderr}` plus its own keys. `command` is provenance, never something to type.
 With the plugin enabled, the same mechanics run as native tools and the
 protocol is enforced by the runtime:
 
-- **Twelve tools**, and no command line: `riel_guide` (the prose), `riel_note`,
-  `riel_seam`, `riel_resume`, `riel_todo`, `riel_state`, `riel_context`,
+- **Ten tools**, and no command line: `riel_guide` (the prose), `riel_note`,
+  `riel_seam` (`read`/`resume`/`json`), `riel_todo`, `riel_context`,
   `riel_contract`, `riel_shaping`, `riel_clean`, `riel_fetch`, `riel_check`. Each call resolves
   the session's worktree (session cwd, never the Hermes process cwd) and runs
   the bundled engine in a subprocess — concurrent sessions never touch each
   other's ledger. `riel_seam(anchors=true)` folds the anchor re-read into the
   seam; `riel_contract` and `riel_shaping` take a typed `verb`, never argv.
-- **The prose ships inside the package, read on demand**: six guides served by `riel_guide` — the index with no argument, one
-  guide by topic, one section of it by `section=`. The `riel` prompt section
+- **The prose ships inside the package, read on demand and BY SECTION**: six
+  guides served by `riel_guide` — the index with no argument, a guide's section
+  outline by topic (name, first line and size of each `## heading`), one section
+  by `section=`, and the whole body only with `full=true`. The ladder matters:
+  `delegate.md` is 23 KB (~6k tokens) and the section a task needs is 300–800
+  bytes, so reading the outline first is a 30× difference in what the turn pays.
+  The `riel` prompt section
   publishes what the tool catalog cannot: that the prose exists at all, its topic
   list, and the worktree's ledger state, so a fresh session knows what Riel is
   without anyone copying markdown anywhere. Nothing registers a Hermes skill.
@@ -292,7 +295,7 @@ hermes plugins update riel         # after new commits
 
 Then enable the desktop half (opt-in) in the app: **Capabilities →
 Plugins → riel**. Verify: `hermes plugins doctor riel`, and a fresh session's
-prompt carries the `riel` section while `riel_guide(topic="ledger")` answers (12 tools, 0 skills).
+prompt carries the `riel` section while `riel_guide(topic="ledger")` answers (10 tools, 0 skills).
 
 ### Manual (development)
 
@@ -349,9 +352,11 @@ riel/
 ├── hermes_plugin/     ← THE PRODUCT: the package a user installs, tree and all
 │   ├── riel/
 │   │   ├── plugin.yaml __init__.py schemas.py tools.py guide.py section.py
-│   │   ├── settings.py commands.py hooks.py
+│   │   ├── settings.py commands.py hooks.py _load.py  ← one loader · one worktree · one envelope
 │   │   ├── guide/         ← the prose: one file per topic, served by riel_guide
-│   │   ├── engine/run.py  ← the machine behind the tools (stdlib, no user surface)
+│   │   ├── engine/        ← the machine behind the tools (stdlib, no user surface)
+│   │   │   ├── run.py     ←   the verbs, the formats, the writes
+│   │   │   └── params.py  ←   THE declaration of riel_note's parameters
 │   │   ├── templates/     ← the packet and shaping templates
 │   │   ├── dashboard/     ← backend routes (/api/plugins/riel/*)
 │   │   └── desktop/       ← the one statusbar chip + the ⌘K switches (opt-in)
@@ -373,12 +378,15 @@ riel/
 make test     # or: python3 -m unittest discover -s tests -v
 ```
 
-Stdlib-only, subprocess-driven. 285 tests cover `riel_note`, `riel_seam` (with
-anchors), `riel_resume`, `riel_todo`, `riel_state`, `riel_context`, `riel_contract`
+Stdlib-only, subprocess-driven. 306 tests cover `riel_note` (every declared
+parameter accepted by the engine — the schema and the parser cannot drift),
+`riel_seam` (all three modes, with anchors), `riel_todo`, `riel_context`,
+`riel_contract`
 (new/validate/digest/slice), `riel_shaping` (new/validate), `riel_clean`,
 `riel_fetch`, `riel_check` (dense markers, digest and the `mermaid=true`
-parser half), the graph
-and claim-anchor checks, plus the Hermes
+parser half, in ONE engine call), `--worktree` (the engine writes where it was
+told, never where it was run), the graph
+and claim-anchor checks, the guide's section outline and its read ladder, plus the Hermes
 plugin package: manifest/schema/handler wiring, the handlers end-to-end through the bundled
 copy, the prompt section and the three switch groups, the statusbar chip rendered by node against a stubbed SDK (the one
 chip exists only with a contract, the live `● <tool>` mark, the refetch a

@@ -94,7 +94,7 @@ The tools live in the model's catalog; the topics do not.
 | head | what Riel is + that the prose is read through `riel_guide` | ≤ 220 |
 | index | ONE line: the topics that exist right now + the two call shapes | ~240 |
 | state | the worktree's ledger: goal · phase · next · claims/verified/open | only if it fits whole |
-| door | the twelve tools by name; no command line, no `PATH` | ~250 |
+| door | the ten tools by name, the seam's three modes included; no command line, no `PATH` | ~250 |
 | note | the operator's `harness_note`, appended last, exactly as written | ≤ 400 |
 
 Cut rules, all silent-failure-proof: the topic list comes from `guide/*.md` at
@@ -120,7 +120,7 @@ asks) and all fail-open — an unreadable config means ON:
 | Group | Off means | Enforced by |
 |---|---|---|
 | `gate` | `pre_verify` stands down | the hook reads it per turn |
-| `tools` | the twelve tools leave the model's surface **and** refuse to run | a non-cached `check_fn` hides them; the handler guard refuses before the engine |
+| `tools` | the ten tools leave the model's surface **and** refuse to run | a non-cached `check_fn` hides them; the handler guard refuses before the engine |
 | `context` | the prompt section renders `""` | the render reads it per session |
 
 **Semantics the UI must state:** a switch written now is obeyed by the NEXT
@@ -138,16 +138,16 @@ managed-install refusals apply.
 The engine (`engine/run.py`, one stdlib file) does the mechanical work and is the
 sole writer of the formats. It is **implementation**: no tool takes argv, no flag
 travels as data, and nothing in the package is meant to be typed into a shell.
-The twelve tools are the surface:
+The ten tools are the surface:
 
 | Tool | Verb behind it |
 |---|---|
 | `riel_guide` | reads the package's prose (no engine call) |
 | `riel_note` | write/update the ledger |
 | `riel_seam` (+ `anchors`) | re-read the ledger, and each claim beside its support |
-| `riel_resume` | post-gap bootstrap |
+| `riel_seam(mode="resume")` | post-gap restore order (the same tool) |
 | `riel_todo` | the plan mirror |
-| `riel_state` | the ledger's facts |
+| `riel_seam(mode="json")` | the ledger's facts (the same tool) |
 | `riel_context` | the contract's context index |
 | `riel_contract` (new/validate/digest/slice) | contracts and packets |
 | `riel_shaping` (new/validate) | the shaping (Spec 7) |

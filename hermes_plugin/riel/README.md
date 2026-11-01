@@ -2,24 +2,27 @@
 
 El paquete ES el producto: la prosa, el motor, las tools, el gate y el chip.
 
-**La superficie son tools, nunca una línea de comandos.** Doce tools tipadas —
-`riel_guide` (la prosa), `riel_note`, `riel_seam` (con `anchors`), `riel_resume`,
-`riel_todo`, `riel_state`, `riel_context`, `riel_contract`, `riel_shaping`,
-`riel_clean`, `riel_fetch`, `riel_check` — sobre el motor (un archivo stdlib que
+**La superficie son tools, nunca una línea de comandos.** Diez tools tipadas —
+`riel_guide` (la prosa), `riel_note`, `riel_seam` (`mode=read|resume|json`, más
+`anchors`), `riel_todo`, `riel_context`, `riel_contract`, `riel_shaping`,
+`riel_clean`, `riel_fetch`, `riel_check` — sobre el motor (stdlib, sin deps, que
 viaja dentro del paquete y decide nada: el formato tiene un solo dueño). Ninguna
 tool recibe argv; el campo `tool` de la respuesta es provenance (qué tool
 contestó) y el `verb` cuando la tool lo lleva, nunca una interfaz.
 
-**La prosa viaja acá, y se lee por una sola puerta.** `guide/` trae seis topics
-(`protocol`, `ledger`, `contract`, `shaping`, `delegate`, `tools`): sin argumento
-`riel_guide()` devuelve el índice, `riel_guide(topic="contract")` el cuerpo y
-`riel_guide(topic="contract", section="Claim anchors")` sólo esa rebanada. La
-sección `riel` del prompt publica lo que el catálogo de tools no puede —que la
-prosa existe— más el estado del worktree. **No se registra ningún skill**: un
-skill de plugin nunca entra en `<available_skills>` y necesitaría la sección
-igual, así que habría dos puertas y dos formas de que la prosa se desincronice.
-Nada que copiar a un directorio de skills, nada de `external_dirs`, nada de
-symlinks.
+**La prosa viaja acá, y se lee por una sola puerta, por secciones.** `guide/`
+trae seis topics (`protocol`, `ledger`, `contract`, `shaping`, `delegate`,
+`tools`): sin argumento `riel_guide()` devuelve el índice; con `topic` devuelve
+el **índice de secciones** de esa guía (nombre, primera línea y tamaño de cada
+`## heading`); con `section` sólo esa rebanada, y `full=true` el cuerpo entero.
+Un `delegate.md` completo son 23 KB (~6k tokens) y la sección que la tarea
+necesita suele ser 300–800 bytes: leer el outline primero es la diferencia
+entre pagar 200 tokens o 6,000. La sección `riel` del prompt publica lo que el
+catálogo de tools no puede —que la prosa existe— más el estado del worktree.
+**No se registra ningún skill**: un skill de plugin nunca entra en
+`<available_skills>` y necesitaría la sección igual, así que habría dos puertas
+y dos formas de que la prosa se desincronice. Nada que copiar a un directorio de
+skills, nada de `external_dirs`, nada de symlinks.
 
 ## Instalación (usuario)
 

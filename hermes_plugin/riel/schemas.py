@@ -6,6 +6,21 @@ how the ledger is formatted — the format, the rules and the recipes live in th
 package's prose, which `riel_guide` serves.
 """
 
+from __future__ import annotations
+
+try:  # a package import when the host loaded us as one …
+    from . import _load
+except ImportError:  # … and a by-path load when it did not (repo suite, dashboard)
+    import importlib.util as _ilu
+    import pathlib as _pl
+
+    _spec = _ilu.spec_from_file_location(
+        "riel_plugin_load", _pl.Path(__file__).resolve().with_name("_load.py"))
+    _load = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_load)
+
+_NOTE_PARAMS = _load.sibling("riel_engine_params", "engine/params.py")
+
 _WORKTREE = {
     "type": "string",
     "description": (
@@ -14,6 +29,29 @@ _WORKTREE = {
         "pass it only to address another checkout explicitly."
     ),
 }
+
+
+def _note_properties():
+    """`riel_note`'s properties — derived from `engine/params.py`, never re-typed.
+
+    This schema, the handler's flag map and the engine's argparse used to be
+    three hand-maintained copies of the same fifteen parameters. One declaration
+    now feeds all three, so a parameter cannot exist in the catalog and be
+    ignored by the engine.
+    """
+    props = {}
+    for param in _NOTE_PARAMS.NOTE_PARAMS:
+        props[param["name"]] = {
+            "type": "integer" if param["kind"] == "int" else "string",
+            "description": param["help"],
+        }
+    props[_NOTE_PARAMS.FROM_CONTRACT["name"]] = {
+        "type": "string",
+        "description": _NOTE_PARAMS.FROM_CONTRACT["help"],
+    }
+    props["worktree"] = _WORKTREE
+    return props
+
 
 RIEL_NOTE = {
     "name": "riel_note",
@@ -26,64 +64,7 @@ RIEL_NOTE = {
     ),
     "parameters": {
         "type": "object",
-        "properties": {
-            "goal": {"type": "string", "description": "What 'done' means for this task (## Goal)."},
-            "next": {"type": "string", "description": "The single next concrete action (## Next)."},
-            "source": {"type": "string", "description": "Where the task came from (## Source)."},
-            "phase": {"type": "string", "description": "Current phase pointer, e.g. F2 (## Phase)."},
-            "core": {
-                "type": "string",
-                "description": "A load-bearing fact the receiver of this work must know, as 'name — fact'.",
-            },
-            "core_slot": {
-                "type": "integer",
-                "description": "Which Core slot to write (1-based); omit to append.",
-            },
-            "claim": {
-                "type": "string",
-                "description": "A claim about the code ('what must be true'), used with verify_with.",
-            },
-            "verify_with": {
-                "type": "string",
-                "description": "The command that would verify the claim, e.g. 'mix test token_test.exs'.",
-            },
-            "check": {
-                "type": "string",
-                "description": "A verified checkpoint ('what I checked'), used with by.",
-            },
-            "by": {
-                "type": "string",
-                "description": "The real command/gate that produced the evidence for --check (never a guess).",
-            },
-            "covering": {
-                "type": "string",
-                "description": "What scope the checkpoint covers, e.g. 'sign+verify+expiry'.",
-            },
-            "confidence": {
-                "type": "integer",
-                "description": "Confidence in the checkpoint, if the project tracks it.",
-            },
-            "open": {
-                "type": "string",
-                "description": "An open question, used with settled_by.",
-            },
-            "settled_by": {
-                "type": "string",
-                "description": "The test/check that would settle the open question.",
-            },
-            "close": {
-                "type": "integer",
-                "description": "Number of an open question to close (requires check and by).",
-            },
-            "from_contract": {
-                "type": "string",
-                "description": (
-                    "Seed Goal/Phase/Claims/Next from a contract: 'true' uses .riel/contract.md, "
-                    "or pass an explicit path. Omit to write entries by hand."
-                ),
-            },
-            "worktree": _WORKTREE,
-        },
+        "properties": _note_properties(),
     },
 }
 
@@ -91,16 +72,25 @@ RIEL_SEAM = {
     "name": "riel_seam",
     "description": (
         "Re-read the Riel ledger at a seam: prints the goal, claims, verified checkpoints, "
-        "open questions, next action and which invariants are due. Use it before continuing "
+        "open questions, next action and the invariants due now. Use it before continuing "
         "work after a gap, before a decision, or when unsure of the current state — it is the "
-        "cheap way to reload verified state instead of guessing from memory. Pass anchors=true "
-        "to also re-read every claim beside the region that supports it (the contract section, "
-        "the graph node or the shaping finding its anchor names) — that pair is the seam: state "
-        "plus the support under it."
+        "cheap way to reload verified state instead of guessing from memory. `mode='resume'` "
+        "adds the post-gap restore order, for a session that continues earlier work and has "
+        "no memory of it; `mode='json'` answers the ledger's own items, for deciding "
+        "mechanically by counts and ids. Pass anchors=true to also re-read every claim beside "
+        "the region that supports it (the contract section, the graph node or the shaping "
+        "finding its anchor names) — that pair is the seam: state plus the support under it."
     ),
     "parameters": {
         "type": "object",
         "properties": {
+            "mode": {
+                "type": "string",
+                "description": (
+                    "read (default) | resume | json. resume adds the post-gap restore "
+                    "order; json returns the ledger items the chip and the gate fold."
+                ),
+            },
             "anchors": {
                 "type": "boolean",
                 "description": "Also re-read each claim beside the region its anchor names.",
@@ -108,16 +98,6 @@ RIEL_SEAM = {
             "worktree": _WORKTREE,
         },
     },
-}
-
-RIEL_RESUME = {
-    "name": "riel_resume",
-    "description": (
-        "Full post-gap bootstrap for a Riel task: ledger → invariants → mode → next action. "
-        "Use at the start of a session that continues earlier work, when the ledger exists "
-        "in the worktree but this conversation has no memory of it."
-    ),
-    "parameters": {"type": "object", "properties": {"worktree": _WORKTREE}},
 }
 
 RIEL_TODO = {
@@ -161,17 +141,6 @@ RIEL_CONTEXT = {
             "worktree": _WORKTREE,
         },
     },
-}
-
-RIEL_STATE = {
-    "name": "riel_state",
-    "description": (
-        "Riel ledger state as JSON — the machine-readable mirror the desktop chip and the "
-        "pre_verify gate fold. One item per claim, verified checkpoint and open question, with "
-        "the evidence each carries. Use it to decide mechanically — counts and ids — where "
-        "riel_seam is the prose re-read."
-    ),
-    "parameters": {"type": "object", "properties": {"worktree": _WORKTREE}},
 }
 
 RIEL_CONTRACT = {
@@ -334,11 +303,17 @@ RIEL_GUIDE = {
                     "e.g. 'Claim anchors' — the slice you need, not the whole body."
                 ),
             },
+            "full": {
+                "type": "boolean",
+                "description": (
+                    "Read the whole guide body instead of its section outline. "
+                    "Only when the task needs all of it — 5–23 KB."
+                ),
+            },
         },
         "required": [],
     },
 }
 
-SCHEMAS = (RIEL_NOTE, RIEL_SEAM, RIEL_RESUME, RIEL_TODO, RIEL_CONTEXT,
-           RIEL_STATE, RIEL_CONTRACT, RIEL_SHAPING, RIEL_CLEAN, RIEL_FETCH, RIEL_CHECK,
-           RIEL_GUIDE)
+SCHEMAS = (RIEL_NOTE, RIEL_SEAM, RIEL_TODO, RIEL_CONTEXT, RIEL_CONTRACT,
+           RIEL_SHAPING, RIEL_CLEAN, RIEL_FETCH, RIEL_CHECK, RIEL_GUIDE)

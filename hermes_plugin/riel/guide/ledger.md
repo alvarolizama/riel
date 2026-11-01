@@ -58,7 +58,7 @@ ways out, the recommended one first:
 2. **Delete without backup** — `riel_clean(scope="purge")`: the previous task is
    done and pushed, or it was a throwaway.
 3. **Continue the existing ledger** — the state in `.riel/` IS this task's:
-   run `riel_resume` and pick up from the last ✓NN.
+   run `riel_seam(mode="resume")` and pick up from the last ✓NN.
 
 Headless runs (no question mechanism available): the agent decides and
 REPORTS the choice — a finished-and-pushed previous task defaults to
@@ -317,7 +317,7 @@ your own result, not just in favor.
 (`todo_list(todos=<that array>)`, or `riel_todo` then `todo_list` where the
 Hermes plugin is installed). A ✓ that closes a phase's gate flips that phase
 (and its steps) to `completed` in the UI without hand-editing the todo; the
-checkpoint itself shows in the desktop chip, which reads `riel_state`.
+checkpoint itself shows in the desktop chip, which folds `riel_seam(mode="json")`.
 
 Re-verifying a **critical** checkpoint is allowed — but only with *variation*
 (a different angle, order, or question), never the same check repeated.

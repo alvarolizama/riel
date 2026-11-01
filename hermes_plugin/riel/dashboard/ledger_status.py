@@ -51,7 +51,7 @@ def _strip(content: str, prefix: str) -> str:
 
 
 def summarize(items: list) -> dict:
-    """Fold `riel_state` items into the chip's counters, headlines AND detail.
+    """Fold `seam --mode json` items into the chip's counters, headlines AND detail.
 
     The detail lists carry each item's content (claims with their verify-with,
     verified checkpoints with their evidence, open questions) so the popover can
@@ -113,11 +113,11 @@ def read_status(worktree: str, engine: Path = ENGINE, timeout: int = TIMEOUT_SEC
     status["present"] = True
 
     if not engine.exists():
-        status["error"] = "bundled engine is missing (run: make plugin-build)"
+        status["error"] = "bundled engine is missing (reinstall: hermes plugins update riel)"
         return status
     try:
         proc = subprocess.run(
-            [sys.executable, str(engine), "status"],
+            [sys.executable, str(engine), "--worktree", root, "status"],
             cwd=root,
             capture_output=True,
             text=True,

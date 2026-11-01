@@ -22,16 +22,29 @@ The rules that keep it honest:
 from __future__ import annotations
 
 import importlib.util
-import os
 from pathlib import Path
 from typing import Any, List, Optional
 
-from . import guide, settings
+try:  # a package import when the host loaded us as one …
+    from . import _load
+except ImportError:  # … and a by-path load when it did not (repo suite, dashboard)
+    import importlib.util as _ilu
+    import pathlib as _pl
+
+    _spec = _ilu.spec_from_file_location(
+        "riel_plugin_load", _pl.Path(__file__).resolve().with_name("_load.py"))
+    _load = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_load)
 
 SECTION_ID = "riel"
 SECTION_MAX_CHARS = 3_000
 STATE_FIELD_CHARS = 90
 STATE_TIMEOUT_SECS = 3
+
+# Module-level handles, resolved through the one loader: the tests (and any
+# caller that wants the prose's topic list without a worktree) read them here.
+guide = _load.guide()
+settings = _load.settings()
 
 PLUGIN_DIR = Path(__file__).resolve().parent
 ENGINE = PLUGIN_DIR / "engine" / "run.py"
@@ -50,22 +63,23 @@ def _cap(text: Any, limit: int) -> str:
 
 def index_line() -> str:
     """One line: the door to the prose plus the topics that exist right now."""
-    topics = guide.topics()
+    topics = _load.guide().topics()
     if not topics:
         return "Prose: riel_guide() — the package ships no guide/ prose yet."
     return (
         "Prose: riel_guide() lists the topics ("
         + ", ".join(topics)
-        + '); riel_guide(topic="contract") reads one, and a section= argument '
-        "gives just that slice of it."
+        + '); riel_guide(topic="contract") lists that guide\'s sections by size, '
+        "section= reads just one, full=true reads the whole body."
     )
 
 
 def _door_line() -> str:
     return (
-        "Door: everything Riel does is a tool — riel_guide, riel_note, riel_seam, riel_resume, "
-        "riel_todo, riel_state, riel_context, riel_contract, riel_shaping, riel_clean, riel_fetch, "
-        'riel_check (deferred: reach them with tool_search "riel"). No command line, no PATH.'
+        "Door: everything Riel does is a tool — riel_guide, riel_note, riel_seam "
+        "(mode=read|resume|json), riel_todo, riel_context, riel_contract, riel_shaping, "
+        "riel_clean, riel_fetch, riel_check (deferred: reach them with tool_search "
+        '"riel"). No command line, no PATH.'
     )
 
 
@@ -112,7 +126,7 @@ def state_line(worktree: str) -> str:
 
 def render(session_info: Any = None) -> str:
     """The block, or `""` when the `context` group is off or nothing can be said."""
-    if not settings.read_bool("context", default=True):
+    if not _load.settings().read_bool("context", default=True):
         return ""
 
     info = session_info if isinstance(session_info, dict) else {}
@@ -123,13 +137,13 @@ def render(session_info: Any = None) -> str:
 
     lines = list(core)
     # The state is the volatile half: it only joins when it fits WHOLE.
-    state = state_line(info.get("cwd") or os.environ.get("TERMINAL_CWD") or "")
+    state = state_line(_load.session_cwd(preferred=info.get("cwd"), recorded=False) or "")
     if state and used + len(state) + 2 <= SECTION_MAX_CHARS:
         lines = [HEAD, index_line(), "", state, "", _door_line()]
         used += len(state) + 2
 
     # The operator's line is appended last, and yields first.
-    note = settings.read_note()
+    note = _load.settings().read_note()
     if note and used + len(note) + 1 <= SECTION_MAX_CHARS:
         lines.append(note)
         used += len(note) + 1

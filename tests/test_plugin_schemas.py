@@ -82,13 +82,19 @@ class TypedToolsTest(unittest.TestCase):
             for banned in ("args", "argv", "flags"):
                 self.assertNotIn(banned, props, f"{schema['name']} smuggles a command line ({banned})")
 
-    def test_the_surface_is_the_twelve_tools_the_prose_calls(self):
+    def test_the_surface_is_the_ten_tools_the_prose_calls(self):
         self.assertEqual(
             sorted(tools.HANDLERS),
-            sorted(["riel_guide", "riel_note", "riel_seam", "riel_resume", "riel_todo",
-                    "riel_context", "riel_state", "riel_contract", "riel_shaping", "riel_clean",
+            sorted(["riel_guide", "riel_note", "riel_seam", "riel_todo",
+                    "riel_context", "riel_contract", "riel_shaping", "riel_clean",
                     "riel_fetch", "riel_check"]),
         )
+
+    def test_the_seam_carries_the_three_modes_the_old_three_tools_had(self):
+        """seam/resume/state collapsed into one tool: the modes are the surface."""
+        described = self.schema("riel_seam")["parameters"]["properties"]
+        self.assertIn("mode", described)
+        self.assertEqual(sorted(tools.SEAM_MODES), ["json", "read", "resume"])
 
     def test_the_guide_is_the_door_the_prose_names(self):
         """Whatever the guide's own topics say, the tool exists and takes a topic."""
@@ -202,9 +208,10 @@ class TypedToolsTest(unittest.TestCase):
         self.assertEqual(payload["mermaid"]["exit_code"], 0, payload)
         self.assertIn("SKIP:", payload["mermaid"]["stdout"])
 
-    def test_state_is_the_ledger_mirror(self):
-        payload = self.call("riel_state", {})
-        self.assertEqual(payload["tool"], "riel_state")
+    def test_state_is_the_seam_in_json_mode(self):
+        payload = self.call("riel_seam", {"mode": "json"})
+        self.assertEqual(payload["tool"], "riel_seam")
+        self.assertEqual(payload["verb"], "json")
         for key in ("exit_code", "passed", "stdout", "stderr"):
             self.assertIn(key, payload)
 

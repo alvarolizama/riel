@@ -13,12 +13,18 @@ running turn changed.
 
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
 from typing import List
 
-_PLUGIN_DIR = Path(__file__).resolve().parent
-_SETTINGS_MODULE = None
+try:  # a package import when the host loaded us as one …
+    from . import _load
+except ImportError:  # … and a by-path load when it did not (repo suite, dashboard)
+    import importlib.util as _ilu
+    import pathlib as _pl
+
+    _spec = _ilu.spec_from_file_location(
+        "riel_plugin_load", _pl.Path(__file__).resolve().with_name("_load.py"))
+    _load = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_load)
 
 USAGE = (
     "/riel — Riel's switches. Usage: /riel status | /riel on <group> | /riel off <group> "
@@ -29,18 +35,8 @@ NEXT_SESSION = "Applies to the NEXT session (this one keeps the prompt and tools
 
 
 def plugin_settings():
-    """`settings.py` beside this file, loaded by path (the package's own pattern)."""
-    global _SETTINGS_MODULE
-    if _SETTINGS_MODULE is None:
-        spec = importlib.util.spec_from_file_location(
-            "riel_plugin_settings_commands", _PLUGIN_DIR / "settings.py"
-        )
-        if spec is None or spec.loader is None:  # pragma: no cover - defensive
-            raise RuntimeError("settings.py is missing from the package")
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        _SETTINGS_MODULE = module
-    return _SETTINGS_MODULE
+    """Deprecated alias: the one loader lives in `_load.py`."""
+    return _load.settings()
 
 
 def _render(snapshot: dict) -> str:
@@ -55,7 +51,7 @@ def _render(snapshot: dict) -> str:
 
 def handle(raw_args: str = "", **kwargs) -> str:
     """`/riel …` → a short report. Never raises; a bad write is reported, not hidden."""
-    settings = plugin_settings()
+    settings = _load.settings()
     parts = str(raw_args or "").split()
     action = parts[0].lower() if parts else "status"
     rest = parts[1:]

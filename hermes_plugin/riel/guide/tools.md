@@ -1,7 +1,7 @@
 ---
 topic: tools
-trigger: "Use when you need Riel's tool surface — which of the twelve tools writes what, what each returns, and the template, fetch and exit-code rules. There is no command line: the tools are the interface."
-version: 1.17.1
+trigger: "Use when you need Riel's tool surface — which of the ten tools writes what, what each returns, and the template, fetch and exit-code rules. There is no command line: the tools are the interface."
+version: 1.18.0
 ---
 
 # tools — Riel's tool surface (Riel)
@@ -11,14 +11,14 @@ Every part of Riel the agent would otherwise have to remember by hand is a
 no command line to call:
 
 - Writing `.riel/ledger.md` with the exact expected format (`riel_note`)
-- Reading the prose itself — the index, one guide, or one section of it
-  (`riel_guide`)
+- Reading the prose itself — the index, a guide's section outline, one section,
+  or (rarely) the whole body (`riel_guide`)
 - Instantiating packet templates (`riel_contract(verb="new")`)
 - Verifying that a packet satisfies the structural constraints
   (`riel_contract(verb="validate")`) — including the closed verb vocabulary
 - Expanding the execution graph into explicit text (`riel_contract(verb="digest")`)
 - Deriving the Hermes session-todo mirror from the plan (`riel_todo`)
-  and the ledger mirror the chip and the gate fold (`riel_state`)
+  and the ledger mirror the chip and the gate fold (`riel_seam(mode="json")`)
 - Emitting a contract's context keywords as JSON (`riel_context`) so the
   memory search has one authoritative index to read instead of re-parsing
   the contract
@@ -44,12 +44,10 @@ cwd, never the process's — and nothing is typed into a shell.
 
 | Tool | Takes | Answers |
 |---|---|---|
-| `riel_guide` | `topic`, `section` | the prose: index, one guide, or one slice |
+| `riel_guide` | `topic`, `section`, `full` | the prose: index, a guide's section outline (default), one slice, or — with `full=true` — the whole body |
 | `riel_note` | `goal`, `next`, `source`, `phase`, `core`+`core_slot`, `claim`+`verify_with`, `check`+`by`+`covering`+`confidence`, `open`+`settled_by`, `close`, `from_contract` | writes the ledger |
-| `riel_seam` | `anchors=true` to also re-read each claim beside its support | the ledger at a seam |
-| `riel_resume` | — | full post-gap bootstrap |
+| `riel_seam` | `mode` (read/resume/json), `anchors=true` to also re-read each claim beside its support | the ledger at a seam: prose + due invariants, + the post-gap restore order, or the ledger's own facts as JSON |
 | `riel_todo` | — | the PLAN mirror (JSON) |
-| `riel_state` | — | the LEDGER's facts (JSON) |
 | `riel_context` | `keywords=[…]` (rarely) | the contract's context index |
 | `riel_contract` | `verb` (new/validate/digest/slice) + `template`/`params`/`file`/`phase` | contracts and packets |
 | `riel_shaping` | `verb` (new/validate) + `params`/`file`/`force` | the pre-contract research |
@@ -65,6 +63,24 @@ and nothing here is meant to be typed into a shell.
 
 All state-mutating tools write to `.riel/` in the worktree of the session; the
 ones that only read take `worktree` to address another checkout explicitly.
+
+### Reading the prose without paying for it
+
+`riel_guide` is sectioned on purpose: a guide runs 5–23 KB, the section a task
+needs is 300–800 bytes. So the call ladder is:
+
+```
+riel_guide()                                    # the topics, one line each
+riel_guide(topic="ledger")                      # that guide's SECTION OUTLINE — names, first
+                                                # line, size of each `## heading`
+riel_guide(topic="ledger", section="Pitfalls")  # the one section the task needs
+riel_guide(topic="ledger", full=true)           # the whole body — only when it earns it
+```
+
+An exact heading wins over a substring (`section="DISPATCH"` opens
+`## DISPATCH — …`, not `## Step 6: Write the dispatch prompt`). Read the
+outline first: it tells you which section is worth its bytes, and the size
+column is there to choose with.
 
 ### Ledger
 
@@ -88,9 +104,9 @@ Numbering (✓NN, ?NN) is assigned by `riel_note` — never hand-edited.
 ### Inspections
 
 ```
-riel_seam(anchors=true)   # the ledger + each claim beside its support
-riel_resume               # post-gap bootstrap (ledger → invariants → mode → next)
-riel_state                # the ledger's facts as JSON (chip and gate fold this)
+riel_seam(anchors=true)            # the ledger + each claim beside its support
+riel_seam(mode="resume")           # post-gap: the ledger + the restore order + what is due
+riel_seam(mode="json")             # the ledger's facts as JSON (chip and gate fold this)
 riel_check(file="packet-f2.md")   # dense markers + the graph digest, before delivery
 ```
 
@@ -116,7 +132,7 @@ its own writes).
 
 **The agent asks the user before cleaning** — a `.riel/` found at the
 opening holds another task's state, and the choice (back up / purge /
-continue the existing ledger via `riel_resume`) is the user's, not a silent
+continue the existing ledger via `riel_seam(mode="resume")`) is the user's, not a silent
 default (rule in `riel_guide(topic="ledger")`, "Opening over an existing `.riel/`").
 
 ### Shaping (Spec 7)
@@ -167,9 +183,9 @@ carries it once every phase is gated). **No ledger fact is a row here.**
 Without a contract the todo degrades to `goal` + the ledger's single `PHASE:`
 row.
 
-`riel_state` returns the **ledger's own facts** as items (goal, phase, next,
+`riel_seam(mode="json")` returns the **ledger's own facts** as items (goal, phase, next,
 `OPEN NN`, `CLAIM:`, `DONE NN`) — the mirror the desktop chip and the
-`pre_verify` gate fold. Keep the two apart: `riel_todo` = plan, `riel_state` =
+`pre_verify` gate fold. Keep the two apart: `riel_todo` = plan, `riel_seam(mode="json")` =
 state.
 
 The todo is a projection — fix the ledger (or the contract) and regenerate
@@ -184,7 +200,7 @@ so a new session re-injects from the current ledger.
 
 What each tool reports, in the envelope's `exit_code`:
 
-- `riel_note` / `riel_seam` / `riel_resume` / `riel_todo` / `riel_state`: 0
+- `riel_note` / `riel_seam` / `riel_todo`: 0
   unless the arguments are invalid or the ledger is missing (1).
 - `riel_clean`: always 0 — "nothing to clean" is a message, not an error.
 - `riel_shaping(verb="validate")`: 0 with WARNs only; 1 with an `ISSUE` or a
@@ -263,7 +279,7 @@ embeds a **short-lived signed token** (not the api_key): it expires (TTL) and
 is single-use, so the tool needs no credentials.
 
 **When to run it:** at the *opening* of a task that uses a remote contract —
-`riel_resume` / `riel_seam` / `riel_note(from_contract=true)`, before the
+`riel_seam(mode="resume")` / `riel_note(from_contract=true)`, before the
 context fetch — **not only when delegating**. A solo task fetches its contract
 the same way; `riel_contract(verb="slice")` (for a child) is a later, separate
 moment and is never the trigger.

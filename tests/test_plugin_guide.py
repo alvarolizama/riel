@@ -59,19 +59,39 @@ class GuideModuleTest(unittest.TestCase):
             self.assertNotIn("name", fields, f"{topic} still poses as a skill")
             self.assertNotIn("description", fields, topic)
 
-    def test_read_returns_the_body_without_frontmatter(self):
-        body, error = self.guide.read("ledger")
+    def test_read_answers_with_the_section_outline_by_default(self):
+        outline, error = self.guide.read("ledger")
+        self.assertIsNone(error)
+        self.assertNotIn("topic: ledger", outline)
+        self.assertIn("# ledger guide —", outline)
+        self.assertEqual(len(self.guide.sections(outline)), 0, "the outline has no ## headings of its own")
+        self.assertIn("## The protocol", self.guide.read("ledger", full=True)[0])
+
+    def test_full_returns_the_body_without_frontmatter(self):
+        body, error = self.guide.read("ledger", full=True)
         self.assertIsNone(error)
         self.assertNotIn("topic: ledger", body)
         self.assertIn("# ledger —", body)
 
+    def test_the_outline_is_much_cheaper_than_the_body(self):
+        """The whole point of the default: a topic costs its outline, not 20 KB."""
+        outline, _ = self.guide.read("delegate")
+        body, _ = self.guide.read("delegate", full=True)
+        self.assertLess(len(outline) * 3, len(body))
+
     def test_read_slices_one_section(self):
-        body, _ = self.guide.read("ledger")
+        body, _ = self.guide.read("ledger", full=True)
         chunk, error = self.guide.read("ledger", "The three registers")
         self.assertIsNone(error)
         self.assertLess(len(chunk), len(body))
         self.assertTrue(chunk.startswith("## "))
         self.assertEqual([line for line in chunk.splitlines() if line.startswith("## ")], ["## The three registers"])
+
+    def test_an_exact_heading_beats_a_substring(self):
+        """`DISPATCH` opens the DISPATCH section, never 'Step 6: … dispatch prompt'."""
+        chunk, error = self.guide.read("delegate", "DISPATCH")
+        self.assertIsNone(error)
+        self.assertTrue(chunk.startswith("## DISPATCH"), chunk.splitlines()[0])
 
     def test_unknown_topic_errors_with_the_list(self):
         body, error = self.guide.read("nope")
@@ -114,16 +134,24 @@ class GuideHandlerTest(unittest.TestCase):
             self.assertIn(f"- {topic} —", result["stdout"])
         self.assertTrue(result["bytes"])
 
-    def test_a_topic_returns_the_guide(self):
+    def test_a_topic_returns_the_section_outline(self):
         result = self.payload({"topic": "contract"})
         self.assertTrue(result["passed"], result)
         self.assertEqual(result["topic"], "contract")
-        self.assertIn("mermaid", result["content"])
+        self.assertIn("sections", result["content"])
+        self.assertIn('section="<name>"', result["content"])
         self.assertEqual(result["content"], result["stdout"])
         self.assertEqual(result["bytes"], len(result["content"]))
 
+    def test_full_returns_the_whole_body(self):
+        outline = self.payload({"topic": "contract"})
+        body = self.payload({"topic": "contract", "full": True})
+        self.assertTrue(body["passed"], body)
+        self.assertGreater(body["bytes"], outline["bytes"])
+        self.assertIn("mermaid", body["content"])
+
     def test_a_section_returns_just_that_slice(self):
-        whole = self.payload({"topic": "ledger"})
+        whole = self.payload({"topic": "ledger", "full": True})
         slice_ = self.payload({"topic": "ledger", "section": "Pitfalls"})
         self.assertTrue(slice_["passed"], slice_)
         self.assertLess(slice_["bytes"], whole["bytes"])

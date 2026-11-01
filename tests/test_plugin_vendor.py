@@ -228,7 +228,7 @@ class HandlerTest(unittest.TestCase):
 
     def test_resume_runs_in_the_worktree(self):
         self.payload(self.tools.riel_note, {"goal": "resume goal", "worktree": self.tmp})
-        resume = self.payload(self.tools.riel_resume, {"worktree": self.tmp})
+        resume = self.payload(self.tools.riel_seam, {"worktree": self.tmp, "mode": "resume"})
         self.assertEqual(resume["exit_code"], 0, resume)
         self.assertIn("resume goal", resume["stdout"])
 

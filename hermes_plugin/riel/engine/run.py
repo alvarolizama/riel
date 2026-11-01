@@ -6,31 +6,38 @@ Every subcommand below is reached through a TOOL (`riel_note`, `riel_contract`,
 data. The tools pass named parameters, this file owns the formats and decides
 nothing semantic.
 Usage:
+    riel [--worktree DIR] [--ledger PATH] <verb> …
     note    [--goal G] [--next N] [--core "name — fact"]
                     [--core-slot N] [--claim C --verify-with CMD]
                     [--check WHAT --by CMD --covering SCOPE [--confidence N]]
                     [--open Q --settled-by TEST]
                     [--close N --check WHAT --by CMD [--covering SCOPE]]
                     [--from-contract [PATH]]   # seed from .riel/contract.md
-    seam
-    resume
-    todo
-    context [--contract PATH] [-o OUT]   # keywords de contexto (JSON)
-    clean   [--all] [--purge]            # limpia .riel/ con backup plano
-    ship    FILE...
-    digest  FILE [-o OUT]
-    mermaid FILE...                              # parsea cada bloque con mmdc
+    seam    [--mode read|resume|json]         # ledger + due invariants / + restore order / JSON
     anchor  [P#] [--contract PATH] [--shaping PATH]  # claim + su región
-    shaping validate [PATH]              # valida .riel/shaping.md (Spec 7)
+    todo                                      # el espejo del PLAN (JSON)
+    status                                    # == seam --mode json
+    context [--contract PATH] [-o OUT]        # keywords de contexto (JSON)
+    clean   [--all] [--purge]                 # limpia .riel/ con backup plano
+    ship    FILE...
+    check   FILE [--mermaid]                  # ship + digest (+ mmdc), una sola llamada
+    digest  FILE [-o OUT]
+    mermaid FILE...                           # parsea cada bloque con mmdc
+    shaping validate [PATH]                   # valida .riel/shaping.md (Spec 7)
     shaping new [-o PATH] [--force] [--param k=v ...]
     contract new [--type T] [--param k=v ...] [--list]
     contract validate FILE
     contract digest FILE [-o OUT]
     contract slice  FILE [--phase F#] [-o OUT]
     fetch   URL -o FILE [--sha256 H] [--header 'Name: v'] [--allow-http] [--timeout S] [--max-bytes N]
+
+`--worktree DIR` chdirs the engine into DIR before any verb runs, so `.riel/`,
+every template lookup and every relative output path resolve against the
+WORKTREE — never against the directory the caller happened to run from.
 """
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -533,20 +540,59 @@ def print_ledger(st):
     )
 
 
-def cmd_seam(args):
-    st = read_ledger(args.ledger)
-    if not st["goal"]:
-        print("no ledger found at {}; call riel_note(goal=…, next=…) first".format(
-            args.ledger), file=sys.stderr)
-        return 1
-    print_ledger(st)
-    n_verified = len(st["verified"])
-    if n_verified == 0:
-        print("\n[!] No ✓NN yet — remember to append immediately when a gate passes.")
+LEDGER_MISSING_HINT = "no ledger found at {}; call riel_note(goal=…, next=…) first"
+
+
+def _require_ledger(st, path):
+    """False — and the one message — when the worktree has no ledger state yet."""
+    if st["goal"] or st["verified"] or st["next"]:
+        return True
+    print(LEDGER_MISSING_HINT.format(path), file=sys.stderr)
+    return False
+
+
+def _due_reminders(st):
+    """The invariants the ledger violates RIGHT NOW — computed, never a static list.
+
+    `resume` used to dump ten hardcoded reminders on every call, the same ten on
+    a clean ledger and on a broken one; the prose lives in the ledger guide, and
+    the engine's job is to say which ones are due.
+    """
+    due = []
+    if not st["verified"]:
+        due.append("No ✓NN yet — record the gate result the moment it passes")
+    if st["claims"] and not st["verified"]:
+        due.append("{} claim(s) and no checkpoint — a claim is unverified until a ✓ cites it"
+                   .format(len(st["claims"])))
     if len(st["core"]) > 2:
-        print("\n[!] Core has {} live items; re-park to at most 2.".format(len(st["core"])))
+        due.append("Core has {} live items; re-park to at most 2".format(len(st["core"])))
     if st["next"] == "":
-        print("\n[!] Next is empty — the ledger stops being state. Fill it.")
+        due.append("Next is empty — the ledger stops being state")
+    if st["open"] and not st["verified"]:
+        due.append("{} open question(s) and nothing settled — Open must shrink, not grow"
+                   .format(len(st["open"])))
+    return due
+
+
+def cmd_seam(args):
+    """Re-read the ledger: `--mode read` (prose + due), `resume` (+ restore order), `json`."""
+    mode = getattr(args, "mode", "read")
+    st = read_ledger(args.ledger)
+    if not _require_ledger(st, args.ledger):
+        return 1
+    if mode == "json":
+        print(json.dumps(ledger_to_status(st), indent=2, ensure_ascii=False))
+        return 0
+    print_ledger(st)
+    for line in _due_reminders(st):
+        print("\n[!] " + line)
+    if mode == "resume":
+        print(
+            "\n[resume] Restore order — (1) the ledger above, every ✓NN, not just "
+            "the last; (2) the claims that carry an anchor, re-read beside their "
+            "support with riel_seam(anchors=true); (3) confirm `loop` is still the "
+            "right mode; (4) set Next to the first action back."
+        )
     anchored = []
     if os.path.isfile(CONTRACT_PATH):
         with open(CONTRACT_PATH, encoding="utf-8") as fh:
@@ -554,37 +600,6 @@ def cmd_seam(args):
     if anchored:
         print("\n[anchor] {} of the claims carry an anchor — `riel_seam(anchors=true)` "
               "re-reads each one beside its region.".format(len(anchored)))
-    return 0
-
-
-def cmd_resume(args):
-    st = read_ledger(args.ledger)
-    if not st["goal"]:
-        print("no ledger found at {}".format(args.ledger), file=sys.stderr)
-        return 1
-    print("=" * 60)
-    print("RIEL RESUME — restore state after gap/compaction, in order")
-    print("=" * 60)
-    print("\n[1/4] Ledger (every ✓NN matters, not just the last):\n")
-    print_ledger(st)
-    print(
-        "\n[2/4] Failure invariants — re-check before acting:\n"
-        "  1. ✓NN declared but never written\n"
-        "  2. called verified without coverage\n"
-        "  3. Next changed without work changing (churn)\n"
-        "  4. critical ✓NN re-verified without variation\n"
-        "  5. Goal ≠ what is being executed\n"
-        "  6. Open grows without anything settled\n"
-        "  7. confidence always the same value → broken scale\n"
-        "  8. monitor never reports → unplugged\n"
-        "  9. cannot restate Goal in your own words\n"
-        " 10. last ✓NN took 3+ failed attempts → context contaminated"
-    )
-    print(
-        "\n[3/4] Mode gate: is `loop` still correct? (fast/full/loop)\n"
-        "\n[4/4] Restate the mode (inner register or ledger line), then set\n"
-        "      `Next` = the first action back.",
-    )
     return 0
 
 
@@ -658,7 +673,7 @@ def contract_to_todo_items(text, st):
     gate has a ✓ is completed; the active phase (the one owning the Next)
     carries the current step as `in_progress`, its earlier steps completed and
     the rest pending. No ledger fact (Next, claim, open, ✓) becomes a row;
-    those are served by `riel_state`.
+    those are served by `seam --mode json`.
     """
     items = []
     block = _graph_block(text)
@@ -742,7 +757,7 @@ def ledger_to_todo(st, contract_text=None):
     The todo is the PLAN: the goal (the contract's Objective) as the root, the
     contract's phases as rows and each phase's steps as nested subtasks. The
     ledger only decides statuses (`contract_to_todo_items`). The ledger's own
-    facts — Next, claims, opens, ✓ — are NOT rows here; `riel_state`
+    facts — Next, claims, opens, ✓ — are NOT rows here; `seam --mode json`
     serves them to the chip and the gate. Without a contract the todo degrades
     to goal + the ledger's single Phase row.
     """
@@ -828,14 +843,12 @@ def cmd_todo(args):
 
 
 def cmd_status(args):
-    """Print the ledger's own facts — the mirror the chip and the gate fold."""
-    st = read_ledger(args.ledger)
-    if not st["goal"] and not st["verified"] and not st["next"]:
-        print("no ledger found at {}; call riel_note(goal=…, next=…) first".format(
-            args.ledger), file=sys.stderr)
-        return 1
-    print(json.dumps(ledger_to_status(st), indent=2, ensure_ascii=False))
-    return 0
+    """The ledger's own facts as JSON — the mirror the chip and the gate fold.
+
+    The same output `seam --mode json` answers: one implementation, so the tool
+    and the gate can never disagree about what the ledger says.
+    """
+    return cmd_seam(argparse.Namespace(ledger=args.ledger, mode="json"))
 
 
 def cmd_context(args):
@@ -989,7 +1002,7 @@ def cmd_shaping_new(args):
     template_path = find_template(typename, args.template_dir)
     if not template_path:
         print("no template for type {!r}; searched: {}".format(
-            typename, ", ".join(args.template_dir or DEFAULT_TEMPLATE_DIRS)),
+            typename, ", ".join(args.template_dir or template_dirs())),
             file=sys.stderr)
         return 2
     with open(template_path, encoding="utf-8") as fh:
@@ -1079,46 +1092,58 @@ def cmd_anchor(args):
     return 0
 
 
+def _ship_report(path):
+    """`(passed, text)` for one file's dense-marker check — no printing."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError as exc:
+        return False, "ship: cannot read {}: {}".format(path, exc)
+    problems = [(lineno, line) for lineno, line in enumerate(text.splitlines(), 1)
+                if DENSE_RE.search(line)]
+    if not problems:
+        return True, "{}: clean".format(path)
+    out = ["{}: dense markers found in outer register:".format(path)]
+    out += ["  L{}: {}".format(lineno, line[:120]) for lineno, line in problems[:20]]
+    return False, "\n".join(out)
+
+
 def cmd_ship(args):
     rc = 0
     for path in args.files:
-        try:
-            with open(path, encoding="utf-8") as fh:
-                text = fh.read()
-        except OSError as exc:
-            print("ship: cannot read {}: {}".format(path, exc), file=sys.stderr)
+        passed, text = _ship_report(path)
+        # An unreadable file is an ERROR (stderr); a found marker is the REPORT.
+        print(text, file=sys.stderr if text.startswith("ship:") else sys.stdout)
+        if not passed:
             rc = 1
-            continue
-        problems = []
-        for lineno, line in enumerate(text.splitlines(), 1):
-            if DENSE_RE.search(line):
-                problems.append((lineno, line))
-        if problems:
-            rc = 1
-            print("{}: dense markers found in outer register:".format(path))
-            for lineno, line in problems[:20]:
-                print("  L{}: {}".format(lineno, line[:120]))
-        else:
-            print("{}: clean".format(path))
     return rc
 
 
 # -------------------------------------------------------------- contract ----
 
 PKG_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# Template search order (first match wins — most specific first):
-#  1. user-level override (~/.hermes/riel/templates)
-#  2. project-level, versioned with the code
-#  3. built-in, shipped inside the package next to the engine
-DEFAULT_TEMPLATE_DIRS = [
-    os.path.expanduser("~/.hermes/riel/templates"),
-    os.path.join(os.getcwd(), ".riel", "templates"),
-    os.path.join(PKG_ROOT, "templates"),
-]
+
+
+def template_dirs():
+    """Template search order (first match wins — most specific first), per CALL.
+
+      1. user-level override (~/.hermes/riel/templates)
+      2. project-level, versioned with the code
+      3. built-in, shipped inside the package next to the engine
+
+    Resolved per call, not at import: as a module-level list it froze
+    `os.getcwd()` when the module loaded, so a caller that changed directory —
+    or passed `--worktree` — searched the wrong project's `.riel/templates`.
+    """
+    return [
+        os.path.expanduser("~/.hermes/riel/templates"),
+        os.path.join(os.getcwd(), ".riel", "templates"),
+        os.path.join(PKG_ROOT, "templates"),
+    ]
 
 
 def find_template(typename, extra=None):
-    dirs = list(extra or []) + DEFAULT_TEMPLATE_DIRS
+    dirs = list(extra or []) + template_dirs()
     for d in dirs:
         candidate = os.path.join(d, typename + ".md")
         if os.path.exists(candidate):
@@ -1143,7 +1168,7 @@ def render_template(text, params, strict=False):
 
 def cmd_contract_new(args):
     if args.list:
-        for d in DEFAULT_TEMPLATE_DIRS:
+        for d in template_dirs():
             if os.path.isdir(d):
                 for name in sorted(os.listdir(d)):
                     if name.endswith(".md"):
@@ -1156,7 +1181,7 @@ def cmd_contract_new(args):
     if not template_path:
         print(
             "no template for type {!r}; searched: {}".format(
-                args.type, ", ".join(args.template_dir or DEFAULT_TEMPLATE_DIRS)
+                args.type, ", ".join(args.template_dir or template_dirs())
             ),
             file=sys.stderr,
         )
@@ -1345,13 +1370,16 @@ def graph_back_edges(edges):
     return backs
 
 
-def cmd_contract_digest(args):
-    with open(args.file, encoding="utf-8") as fh:
-        text = fh.read()
+def _digest_report(path):
+    """`(passed, text)` for one file's graph digest — no printing, no writing."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError as exc:
+        return False, "digest: cannot read {}: {}".format(path, exc)
     block = _graph_block(text)
     if block is None:
-        print("no mermaid graph found in {}".format(args.file), file=sys.stderr)
-        return 1
+        return False, "no mermaid graph found in {}".format(path)
     nodes, edges = mermaid_graph(block)
     out = []
     out.append("Graph digest — explicit structure (the diagram stays for humans)")
@@ -1393,14 +1421,19 @@ def cmd_contract_digest(args):
                "It does not prove a command ran, a gate passed, or the "
                "deliverable exists — that lives in the gates and the ledger.")
     result = "\n".join(out)
-    print(result)
-    if args.output:
+    return True, result
+
+
+def cmd_contract_digest(args):
+    passed, text = _digest_report(args.file)
+    print(text, file=sys.stdout if passed else sys.stderr)
+    if passed and args.output:
         parent = os.path.dirname(os.path.abspath(args.output))
         os.makedirs(parent, exist_ok=True)
         _backup_before_write(args.output)
         with open(args.output, "w", encoding="utf-8") as fh:
-            fh.write(result + "\n")
-    return 0
+            fh.write(text + "\n")
+    return 0 if passed else 1
 
 
 def _first_phase_id(nodes):
@@ -1744,6 +1777,28 @@ def _redact_url(url):
     return url
 
 
+def _mermaid_report(path):
+    """`(passed, text, blocks)` for one file's mmdc parse — no printing."""
+    path = os.path.expanduser(path)
+    if not os.path.isfile(path):
+        return False, "MISSING: {}".format(path), 0
+    try:
+        with open(path, encoding="utf-8") as fh:
+            blocks = mermaid_blocks(fh.read())
+    except OSError as exc:
+        return False, "mermaid: cannot read {}: {}".format(path, exc), 0
+    if not blocks:
+        return True, "SKIP: {} (no mermaid block)".format(path), 0
+    if not shutil.which(VERIFY_CMD):
+        return True, "SKIP: {} ({} block(s), mmdc not installed)".format(path, len(blocks)), len(blocks)
+    issues = mmdc_issues(blocks)
+    if issues:
+        text = "\n".join(
+            "FAIL: {} -> {}".format(path, issue.replace("\n", " ")[:200]) for issue in issues)
+        return False, text, len(blocks)
+    return True, "PASS: {} -> {} block(s)".format(path, len(blocks)), len(blocks)
+
+
 def cmd_mermaid(args):
     """Parse every mermaid block of the given files with mmdc.
 
@@ -1753,24 +1808,11 @@ def cmd_mermaid(args):
     """
     total, failed = 0, 0
     for path in args.file:
-        path = os.path.expanduser(path)
-        if not os.path.isfile(path):
-            print("MISSING: {}".format(path))
+        passed, text, blocks = _mermaid_report(path)
+        print(text)
+        total += blocks
+        if not passed:
             failed += 1
-            continue
-        with open(path, encoding="utf-8") as fh:
-            blocks = mermaid_blocks(fh.read())
-        if not blocks:
-            print("SKIP: {} (no mermaid block)".format(path))
-            continue
-        total += len(blocks)
-        issues = mmdc_issues(blocks)
-        if issues:
-            failed += len(issues)
-            for issue in issues:
-                print("FAIL: {} -> {}".format(path, issue.replace("\n", " ")[:200]))
-        else:
-            print("PASS: {} -> {} block(s)".format(path, len(blocks)))
     print("----")
     if not shutil.which(VERIFY_CMD):
         print("mmdc not found (install: npm install -g @mermaid-js/mermaid-cli) "
@@ -1778,6 +1820,28 @@ def cmd_mermaid(args):
         return 0
     print("{} blocks, {} failed".format(total, failed))
     return 0 if failed == 0 else 1
+
+
+def cmd_check(args):
+    """One call, three halves: dense markers, graph digest, optional mmdc.
+
+    `riel_check` used to run the engine three times (ship, digest, mermaid) and
+    stitch three envelopes in Python. The halves are the same report functions,
+    so one process answers the composite and the verdict lives in one place.
+    """
+    path = os.path.expanduser(args.file)
+    halves = {}
+    ok = True
+    for name, fn in (("ship", _ship_report), ("digest", _digest_report)):
+        passed, text = fn(path)
+        halves[name] = {"passed": passed, "stdout": text}
+        ok = ok and passed
+    if args.mermaid:
+        passed, text, _blocks = _mermaid_report(path)
+        halves["mermaid"] = {"passed": passed, "stdout": text}
+        ok = ok and passed
+    print(json.dumps({"file": path, "passed": ok, "halves": halves}, ensure_ascii=False))
+    return 0 if ok else 1
 
 
 def cmd_fetch(args):
@@ -1866,6 +1930,28 @@ def cmd_fetch(args):
 
 # ------------------------------------------------------------------ main ----
 
+_NOTE_PARAMS = None
+
+
+def _note_params():
+    """`engine/params.py` beside this file — the one declaration of note's flags.
+
+    Loaded by path rather than imported: the engine runs as a script (its own
+    directory is on `sys.path`) and is also imported by the package, and both
+    routes must find the same file. Cached; it never changes at runtime.
+    """
+    global _NOTE_PARAMS
+    if _NOTE_PARAMS is None:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "params.py")
+        spec = importlib.util.spec_from_file_location("riel_engine_params", path)
+        if spec is None or spec.loader is None:  # pragma: no cover - defensive
+            raise RuntimeError("engine/params.py is missing from the package")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _NOTE_PARAMS = module
+    return _NOTE_PARAMS
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="riel", description=__doc__)
     p.add_argument("--version", action="version", version=VERSION)
@@ -1873,32 +1959,33 @@ def main(argv=None):
         "--ledger", default=LEDGER_PATH,
         help="path to the ledger file (default: .riel/ledger.md)",
     )
+    p.add_argument(
+        "--worktree", default=None,
+        help="directory whose .riel/ is the task state; the engine chdirs into "
+             "it, so no relative path is ever resolved against the caller's cwd "
+             "(default: the process cwd)",
+    )
     sub = p.add_subparsers(dest="cmd", required=True)
 
     n = sub.add_parser("note", help="append/update ledger entries")
-    n.add_argument("--goal")
-    n.add_argument("--next")
-    n.add_argument("--source")
-    n.add_argument("--phase")
-    n.add_argument("--core")
-    n.add_argument("--core-slot", type=int)
-    n.add_argument("--claim")
-    n.add_argument("--verify-with")
-    n.add_argument("--check")
-    n.add_argument("--by")
-    n.add_argument("--covering")
-    n.add_argument("--confidence", type=int)
-    n.add_argument("--open")
-    n.add_argument("--settled-by")
-    n.add_argument("--close", type=int,
-                   help="close open question N (requires --check/--by)")
-    n.add_argument("--from-contract", nargs="?", const=CONTRACT_PATH,
-                   default=None, metavar="PATH",
-                   help="seed goal/phase/claims/next from a contract.md "
-                        "(default: .riel/contract.md)")
+    params = _note_params()
+    for param in params.NOTE_PARAMS:
+        kwargs = {"help": param["help"]}
+        if param["kind"] == "int":
+            kwargs["type"] = int
+        n.add_argument(param["flag"], **kwargs)
+    n.add_argument(
+        params.FROM_CONTRACT["flag"], nargs="?", const=CONTRACT_PATH,
+        default=None, metavar="PATH", help=params.FROM_CONTRACT["help"],
+    )
     n.set_defaults(fn=cmd_note)
 
     s = sub.add_parser("seam", help="re-print ledger + due reminders")
+    s.add_argument(
+        "--mode", choices=("read", "resume", "json"), default="read",
+        help="read (default): ledger + the invariants due now; resume: adds the "
+             "post-gap restore order; json: the same items the chip and the gate fold",
+    )
     s.set_defaults(fn=cmd_seam)
 
     an = sub.add_parser("anchor",
@@ -1930,9 +2017,6 @@ def main(argv=None):
     shn.add_argument("--strict", action="store_true")
     shn.set_defaults(fn=cmd_shaping_new)
 
-    r = sub.add_parser("resume", help="post-gap bootstrap")
-    r.set_defaults(fn=cmd_resume)
-
     t = sub.add_parser("todo",
                        help="derive the Hermes session-todo mirror (JSON): "
                             "the plan — goal, phases and their steps")
@@ -1963,6 +2047,15 @@ def main(argv=None):
     h = sub.add_parser("ship", help="check outgoing file for dense markers")
     h.add_argument("files", nargs="+")
     h.set_defaults(fn=cmd_ship)
+
+    ck = sub.add_parser(
+        "check",
+        help="ONE call: dense markers + graph digest (+ mmdc) as JSON",
+    )
+    ck.add_argument("file")
+    ck.add_argument("--mermaid", action="store_true",
+                    help="also parse every mermaid block with mmdc")
+    ck.set_defaults(fn=cmd_check)
 
     mm = sub.add_parser("mermaid",
                         help="parse every mermaid block of FILE... with mmdc "
@@ -2027,6 +2120,16 @@ def main(argv=None):
     f.set_defaults(fn=cmd_fetch)
 
     args = p.parse_args(argv)
+    if args.worktree:
+        target = os.path.abspath(os.path.expanduser(args.worktree))
+        if not os.path.isdir(target):
+            print("worktree is not a directory: {}".format(target), file=sys.stderr)
+            return 2
+        # One chdir, before any subcommand: every relative path below (the
+        # ledger, the contract, the shaping, a fetch destination, `.riel/` in
+        # clean) is then resolved against the WORKTREE, never against whatever
+        # directory the caller happened to run from.
+        os.chdir(target)
     return args.fn(args)
 
 

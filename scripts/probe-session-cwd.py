@@ -165,8 +165,11 @@ def main() -> int:
             assert out.get("worktree") == expected, (out.get("worktree"), expected)
             assert out.get("exit_code") == 0, out
 
-        for tool, task in (("riel_todo", "probe-a"), ("riel_seam", "probe-b"), ("riel_resume", "probe-a")):
-            payload = _dispatch(registry, tool, {}, task)
+        for tool, task, extra in (("riel_todo", "probe-a", {}),
+                                  ("riel_seam", "probe-b", {}),
+                                  ("riel_seam", "probe-a", {"mode": "resume"}),
+                                  ("riel_seam", "probe-b", {"mode": "json"})):
+            payload = _dispatch(registry, tool, extra, task)
             print(f"{tool:12s} -> exit_code={payload['exit_code']} {payload['stdout'].splitlines()[0][:48]}")
             assert payload["exit_code"] == 0, payload
 

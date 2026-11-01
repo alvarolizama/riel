@@ -356,12 +356,11 @@ class SeamResumeShipTests(TempDirTest):
         self.assertEqual(rc, 0)
         self.assertIn("No ✓NN yet", out)
 
-    def test_resume_reports_four_steps(self):
+    def test_resume_is_the_seam_in_resume_mode(self):
         run("note", "--goal", "g", "--next", "n")
-        rc, out, _ = run("resume")
+        rc, out, _ = run("seam", "--mode", "resume")
         self.assertEqual(rc, 0)
-        for tag in ("[1/4]", "[2/4]", "[3/4]", "[4/4]"):
-            self.assertIn(tag, out)
+        self.assertIn("[resume] Restore order", out)
 
     def test_ship_clean(self):
         path = os.path.join(self.tmp, "ok.md")

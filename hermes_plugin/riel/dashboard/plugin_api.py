@@ -25,27 +25,29 @@ from pathlib import Path
 from fastapi import APIRouter, Query
 
 _PLUGIN_DIR = Path(__file__).resolve().parent.parent
-_STATUS_PATH = Path(__file__).resolve().parent / "ledger_status.py"
-_SESSION_CWD_PATH = Path(__file__).resolve().parent / "session_cwd.py"
-_SETTINGS_PATH = _PLUGIN_DIR / "settings.py"
 
-_spec = importlib.util.spec_from_file_location("riel_dashboard_ledger_status", _STATUS_PATH)
-if _spec is None or _spec.loader is None:  # pragma: no cover - defensive
-    raise RuntimeError(f"cannot load {_STATUS_PATH}")
-_ledger_status = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_ledger_status)
 
-_spec2 = importlib.util.spec_from_file_location("riel_dashboard_session_cwd", _SESSION_CWD_PATH)
-if _spec2 is None or _spec2.loader is None:  # pragma: no cover - defensive
-    raise RuntimeError(f"cannot load {_SESSION_CWD_PATH}")
-_session_cwd = importlib.util.module_from_spec(_spec2)
-_spec2.loader.exec_module(_session_cwd)
+def _load_plumbing():
+    """`_load.py` — this file runs outside the package's import context.
 
-_spec3 = importlib.util.spec_from_file_location("riel_dashboard_settings", _SETTINGS_PATH)
-if _spec3 is None or _spec3.loader is None:  # pragma: no cover - defensive
-    raise RuntimeError(f"cannot load {_SETTINGS_PATH}")
-_settings = importlib.util.module_from_spec(_spec3)
-_spec3.loader.exec_module(_settings)
+    The dashboard plugin API is loaded by path by the gateway, so the relative
+    imports every other module uses are not available here. Loading the one
+    plumbing module by path keeps a single loader for the whole package: the
+    three spec dances this file used to carry are now three `sibling()` calls.
+    """
+    path = _PLUGIN_DIR / "_load.py"
+    spec = importlib.util.spec_from_file_location("riel_dashboard_load", path)
+    if spec is None or spec.loader is None:  # pragma: no cover - defensive
+        raise RuntimeError(f"cannot load {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_load = _load_plumbing()
+_ledger_status = _load.sibling("riel_dashboard_ledger_status", "dashboard/ledger_status.py")
+_session_cwd = _load.sibling("riel_dashboard_session_cwd", "dashboard/session_cwd.py")
+_settings = _load.sibling("riel_dashboard_settings", "settings.py")
 
 router = APIRouter()
 MAX_WORKTREE_CHARS = 4096
