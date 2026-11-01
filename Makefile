@@ -1,7 +1,7 @@
 # Riel — repo tooling
 #
 # The product IS the Hermes plugin package at hermes_plugin/riel/: the prose
-# (guide/), the engine that writes the formats, the twelve tools, the gate and
+# (guide/), the engine that writes the formats, the ten tools, the gate and
 # the desktop chip. It installs as a COPY of a commit
 # (`hermes plugins install … --enable`), never as a symlink and with nothing on
 # PATH — so there is no install target here.

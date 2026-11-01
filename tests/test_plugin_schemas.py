@@ -111,13 +111,13 @@ class TypedToolsTest(unittest.TestCase):
             self.assertIn("unsupported verb", payload["error"], name)
             self.assertEqual(payload["allowed"], list(allowed), name)
 
-    def test_brief_validate_maps_named_parameters_onto_the_engine(self):
+    def test_contract_validate_maps_named_parameters_onto_the_engine(self):
         payload = self.call("riel_contract", {"verb": "validate", "file": ".riel/contract.md"})
         self.assertEqual(payload["tool"], "riel_contract")
         self.assertEqual(payload["verb"], "validate")
         self.assertNotIn("command", payload, "no command-shaped provenance")
 
-    def test_brief_new_renders_and_does_not_write(self):
+    def test_contract_new_renders_and_does_not_write(self):
         payload = self.call("riel_contract", {"verb": "new", "template": "feature",
                                            "params": ["name=demo", "one_sentence=do the thing"]})
         self.assertTrue(payload["passed"], payload)
@@ -125,11 +125,11 @@ class TypedToolsTest(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.tmp, ".riel", "contract.md")),
                          "the tool returns the text; the agent decides what to write")
 
-    def test_brief_new_rejects_a_parameter_that_is_not_key_equals_value(self):
+    def test_contract_new_rejects_a_parameter_that_is_not_key_equals_value(self):
         payload = self.call("riel_contract", {"verb": "new", "template": "feature", "params": ["name"]})
         self.assertIn("key=value", payload["error"])
 
-    def test_brief_without_a_target_file_is_refused(self):
+    def test_contract_without_a_target_file_is_refused(self):
         payload = self.call("riel_contract", {"verb": "digest"})
         self.assertIn("needs 'file'", payload["error"])
 

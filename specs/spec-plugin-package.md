@@ -138,7 +138,8 @@ managed-install refusals apply.
 The engine (`engine/run.py`, one stdlib file) does the mechanical work and is the
 sole writer of the formats. It is **implementation**: no tool takes argv, no flag
 travels as data, and nothing in the package is meant to be typed into a shell.
-The ten tools are the surface:
+The ten tools are the surface — the seam appears three times because it carries
+three modes, not because it is three tools:
 
 | Tool | Verb behind it |
 |---|---|

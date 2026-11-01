@@ -49,18 +49,20 @@ siempre una copia de un commit: no hay symlink, ni en dev.
 
 ## Cómo resuelve el worktree
 
-el motor lee y escribe `.riel/` **relativo al cwd**. El handler corre dentro
-del proceso de Hermes, cuyo cwd no es el worktree de la sesión, así que cada
-llamada resuelve la raíz así:
+El motor lee y escribe `.riel/` **relativo a su cwd**, y el handler le pasa el
+worktree explícito (`--worktree DIR`, que hace chdir antes de cualquier verbo).
+El handler corre dentro del proceso de Hermes, cuyo cwd no es el worktree de la
+sesión, así que cada llamada resuelve la raíz así:
 
 1. argumento `worktree` de la tool (ruta explícita),
 2. el cwd registrado de la sesión (el mismo que usa el tool `terminal`),
 3. `TERMINAL_CWD`,
 4. el cwd del proceso.
 
-Y ejecuta el motor en un **subproceso** con `cwd=<worktree>`: cada llamada
-tiene su propio cwd y no hay `chdir` global compartido entre sesiones
-concurrentes (un gateway sirve varias a la vez).
+Y ejecuta el motor en un **subproceso** con `cwd=<worktree>` **y**
+`--worktree <worktree>`: cada llamada tiene su propio cwd, ninguna ruta relativa
+se resuelve contra el cwd del proceso, y no hay `chdir` global compartido entre
+sesiones concurrentes (un gateway sirve varias a la vez).
 
 ## Mitad desktop — un chip en el statusbar
 
@@ -132,9 +134,9 @@ Dos momentos, los dos donde `Core` se (re)escribe:
 
 | Momento | Qué pasa |
 |---|---|
-| Abrir la tarea (`resume`/`seam`) | `riel_context` → el agente busca → `Core` (máx 2) |
+| Abrir la tarea (`seam(mode="resume")`) | `riel_context` → el agente busca → `Core` (máx 2) |
 | Avanzar de fase | lo mismo para la fase entrante |
-| `brief slice` a un hijo | las keywords viajan en el packet; el hijo busca con su propio budget |
+| `riel_contract(verb="slice")` a un hijo | las keywords viajan en el packet; el hijo busca con su propio budget |
 
 `riel_context` emite el mismo índice en JSON para cualquier harness, no solo
 Hermes — el plugin no re-parsea el contrato.

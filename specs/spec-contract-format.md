@@ -95,7 +95,7 @@ nowhere else, so no tool call pays for a search the task does not need:
 
 | Moment | What happens |
 |---|---|
-| Opening the task (`resume`, `seam`, `note --from-contract`) | the keywords are searched and the answers seed `Core` (max 2) |
+| Opening the task (`seam --mode resume`, `seam`, `note --from-contract`) | the keywords are searched and the answers seed `Core` (max 2) |
 | Advancing a phase (spec-ledger-format, Phase advance) | the incoming phase's `Core` comes from the same search |
 | Slicing a packet for a child | `contract slice` carries the keywords into the packet, so the child searches the same index with its own budget |
 
@@ -146,7 +146,7 @@ must not leak into logs. The `sha256` from the reference pins end-to-end
 integrity. Full flags and exit codes: riel_guide(topic="tools"), "Fetch" section.
 
 **When:** at the *opening* of the task — the moment Riel starts working on the
-contract (`resume` / `seam` / `note --from-contract`), right before the
+contract (`seam --mode resume` / `seam` / `note --from-contract`), right before the
 context fetch. **Independent of delegation:** a solo task fetches its contract
 the same way, and slicing a packet for a child (`contract slice`) is a later,
 separate moment — never the trigger. Tying the download to delegation would

@@ -507,7 +507,7 @@ d
         self.assertNotIn("must start with its trigger", out + err)
 
 
-class BriefTests(TempDirTest):
+class ContractTests(TempDirTest):
     MINIMAL_VALID = """# Task: x
 
 ## Objective
@@ -547,14 +547,14 @@ d
             fh.write(content)
         return path
 
-    def test_brief_new_lists_all_builtin(self):
+    def test_contract_new_lists_all_builtin(self):
         rc, out, _ = run("contract", "new", "--list")
         self.assertEqual(rc, 0)
         for name in ("feature", "bugfix", "refactor", "research",
                      "writing", "packet"):
             self.assertIn(name, out)
 
-    def test_brief_new_substitutes_params_leaves_rest(self):
+    def test_contract_new_substitutes_params_leaves_rest(self):
         rc, out, err = run(
             "contract", "new", "--type", "feature",
             "--param", "name=login fix",
@@ -565,7 +565,7 @@ d
         self.assertIn("We need fix login.", out)
         self.assertIn("{{repo_path}}", out)  # left for manual fill
 
-    def test_brief_new_strict_fails_on_missing_param(self):
+    def test_contract_new_strict_fails_on_missing_param(self):
         rc, _, err = run(
             "contract", "new", "--type", "feature",
             "--strict", "--param", "name=x",
@@ -573,7 +573,7 @@ d
         self.assertEqual(rc, 2)
         self.assertIn("missing --param", err)
 
-    def test_brief_new_strict_message_not_quoted(self):
+    def test_contract_new_strict_message_not_quoted(self):
         # the message is a plain sentence, not repr()'d
         rc, _, err = run(
             "contract", "new", "--type", "feature",
@@ -582,7 +582,7 @@ d
         self.assertEqual(rc, 2)
         self.assertNotIn("'missing --param", err)
 
-    def test_brief_new_output_writes_file(self):
+    def test_contract_new_output_writes_file(self):
         out_path = os.path.join(self.tmp, "packet.md")
         rc, _, err = run(
             "contract", "new", "--type", "feature",
@@ -594,7 +594,7 @@ d
         with open(out_path, encoding="utf-8") as fh:
             self.assertIn("# Task: reset flow", fh.read())
 
-    def test_brief_new_finds_project_template(self):
+    def test_contract_new_finds_project_template(self):
         tdir = os.path.join(self.tmp, ".riel", "templates")
         os.makedirs(tdir, exist_ok=True)
         with open(os.path.join(tdir, "custom.md"), "w",
@@ -605,17 +605,17 @@ d
         self.assertEqual(rc, 0, err)
         self.assertIn("# Task: proj", out)
 
-    def test_brief_new_unknown_type_errors(self):
+    def test_contract_new_unknown_type_errors(self):
         rc, _, err = run("contract", "new", "--type", "no-such")
         self.assertEqual(rc, 2)
         self.assertIn("no template", err)
 
-    def test_brief_validate_accepts_minimal_valid(self):
+    def test_contract_validate_accepts_minimal_valid(self):
         path = self._write("ok.md", self.MINIMAL_VALID)
         rc, out, _ = run("contract", "validate", path)
         self.assertEqual(rc, 0, out)
 
-    def test_brief_validate_missing_claims(self):
+    def test_contract_validate_missing_claims(self):
         bad = self.MINIMAL_VALID.replace(
             "\n## Pre-registered claims\n- P1: a — verify with: true\n", "\n"
         )
@@ -624,14 +624,14 @@ d
         self.assertEqual(rc, 1)
         self.assertIn("Pre-registered claims", out)
 
-    def test_brief_validate_rejects_non_we_need_objective(self):
+    def test_contract_validate_rejects_non_we_need_objective(self):
         bad = self.MINIMAL_VALID.replace("We need x", "Make x better")
         path = self._write("bad.md", bad)
         rc, out, _ = run("contract", "validate", path)
         self.assertEqual(rc, 1)
         self.assertIn("We need", out)
 
-    def test_brief_validate_warns_on_multi_sentence_objective(self):
+    def test_contract_validate_warns_on_multi_sentence_objective(self):
         multi = self.MINIMAL_VALID.replace(
             "We need x",
             "We need x. It matters because y. And also z.")
@@ -641,7 +641,7 @@ d
         self.assertIn("more than one sentence", err)
         self.assertIn("### Why", err)            # points at the rationale home
 
-    def test_brief_validate_quiet_on_single_wrapped_sentence(self):
+    def test_contract_validate_quiet_on_single_wrapped_sentence(self):
         wrapped = self.MINIMAL_VALID.replace(
             "We need x",
             "We need a password-reset flow that emails a signed link and\n"
@@ -651,7 +651,7 @@ d
         self.assertEqual(rc, 0, out)
         self.assertNotIn("more than one sentence", err)
 
-    def test_brief_validate_warns_on_multi_paragraph_objective(self):
+    def test_contract_validate_warns_on_multi_paragraph_objective(self):
         paras = self.MINIMAL_VALID.replace(
             "We need x",
             "We need x.\n\nSecond paragraph with more intent.")
@@ -660,7 +660,7 @@ d
         self.assertEqual(rc, 0, out)
         self.assertIn("more than one sentence", err)
 
-    def test_brief_validate_rejects_out_of_order_sections(self):
+    def test_contract_validate_rejects_out_of_order_sections(self):
         bad = self.MINIMAL_VALID.replace(
             "\n## Context\nc\n\n## Constraints\n- r\n",
             "\n## Constraints\n- r\n\n## Context\nc\n",
@@ -670,12 +670,12 @@ d
         self.assertEqual(rc, 1)
         self.assertIn("out of order", out)
 
-    def test_brief_validate_builtin_example(self):
+    def test_contract_validate_builtin_example(self):
         path = os.path.join(BRIEFS_TEMPLATES, "example-password-reset.md")
         rc, out, _ = run("contract", "validate", path)
         self.assertEqual(rc, 0, out)
 
-    def test_brief_validate_builtin_skeletons(self):
+    def test_contract_validate_builtin_skeletons(self):
         # packet.md is the empty template (Objective = placeholder),
         # so it is intentionally NOT required to validate.
         for name in ("feature", "bugfix", "refactor",

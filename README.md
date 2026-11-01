@@ -29,7 +29,8 @@ Goal, pre-registered Claims, Core (1-2 live items), Verified checkpoints,
 Open questions, Next action — re-read at every seam, closed against named
 verifiers. Everything else feeds it.
 
-Riel ships as two faces over one core:
+Riel ships as two faces over one core — the prose and the engine — packaged as
+one Hermes plugin:
 
 | Face | What it is | Where |
 |---|---|---|
@@ -199,7 +200,7 @@ riel_todo
 riel_seam(anchors=true)
 
 # 5. Close each verified checkpoint with real gate output — never prose:
-riel_note(check="suite green", by="make test: 264 OK", covering="plugin, engine")
+riel_note(check="suite green", by="make test: 306 OK (skipped=5)", covering="plugin, engine")
 
 # 6. Delegate a phase: slice its subgraph into a child packet
 riel_contract(verb="slice", file=".riel/contract.md", phase="F2")
@@ -321,11 +322,11 @@ desktop plugins** if the chip does not appear).
 | Piece | Needed at | Requires |
 |---|---|---|
 | The 6 guides (markdown only) | runtime | nothing — the agent reads them through `riel_guide` |
-| The engine (`engine/run.py`) | runtime (loop/delegate tasks) | **Python 3, stdlib only** |
+| The engine (`engine/`) | runtime (loop/delegate tasks) | **Python 3, stdlib only** |
 | Task templates (`templates/`) | runtime | nothing — the engine reads them directly |
 | The engine's `mermaid` (via `riel_check(mermaid=true)` or `make validate`) | development (parse graph files) | Node + `mmdc`: `npm install -g @mermaid-js/mermaid-cli` — optional |
 | `tests/` | development (run the suite) | Python 3, stdlib only (the desktop half's tests also use `node`; the FastAPI route tests need a Hermes interpreter) |
-| Hermes plugin package (`hermes_plugin/riel/`) | Hermes users | Hermes + Python 3; it carries the prose (`guide/`), the engine (`engine/run.py`) and the templates (`templates/`) |
+| Hermes plugin package (`hermes_plugin/riel/`) | Hermes users | Hermes + Python 3; it carries the prose (`guide/`), the engine (`engine/`) and the templates (`templates/`) |
 
 Optional. `riel_contract(verb="validate")` will *also* run `mmdc` on each graph if
 it finds it on PATH; without it, structural checks still run, just without
