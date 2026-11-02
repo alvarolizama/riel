@@ -36,7 +36,7 @@ MANIFEST = os.path.join(PLUGIN, "plugin.yaml")
 PARTS = ("guide", "engine", "templates")
 
 # The topics the prose ships today: ONE door (`riel_guide`) reads them.
-TOPICS = ("contract", "delegate", "ledger", "protocol", "shaping", "tools")
+TOPICS = ("contract", "delegate", "ledger", "shaping", "tools")
 
 
 def sha256(path):
@@ -270,13 +270,48 @@ class HandlerTest(unittest.TestCase):
         self.assertEqual(payload["worktree"], self.tmp)
 
 
-class ContextToolTest(unittest.TestCase):
-    """`riel_context`: hands over the contract's index — it does NOT search.
+class PlanContextTest(unittest.TestCase):
+    """The contract's index travels in `riel_plan`'s answer — it does NOT search.
 
+    The old `riel_context` collapsed into the plan tool: a successful contract
+    validate/new carries `keywords` plus the note that says who searches.
     Memory backends live in the agent's memory manager, not in the tool
-    registry, so a plugin cannot reach them. These tests pin that boundary:
-    the tool returns terms (and says who searches), never hits.
+    registry, so the tool returns terms, never hits.
     """
+
+    VALID = """# Task: t
+
+## Objective
+We need x
+
+## Context
+
+### Context keywords
+{keywords}
+## Constraints
+- r
+
+## Pre-registered claims
+- P1: a — verify with: true
+
+## Execution graph
+
+```mermaid
+flowchart TD
+  S1["RUN true"] --> G1{{"ok?"}}
+  G1 -->|yes| END([Done])
+  G1 -->|no| S1
+```
+
+## Verification gates
+g
+
+## Deliverable
+d
+
+## DO NOT
+- x
+"""
 
     @classmethod
     def setUpClass(cls):
@@ -290,20 +325,18 @@ class ContextToolTest(unittest.TestCase):
         path = os.path.join(self.tmp, ".riel", "contract.md")
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as fh:
-            fh.write(
-                "# Task: t\n\n## Objective\nWe need x\n\n## Context\n\n"
-                "### Context keywords\n" + keywords + "\n## DO NOT\n- x\n"
-            )
+            fh.write(self.VALID.format(keywords=keywords))
 
     def payload(self, args):
-        raw = self.tools.riel_context(args)
+        raw = self.tools.riel_plan(args)
         self.assertIsInstance(raw, str, "handlers must return a JSON string")
         return json.loads(raw)
 
-    def test_returns_the_contract_index(self):
+    def test_validate_carries_the_contract_index(self):
         self._contract()
-        result = self.payload({"worktree": self.tmp})
-        self.assertEqual(result["origin"], "contract")
+        result = self.payload({"verb": "validate", "file": ".riel/contract.md",
+                               "worktree": self.tmp})
+        self.assertTrue(result["passed"], result)
         self.assertEqual(result["keywords"], [
             {"term": "login flow", "source": "dran"},
             {"term": "phoenix streams", "source": ""},
@@ -312,39 +345,34 @@ class ContextToolTest(unittest.TestCase):
     def test_it_does_not_search_and_says_who_does(self):
         """The whole point of the boundary: no hits, and the agent is told."""
         self._contract()
-        result = self.payload({"worktree": self.tmp})
+        result = self.payload({"verb": "validate", "file": ".riel/contract.md",
+                               "worktree": self.tmp})
         self.assertNotIn("hits", result)
         self.assertNotIn("results", result)
-        self.assertIn("Core", result["next"])
-        self.assertIn("does not search", result["next"])
-
-    def test_explicit_keywords_override_the_contract(self):
-        self._contract()
-        result = self.payload({"worktree": self.tmp, "keywords": ["solo esta"]})
-        self.assertEqual(result["origin"], "argument")
-        self.assertEqual(result["keywords"], [{"term": "solo esta", "source": ""}])
+        self.assertIn("Core", result["keywords_note"])
+        self.assertIn("memory", result["keywords_note"])
 
     def test_keyword_count_is_capped(self):
         self._contract("".join("- kw {}\n".format(i) for i in range(20)))
-        result = self.payload({"worktree": self.tmp})
+        result = self.payload({"verb": "validate", "file": ".riel/contract.md",
+                               "worktree": self.tmp})
         self.assertEqual(len(result["keywords"]), self.tools.MAX_KEYWORDS)
-        self.assertTrue(result["truncated"])
 
-    def test_contract_without_keywords_is_a_note_not_an_error(self):
+    def test_no_keywords_no_key(self):
         self._contract("")
-        result = self.payload({"worktree": self.tmp})
-        self.assertEqual(result["keywords"], [])
-        self.assertIn("note", result)
-        self.assertNotIn("next", result)
+        result = self.payload({"verb": "validate", "file": ".riel/contract.md",
+                               "worktree": self.tmp})
+        self.assertTrue(result["passed"], result)
+        self.assertNotIn("keywords", result)
+        self.assertNotIn("keywords_note", result)
 
-    def test_missing_contract_errors_with_a_hint(self):
-        result = self.payload({"worktree": self.tmp})
-        self.assertIn("error", result)
-        self.assertIn("hint", result)
-
-    def test_bad_worktree_errors(self):
-        result = self.payload({"worktree": os.path.join(self.tmp, "nope")})
-        self.assertIn("not a directory", result["error"])
+    def test_new_without_a_contract_on_disk_carries_no_keywords(self):
+        # verb=new returns the rendered text; nothing to index until the
+        # agent writes it into .riel/contract.md
+        result = self.payload({"verb": "new", "template": "packet",
+                               "params": ["name=t"], "worktree": self.tmp})
+        self.assertTrue(result["passed"], result)
+        self.assertNotIn("keywords", result)
 
 
 if __name__ == "__main__":

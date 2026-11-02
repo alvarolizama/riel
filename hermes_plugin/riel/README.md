@@ -2,16 +2,16 @@
 
 El paquete ES el producto: la prosa, el motor, las tools, el gate y el chip.
 
-**La superficie son tools, nunca una línea de comandos.** Diez tools tipadas —
+**La superficie son tools, nunca una línea de comandos.** Siete tools tipadas —
 `riel_guide` (la prosa), `riel_note`, `riel_seam` (`mode=read|resume|json`, más
-`anchors`), `riel_todo`, `riel_context`, `riel_contract`, `riel_shaping`,
-`riel_clean`, `riel_fetch`, `riel_check` — sobre el motor (stdlib, sin deps, que
+`anchors`), `riel_todo`, `riel_plan` (contrato, shaping y fetch remoto),
+`riel_clean`, `riel_check` — sobre el motor (stdlib, sin deps, que
 viaja dentro del paquete y decide nada: el formato tiene un solo dueño). Ninguna
 tool recibe argv; el campo `tool` de la respuesta es provenance (qué tool
 contestó) y el `verb` cuando la tool lo lleva, nunca una interfaz.
 
 **La prosa viaja acá, y se lee por una sola puerta, por secciones.** `guide/`
-trae seis topics (`protocol`, `ledger`, `contract`, `shaping`, `delegate`,
+trae cinco topics (`ledger`, `contract`, `shaping`, `delegate`,
 `tools`): sin argumento `riel_guide()` devuelve el índice; con `topic` devuelve
 el **índice de secciones** de esa guía (nombre, primera línea y tamaño de cada
 `## heading`); con `section` sólo esa rebanada, y `full=true` el cuerpo entero.
@@ -121,25 +121,26 @@ Qué worktree se juzga: primero el de los **archivos editados** (un turno puede
 editar otro repo), y si ninguno es un worktree con ledger, el cwd de la sesión.
 El ✓ cuenta como evidencia cuando su línea trae `— verified by:`.
 
-## Índice de contexto (`riel_context`)
+## Índice de contexto (viaja en `riel_plan`)
 
-`riel_context` entrega las keywords del contrato (`### Context keywords`: un
-término por línea, hint de fuente opcional) y **no busca**. Los backends de
-memoria viven en el memory manager del agente (`agent/memory_manager.py`), no en
-el registry de tools, así que **un plugin no los alcanza**: el que busca es el
-agente, con lo que tenga configurado (DRAN, su memoria, `search_files`). El tool
-le dice qué términos y dónde dejar el resultado (`## Core`, máx 2).
+Un `riel_plan(verb="validate")` exitoso entrega las keywords del contrato
+(`### Context keywords`: un término por línea, hint de fuente opcional) y
+**no busca**. Los backends de memoria viven en el memory manager del agente
+(`agent/memory_manager.py`), no en el registry de tools, así que **un plugin
+no los alcanza**: el que busca es el agente, con lo que tenga configurado
+(DRAN, su memoria, `search_files`). La respuesta le dice qué términos y dónde
+dejar el resultado (`## Core`, máx 2).
 
 Dos momentos, los dos donde `Core` se (re)escribe:
 
 | Momento | Qué pasa |
 |---|---|
-| Abrir la tarea (`seam(mode="resume")`) | `riel_context` → el agente busca → `Core` (máx 2) |
+| Abrir la tarea (`seam(mode="resume")`) | las keywords de `riel_plan` → el agente busca → `Core` (máx 2) |
 | Avanzar de fase | lo mismo para la fase entrante |
-| `riel_contract(verb="slice")` a un hijo | las keywords viajan en el packet; el hijo busca con su propio budget |
+| `riel_plan(verb="slice")` a un hijo | las keywords viajan en el packet; el hijo busca con su propio budget |
 
-`riel_context` emite el mismo índice en JSON para cualquier harness, no solo
-Hermes — el plugin no re-parsea el contrato.
+El índice viaja como JSON en la respuesta del plan para cualquier harness, no
+solo Hermes — el plugin no re-parsea el contrato.
 
 ## Verificación
 

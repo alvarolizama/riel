@@ -191,13 +191,13 @@ class OneEnvelopeTest(unittest.TestCase):
             args = {"worktree": tmp}
             if name == "riel_note":
                 args["goal"] = "g"
-            if name in ("riel_contract", "riel_shaping"):
+            if name == "riel_plan":
                 args["verb"] = "validate"
                 args["file"] = doc
             if name == "riel_check":
                 args["file"] = doc
-            if name == "riel_fetch":
-                continue  # needs the network; its refusal shape is covered elsewhere
+            if name == "riel_clean":
+                continue  # destructive; its shape is covered in its own suite
             payload = json.loads(handler(args))
             if "error" in payload:
                 continue

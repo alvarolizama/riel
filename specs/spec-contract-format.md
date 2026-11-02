@@ -14,7 +14,7 @@ the plan artifact and its relationship to the ledger.
 - **Written (or fetched) first, always** — before opening the ledger, before
   any execution, **whether the task delegates or not**. A remote contract
   (authored elsewhere) is materialized here, at the opening, with
-  `riel_fetch` — never deferred to delegation ("Remote contracts", below).
+  `riel_plan` — never deferred to delegation ("Remote contracts", below).
 - Overwritten per session: it is working memory for the task in flight, not
   a durable record.
 
@@ -41,7 +41,7 @@ The nine sections, in order:
 8. `## Deliverable`
 9. `## DO NOT`
 
-Validate it mechanically: `riel_contract(verb="validate", file=".riel/contract.md")` (the
+Validate it mechanically: `riel_plan(verb="validate", file=".riel/contract.md")` (the
 validator keys on this exact section set and order).
 
 ## Claim anchors
@@ -76,7 +76,7 @@ home for *why this and not something else*.
 
 It is a `###` subsection on purpose: `contract validate` pins the nine `##`
 sections and ignores `###`, so the format stays stable. It is **inherited
-mechanically by `riel_contract(verb="slice")`** (like `### Context keywords` and the
+mechanically by `riel_plan(verb="slice")`** (like `### Context keywords` and the
 Objective itself), so a delegated child receives the rationale instead of a
 FILL — and the inherited copy carries the rule: on a conflict with the
 execution, the child escalates (`ASK[goal-changing]`), it never
@@ -89,8 +89,9 @@ the contract travels — a remote `fetch`, a slice, a resumed session.
 ## Context fetch (the keywords)
 
 `## Context` carries a machine-readable index: `### Context keywords`, one term
-per line with an optional `→ dran|memory|code` hint (`riel_context` emits it
-as JSON). It is consulted at exactly the two moments where `Core` is (re)set —
+per line with an optional `→ dran|memory|code` hint (`riel_plan`'s answer
+carries it on a successful contract new/validate). It is consulted at exactly
+the two moments where `Core` is (re)set —
 nowhere else, so no tool call pays for a search the task does not need:
 
 | Moment | What happens |
@@ -105,8 +106,8 @@ validates — the fetch simply has nothing to search.
 **Who searches:** the agent, with whatever memory backend it has configured
 (DRAN, its own memory, `search_files`). A plugin cannot reach those backends —
 they live in the agent's memory manager, not in the tool registry — so the
-plugin's job (`riel_context`) is to hand over the index, never to answer with
-hits it did not obtain.
+plugin's job (`riel_plan`, in its answer) is to hand over the index, never to
+answer with hits it did not obtain.
 
 ## Contract vs ledger
 
@@ -137,7 +138,7 @@ The contract is not always hand-written in the worktree: an authoring tool
 (e.g. Gorim) can render it server-side and hand the agent a reference. The
 body never travels through the agent's context — MCP responses cap at ~10KB
 and a contract exceeds it — so the export returns `{url, sha256, bytes}` and
-`riel_fetch(url=…, out=".riel/contract.md", sha256=…)` materializes it
+`riel_plan(verb="fetch", url=…, out=".riel/contract.md", sha256=…)` materializes it
 into the worktree. `fetch` is server-agnostic: HTTPS by default (plain `http`
 only for localhost, or anywhere with `--allow-http` on a trusted transport
 such as a VPN), TLS verified, body bounded, **atomic** write, and the URL is

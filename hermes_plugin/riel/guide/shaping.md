@@ -79,13 +79,13 @@ flowchart TD
 
 ## Tooling
 
-- `riel_shaping(verb="new", params=[…])` writes the skeleton (refuses to
-  overwrite without `force`); `riel_shaping(verb="validate")` runs the rules
+- `riel_plan(verb="new", kind="shaping", params=[…])` writes the skeleton (refuses to
+  overwrite without `force`); `riel_plan(verb="validate", kind="shaping")` runs the rules
   — exit 1 on an error, WARNs never fatal.
 - Every engine write over an existing shaping backs it up first
   (`shaping-<ts>.bak.md`, flat, beside the original).
 - Claims anchored to a finding the shaping does not have are an error at
-  `riel_contract(verb="validate")` time — the anchor is checked against the
+  `riel_plan(verb="validate")` time — the anchor is checked against the
   file, not trusted.
 
 ## Pitfalls
@@ -104,6 +104,6 @@ flowchart TD
 - Skeleton: `templates/shaping.md`; long form: `specs/spec-shaping-format.md`
   (Spec 7)
 - The plan it seeds: `riel_guide(topic="contract")`
-- The anchors that point back here: `riel_contract(verb="validate")`,
+- The anchors that point back here: `riel_plan(verb="validate")`,
   re-read with `riel_seam(anchors=true)`
 - The delegation flow that starts here: `riel_guide(topic="delegate")`

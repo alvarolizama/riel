@@ -26,6 +26,9 @@ module level, so the repo's test suite can exercise these handlers directly.
 
 from __future__ import annotations
 
+import contextlib
+import importlib.util
+import io
 import json
 import os
 import subprocess
@@ -47,8 +50,6 @@ TIMEOUT_SECS = 60
 ENGINE_MISSING_HINT = "reinstall the plugin: hermes plugins update riel"
 
 SEAM_MODES = ("read", "resume", "json")
-CONTRACT_VERBS = ("new", "validate", "digest", "slice")
-SHAPING_VERBS = ("new", "validate")
 CLEAN_SCOPES = ("ledger", "all", "purge")
 MAX_PARAMS = 24
 MAX_KEYWORDS = 12
@@ -59,8 +60,9 @@ def _params():
     return _load.sibling("riel_engine_params", "engine/params.py")
 
 
-def _dump(payload: dict) -> str:
-    return json.dumps(payload, ensure_ascii=False)
+def _dump(payload) -> str:
+    """JSON for the caller — already-JSON strings pass through untouched."""
+    return payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
 
 
 def _error(message: str, **extra) -> str:
@@ -72,11 +74,14 @@ def _worktree(args: dict, kwargs: dict) -> str:
 
 
 def _run(argv: list, args: dict, kwargs: dict, tool: str, verb: str = "") -> str:
-    """Run the engine in the worktree; always return a JSON string, never raise.
+    """Run the engine against the worktree; always return a JSON string, never raise.
 
-    `tool`/`verb` are the envelope's provenance: WHICH tool answered and, when
-    the tool takes one, with which verb. There is no command-shaped field — the
-    engine's argv is implementation, not something a caller passes or reads.
+    Fast path: the engine loaded IN-PROCESS (`run_verb` binds every path to
+    the worktree by parameter, no chdir — safe in a multiplexed gateway) —
+    ~1 ms per call instead of the ~40 ms a fresh subprocess paid. Fallback:
+    the same subprocess call as before, when the engine cannot load in this
+    interpreter. `tool`/`verb` are the envelope's provenance: WHICH tool
+    answered and, when the tool takes one, with which verb.
     """
     worktree = _worktree(args, kwargs)
     if not os.path.isdir(worktree):
@@ -87,6 +92,28 @@ def _run(argv: list, args: dict, kwargs: dict, tool: str, verb: str = "") -> str
             path=str(ENGINE),
             hint=ENGINE_MISSING_HINT,
         )
+    engine = _engine()
+    if engine is not None:
+        out, err = io.StringIO(), io.StringIO()
+        code = None
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                try:
+                    code = engine.run_verb(argv, worktree=worktree)
+                except SystemExit as exc:  # argparse refusals
+                    code = exc.code if isinstance(exc.code, int) else 1
+        except Exception as exc:  # a jammed verb must not jam the turn
+            err.write("{}: {}\n".format(type(exc).__name__, exc))
+            code = 1
+        payload = _load.envelope(
+            tool, worktree,
+            exit_code=1 if code is None else int(code),
+            stdout=out.getvalue(), stderr=err.getvalue(),
+        )
+        if verb:
+            payload["verb"] = verb
+        return _dump(payload)
+
     try:
         proc = subprocess.run(
             [sys.executable, str(ENGINE), "--worktree", worktree, *argv],
@@ -106,6 +133,31 @@ def _run(argv: list, args: dict, kwargs: dict, tool: str, verb: str = "") -> str
     if verb:
         payload["verb"] = verb
     return _dump(payload)
+
+
+_ENGINE: dict = {"module": None, "tried": False}
+
+
+def _engine():
+    """The bundled engine loaded in-process once; None when it cannot load.
+
+    Loaded by path (the same loader discipline as `_load.sibling`): the
+    module holds no process-global task state — `run_verb` takes the
+    worktree as a parameter — so one load serves every session.
+    """
+    if _ENGINE["tried"]:
+        return _ENGINE["module"]
+    _ENGINE["tried"] = True
+    try:
+        spec = importlib.util.spec_from_file_location("riel_engine", str(ENGINE))
+        if spec is None or spec.loader is None:
+            return None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _ENGINE["module"] = module
+    except Exception:
+        _ENGINE["module"] = None
+    return _ENGINE["module"]
 
 
 def _flag_args(args: dict) -> list:
@@ -209,16 +261,15 @@ riel_todo = _passthrough(["todo"], tool="riel_todo", extra_note=(
 
 
 # ------------------------------------------------------------------ context ---
-# The tool is an INDEX provider, not a searcher: a plugin cannot reach the
-# memory backends. Those tools live in `agent/memory_manager.py`
-# (`get_all_tool_schemas` / `handle_tool_call`), not in `tools.registry`, so
-# `ctx.dispatch_tool("dran_memory_search", …)` returns "Unknown tool" — the
-# agent reaches them because its executor routes to the memory manager. So the
-# plugin supplies the contract's keywords and WHO searches decides: the agent,
-# with whatever memory backend it has configured.
+# The contract's keywords travel in `riel_plan`'s answer now. The tool is an
+# INDEX provider, not a searcher: a plugin cannot reach the memory backends.
+# Those tools live in `agent/memory_manager.py` — the agent reaches them
+# because its executor routes to the memory manager. So the plugin supplies
+# the contract's keywords and WHO searches decides: the agent, with whatever
+# memory backend it has configured.
 def _contract_keywords(worktree: str):
     """(keywords, error) from the worktree's contract, via the engine's `context`."""
-    payload = json.loads(_run(["context"], {"worktree": worktree}, {}, tool="riel_context"))
+    payload = json.loads(_run(["context"], {"worktree": worktree}, {}, tool="riel_plan"))
     if payload.get("error"):
         return None, payload["error"]
     if payload.get("exit_code") != 0:
@@ -231,51 +282,11 @@ def _contract_keywords(worktree: str):
     return keywords, None
 
 
-def riel_context(args: dict, **kwargs) -> str:
-    """The contract's context keywords, for the agent to search memory with."""
-    worktree = _worktree(args, kwargs)
-    if not os.path.isdir(worktree):
-        return _error(f"worktree is not a directory: {worktree}", worktree=worktree)
-
-    raw_keywords = args.get("keywords")
-    if raw_keywords:
-        if isinstance(raw_keywords, str):
-            raw_keywords = [raw_keywords]
-        keywords = [{"term": str(k).strip(), "source": ""}
-                    for k in raw_keywords if str(k).strip()]
-        origin = "argument"
-    else:
-        keywords, error = _contract_keywords(worktree)
-        if error:
-            return _error(error, worktree=worktree, origin="contract",
-                          hint="write the contract first, or pass keywords explicitly")
-        keywords = keywords or []
-        origin = "contract"
-
-    total = len(keywords)
-    keywords = keywords[:MAX_KEYWORDS]
-    payload = {
-        "worktree": worktree,
-        "origin": origin,
-        "keywords": keywords,
-        "truncated": total > len(keywords),
-    }
-    if keywords:
-        payload["next"] = (
-            "Search these terms with the memory tools you have configured (DRAN, "
-            "your own memory) and keep the answers in the ledger's ## Core — max 2 "
-            "live items. This tool does not search: it only hands you the index."
-        )
-    else:
-        payload["note"] = "the contract declares no '### Context keywords' to search"
-    return _dump(payload)
-
-
 # --------------------------------------------------------------- the plan ---
-# Typed doors to the verbs the prose uses, so nothing the agent calls looks like
-# a command line: no tool takes argv, no flag travels as data. Each one maps its
-# named parameters onto the engine's argv — the mapping is the tool's job, not
-# the model's.
+# ONE typed door for everything the plan needs. `riel_contract`/`riel_shaping`/
+# `riel_fetch`/`riel_context` collapsed into `riel_plan`: the verbs are typed,
+# `kind` picks the artifact (contract | shaping), and a successful contract
+# new/validate carries the context keywords along — no separate index tool.
 def _params_arg(raw) -> "list | str":
     """`["key=value", …]` from the caller as the engine's `--param` pairs."""
     if raw is None:
@@ -285,19 +296,67 @@ def _params_arg(raw) -> "list | str":
     return [part for item in raw[:MAX_PARAMS] for part in ("--param", item)]
 
 
-def riel_contract(args: dict, **kwargs) -> str:
-    """Contract and packet artifacts: instantiate, validate, digest, slice."""
+PLAN_VERBS = ("new", "validate", "digest", "slice", "fetch")
+PLAN_KINDS = ("contract", "shaping")
+
+
+def _plan_fetch(args: dict, kwargs: dict) -> dict:
+    url = str(args.get("url") or "").strip()
+    out = str(args.get("out") or ".riel/contract.md").strip()
+    if not url:
+        return _error("riel_plan verb='fetch' needs 'url' and writes to 'out' (default .riel/contract.md)")
+    argv = ["fetch", url, "-o", os.path.expanduser(out)]
+    sha = str(args.get("sha256") or "").strip()
+    if sha:
+        argv += ["--sha256", sha]
+    headers = _str_list(args.get("headers"), "headers")
+    if isinstance(headers, str):
+        return _error(headers)
+    for header in headers:
+        argv += ["--header", header]
+    if args.get("allow_http"):
+        argv.append("--allow-http")
+    return json.loads(_run(argv, args, kwargs, tool="riel_plan", verb="fetch"))
+
+
+def riel_plan(args: dict, **kwargs) -> str:
+    """Contract and shaping artifacts + the remote fetch, in ONE typed door."""
     verb = str(args.get("verb") or "").strip().lower()
-    if verb not in CONTRACT_VERBS:
-        return _error("unsupported verb for riel_contract", verb=verb, allowed=list(CONTRACT_VERBS))
+    if verb not in PLAN_VERBS:
+        return _error("unsupported verb for riel_plan", verb=verb, allowed=list(PLAN_VERBS))
+
+    if verb == "fetch":
+        return _dump(_plan_fetch(args, kwargs))
+
+    kind = str(args.get("kind") or "contract").strip().lower()
+    if kind not in PLAN_KINDS:
+        return _error("unsupported kind for riel_plan", kind=kind, allowed=list(PLAN_KINDS))
+
+    if kind == "shaping":
+        if verb not in ("new", "validate"):
+            return _error("kind='shaping' supports the verbs new and validate",
+                          verb=verb, allowed=["new", "validate"])
+        argv = ["shaping", verb]
+        if verb == "new":
+            params = _params_arg(args.get("params"))
+            if isinstance(params, str):
+                return params
+            argv += params
+            if args.get("force"):
+                argv.append("--force")
+        else:
+            target = str(args.get("file") or "").strip()
+            if target:
+                argv.append(os.path.expanduser(target))
+        return _dump(_run(argv, args, kwargs, tool="riel_plan", verb=verb))
 
     argv = ["contract", verb]
     if verb == "new":
-        kind = str(args.get("template") or args.get("type") or "").strip()
-        if not kind:
-            return _error("riel_contract verb='new' needs 'template' (feature, bugfix, packet, …)",
+        kind_ = str(args.get("template") or "").strip()
+        if not kind_:
+            return _error("riel_plan verb='new' needs 'template' (feature, bugfix, packet, …)",
                           hint="pass template='<name>'; the engine lists the shipped ones with --list")
-        argv += ["--type", kind]
+        argv += ["--type", kind_]
         params = _params_arg(args.get("params"))
         if isinstance(params, str):
             return params
@@ -305,34 +364,23 @@ def riel_contract(args: dict, **kwargs) -> str:
     else:
         target = str(args.get("file") or "").strip()
         if not target:
-            return _error(f"riel_contract verb='{verb}' needs 'file' (the contract or packet path)")
+            return _error(f"riel_plan verb='{verb}' needs 'file' (the contract or packet path)")
         argv.append(os.path.expanduser(target))
         if verb == "slice":
             phase = str(args.get("phase") or "").strip()
             if phase:
                 argv += ["--phase", phase]
-    return _run(argv, args, kwargs, tool="riel_contract", verb=verb)
-
-
-def riel_shaping(args: dict, **kwargs) -> str:
-    """The pre-contract research: instantiate the skeleton or check it (Spec 7)."""
-    verb = str(args.get("verb") or "").strip().lower()
-    if verb not in SHAPING_VERBS:
-        return _error("unsupported verb for riel_shaping", verb=verb, allowed=list(SHAPING_VERBS))
-
-    argv = ["shaping", verb]
-    if verb == "new":
-        params = _params_arg(args.get("params"))
-        if isinstance(params, str):
-            return params
-        argv += params
-        if args.get("force"):
-            argv.append("--force")
-    else:
-        target = str(args.get("file") or "").strip()
-        if target:
-            argv.append(os.path.expanduser(target))
-    return _run(argv, args, kwargs, tool="riel_shaping", verb=verb)
+    payload = json.loads(_run(argv, args, kwargs, tool="riel_plan", verb=verb))
+    # The context index rides along (the old riel_context): a successful
+    # contract read hands the keywords over — the search stays the agent's.
+    if payload.get("exit_code") == 0 and verb in ("new", "validate"):
+        keywords, kw_error = _contract_keywords(_worktree(args, kwargs))
+        if not kw_error and keywords:
+            payload["keywords"] = keywords[:MAX_KEYWORDS]
+            payload["keywords_note"] = (
+                "the contract's context index — search these with the memory "
+                "tools you have configured, answers go to ## Core (max 2)")
+    return _dump(payload)
 
 
 def riel_clean(args: dict, **kwargs) -> str:
@@ -343,26 +391,6 @@ def riel_clean(args: dict, **kwargs) -> str:
         return _error("unsupported scope for riel_clean", scope=scope, allowed=list(CLEAN_SCOPES))
     argv = ["clean"] + (["--all"] if scope == "all" else ["--purge"] if scope == "purge" else [])
     return _run(argv, args, kwargs, tool="riel_clean")
-
-
-def riel_fetch(args: dict, **kwargs) -> str:
-    """Materialize a remote contract into the worktree (HTTPS, atomic, sha256)."""
-    url = str(args.get("url") or "").strip()
-    out = str(args.get("out") or ".riel/contract.md").strip()
-    if not url:
-        return _error("riel_fetch needs 'url' and writes to 'out' (default .riel/contract.md)")
-    argv = ["fetch", url, "-o", os.path.expanduser(out)]
-    sha = str(args.get("sha256") or "").strip()
-    if sha:
-        argv += ["--sha256", sha]
-    headers = _str_list(args.get("headers"), "headers")
-    if isinstance(headers, str):
-        return headers
-    for header in headers:
-        argv += ["--header", header]
-    if args.get("allow_http"):
-        argv.append("--allow-http")
-    return _run(argv, args, kwargs, tool="riel_fetch")
 
 
 def riel_check(args: dict, **kwargs) -> str:
@@ -483,11 +511,8 @@ HANDLERS = {
     "riel_note": _guard(riel_note),
     "riel_seam": _guard(riel_seam),
     "riel_todo": _guard(riel_todo),
-    "riel_context": _guard(riel_context),
-    "riel_contract": _guard(riel_contract),
-    "riel_shaping": _guard(riel_shaping),
-    "riel_clean": _guard(riel_clean),
-    "riel_fetch": _guard(riel_fetch),
+    "riel_plan": _guard(riel_plan),
     "riel_check": _guard(riel_check),
+    "riel_clean": _guard(riel_clean),
     "riel_guide": _guard(riel_guide),
 }

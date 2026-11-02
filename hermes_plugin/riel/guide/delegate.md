@@ -1,7 +1,7 @@
 ---
 topic: delegate
 trigger: "Use when delegating to subagents — write the packet (curated context, verb-graph, gates, ### Why), slice phases, dispatch waves with output_schema, parent verifies returns. Orchestrates the other Riel guides."
-version: 2.0.1
+version: 2.0.2
 ---
 
 # delegate — Delegating to subagents (Riel)
@@ -41,7 +41,7 @@ needs neither.)
   subgraph, gates, Deliverable, DO NOT, plus the inherited Objective,
   `### Why` and context keywords) — as its packet. The **parent** keeps
   and validates the ledger; the child never does. Slice it mechanically with
-  `riel_contract(verb="slice", file=".riel/contract.md", phase="F#")` (subgraph + FILL sections),
+  `riel_plan(verb="slice", file=".riel/contract.md", phase="F#")` (subgraph + FILL sections),
   then complete the FILLs by hand.
 
 Seed the ledger from the contract, then iterate normally (`note`, `seam`,
@@ -57,11 +57,11 @@ Full format + rules: `riel/specs/spec-contract-format.md`.
 
 ## Anchored opening
 
-Apply the first-turn conditions of `riel_guide(topic="protocol")` in `goal` + `context`:
 `goal` opens with the shared objective ("We need…"), one-line persona,
 `context` carries only what the first action needs, zero irrelevant
-injections. Do not restate them here — the canonical rules live in
-`riel_guide(topic="protocol")`.
+injections — the same functional grammar the parent already follows on its
+own turns. Do not restate them here: they ride inside the packet's `goal`
+and `context` sections.
 
 ## When to use / not use
 
@@ -152,7 +152,7 @@ edge guards, and the verification funnel are all defined there, not here.
   `G1` for gates (per riel_guide(topic="contract")). The agent's parser keys on them.
 - **Pair the graph with its digest** — a Mermaid-only graph is read less
   reliably than the same structure spelled out in text. Include the output
-  of `riel_contract(verb="digest")` beside the diagram (elements, edges, branches,
+  of `riel_plan(verb="digest")` beside the diagram (elements, edges, branches,
   entry/terminals) so the child gets the structure in plain words too.
 
 ## Step 5: Define verification gates
@@ -268,7 +268,7 @@ When dispatching, `goal` stays short and `context` carries the packet:
 
 ## Packet validation checklist (authoring)
 
-A packet is *valid* when all of the following pass. `riel_contract(verb="validate")`
+A packet is *valid* when all of the following pass. `riel_plan(verb="validate")`
 (read `riel_guide(topic="tools")`) runs them mechanically; review by hand before dispatching.
 
 Structure:
@@ -296,7 +296,7 @@ Graph (validable con `mmdc` / `riel_check(file=…, mermaid=true)`):
 - [ ] Every decision has labeled edges (`|yes|`, `|no|`)
 - [ ] The flow ends in a VERIFY/Check node before `END`
 - [ ] Loops carry counters (`< 3 attempts`), never unbounded
-- [ ] The graph is paired with its explicit digest (`riel_contract(verb="digest")`)
+- [ ] The graph is paired with its explicit digest (`riel_plan(verb="digest")`)
 
 Content:
 
@@ -314,7 +314,6 @@ Content:
 - Shaping skeleton (the evidence before the plan): `templates/shaping.md`
 - Worked example: `templates/example-password-reset.md`
 - Verb-graph syntax conventions (canonical): `riel_guide(topic="contract")`
-- Opening conditions and functional grammar: `riel_guide(topic="protocol")`
 - The contract (the plan) and its format: `riel/specs/spec-contract-format.md`
 
 ## Entry router
@@ -492,6 +491,5 @@ starts clean.
 ## Cross-references (the cycle)
 
 - The packet format: the BRIEF half above
-- Opening conditions and functional grammar: `riel_guide(topic="protocol")`
 - Mermaid contract conventions: `riel_guide(topic="contract")`
 - The ✓NN + confidence + re-sample rules: `riel_guide(topic="ledger")`

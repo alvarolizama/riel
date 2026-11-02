@@ -1,6 +1,6 @@
 name: riel
-version: 0.8.0
-description: "Riel — the whole package: the prose (read on demand through `riel_guide`, sectioned by default), the ten typed tools that write the ledger, the contract and the shaping, the pre_verify gate and the desktop chip. No command line and no skills: the tools are the surface."
+version: 0.9.0
+description: "Riel — the whole package: the prose (read on demand through `riel_guide`, sectioned by default), the seven typed tools that write the ledger, the plan and its checks, the pre_verify gate and the desktop chip. No command line and no skills: the tools are the surface."
 author: Álvaro Lizama
 license: MIT
 homepage: https://github.com/alvarolizama/riel
@@ -9,11 +9,8 @@ provides_tools:
   - riel_note
   - riel_seam
   - riel_todo
-  - riel_context
-  - riel_contract
-  - riel_shaping
+  - riel_plan
   - riel_clean
-  - riel_fetch
   - riel_check
 provides_hooks:
   - pre_verify

@@ -37,7 +37,7 @@ back by accident.
 
 ## The prose: topics, one door
 
-The prose is six guides, each a markdown file with frontmatter:
+The prose is five guides, each a markdown file with frontmatter:
 
 ```yaml
 ---
@@ -49,7 +49,6 @@ version: 3.7.1
 
 | File | Topic | Holds |
 |---|---|---|
-| `guide/protocol.md` | `protocol` | the conversation protocol: grammar, persona, minimal surface |
 | `guide/ledger.md` | `ledger` | the state: Goal/Claims/Core/Verified/Open/Next (Spec 1) |
 | `guide/contract.md` | `contract` | mermaid as contract: closed verbs, funnel, anchors (Spec 2) |
 | `guide/delegate.md` | `delegate` | the packets a delegate receives AND the dispatch/verify cycle |
@@ -94,7 +93,7 @@ The tools live in the model's catalog; the topics do not.
 | head | what Riel is + that the prose is read through `riel_guide` | ≤ 220 |
 | index | ONE line: the topics that exist right now + the two call shapes | ~240 |
 | state | the worktree's ledger: goal · phase · next · claims/verified/open | only if it fits whole |
-| door | the ten tools by name, the seam's three modes included; no command line, no `PATH` | ~250 |
+| door | the seven tools by name, the seam's three modes included; no command line, no `PATH` | ~250 |
 | note | the operator's `harness_note`, appended last, exactly as written | ≤ 400 |
 
 Cut rules, all silent-failure-proof: the topic list comes from `guide/*.md` at
@@ -120,7 +119,7 @@ asks) and all fail-open — an unreadable config means ON:
 | Group | Off means | Enforced by |
 |---|---|---|
 | `gate` | `pre_verify` stands down | the hook reads it per turn |
-| `tools` | the ten tools leave the model's surface **and** refuse to run | a non-cached `check_fn` hides them; the handler guard refuses before the engine |
+| `tools` | the seven tools leave the model's surface **and** refuse to run | a non-cached `check_fn` hides them; the handler guard refuses before the engine |
 | `context` | the prompt section renders `""` | the render reads it per session |
 
 **Semantics the UI must state:** a switch written now is obeyed by the NEXT
@@ -138,7 +137,7 @@ managed-install refusals apply.
 The engine (`engine/run.py`, one stdlib file) does the mechanical work and is the
 sole writer of the formats. It is **implementation**: no tool takes argv, no flag
 travels as data, and nothing in the package is meant to be typed into a shell.
-The ten tools are the surface — the seam appears three times because it carries
+The seven tools are the surface — the seam appears three times because it carries
 three modes, not because it is three tools:
 
 | Tool | Verb behind it |
@@ -149,11 +148,8 @@ three modes, not because it is three tools:
 | `riel_seam(mode="resume")` | post-gap restore order (the same tool) |
 | `riel_todo` | the plan mirror |
 | `riel_seam(mode="json")` | the ledger's facts (the same tool) |
-| `riel_context` | the contract's context index |
-| `riel_contract` (new/validate/digest/slice) | contracts and packets |
-| `riel_shaping` (new/validate) | the shaping (Spec 7) |
+| `riel_plan` (new/validate/digest/slice/fetch) | the contract, the shaping (Spec 7), the remote fetch — one door; a successful contract new/validate carries the context keywords |
 | `riel_clean` (ledger/all/purge) | archive `.riel/` state |
-| `riel_fetch` | a remote contract, on disk |
 | `riel_check` | dense markers + graph digest on one file (+ `mermaid=true`: the parser check) |
 
 Every tool returns one envelope — `{tool, worktree, exit_code, passed, stdout,

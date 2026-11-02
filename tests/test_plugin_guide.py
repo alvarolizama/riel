@@ -174,7 +174,7 @@ class GuideHandlerTest(unittest.TestCase):
 
     def test_the_guide_needs_no_worktree_state(self):
         """The prose ships with the package: a call outside any worktree works."""
-        result = self.payload({"topic": "protocol", "worktree": "/tmp"})
+        result = self.payload({"topic": "tools", "worktree": "/tmp"})
         self.assertTrue(result["passed"], result)
 
     def test_an_empty_worktree_with_no_repo_still_answers(self):

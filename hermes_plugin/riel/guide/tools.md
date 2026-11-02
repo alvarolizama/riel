@@ -1,7 +1,7 @@
 ---
 topic: tools
-trigger: "Use when you need Riel's tool surface — which of the ten tools writes what, what each returns, and the template, fetch and exit-code rules. There is no command line: the tools are the interface."
-version: 1.18.0
+trigger: "Use when you need Riel's tool surface — which of the seven tools writes what, what each returns, and the template, fetch and exit-code rules. There is no command line: the tools are the interface."
+version: 1.19.0
 ---
 
 # tools — Riel's tool surface (Riel)
@@ -13,19 +13,19 @@ no command line to call:
 - Writing `.riel/ledger.md` with the exact expected format (`riel_note`)
 - Reading the prose itself — the index, a guide's section outline, one section,
   or (rarely) the whole body (`riel_guide`)
-- Instantiating packet templates (`riel_contract(verb="new")`)
+- Instantiating packet templates (`riel_plan(verb="new")`)
 - Verifying that a packet satisfies the structural constraints
-  (`riel_contract(verb="validate")`) — including the closed verb vocabulary
-- Expanding the execution graph into explicit text (`riel_contract(verb="digest")`)
+  (`riel_plan(verb="validate")`) — including the closed verb vocabulary
+- Expanding the execution graph into explicit text (`riel_plan(verb="digest")`)
 - Deriving the Hermes session-todo mirror from the plan (`riel_todo`)
   and the ledger mirror the chip and the gate fold (`riel_seam(mode="json")`)
-- Emitting a contract's context keywords as JSON (`riel_context`) so the
-  memory search has one authoritative index to read instead of re-parsing
-  the contract
+- Handing over a contract's context keywords (`riel_plan`'s answer carries
+  them on a successful new/validate) so the memory search has one
+  authoritative index to read instead of re-parsing the contract
 - Downloading a remote contract to disk without routing it through the
-  agent's context (`riel_fetch`) — HTTPS-only, atomic, sha256-verified
+  agent's context (`riel_plan`) — HTTPS-only, atomic, sha256-verified
 - Instantiating the shaping skeleton and checking it against Spec 7
-  (`riel_shaping(verb="new")` / `verb="validate"`)
+  (`riel_plan(verb="new", kind="shaping")` / `verb="validate"`)
 - Re-reading each claim beside the region that supports it
   (`riel_seam(anchors=true)`) — the anchor surface of a seam
 - Dense-register and graph-digest check on one file before delivering it
@@ -48,11 +48,8 @@ cwd, never the process's — and nothing is typed into a shell.
 | `riel_note` | `goal`, `next`, `source`, `phase`, `core`+`core_slot`, `claim`+`verify_with`, `check`+`by`+`covering`+`confidence`, `open`+`settled_by`, `close`, `from_contract` | writes the ledger |
 | `riel_seam` | `mode` (read/resume/json), `anchors=true` to also re-read each claim beside its support | the ledger at a seam: prose + due invariants, + the post-gap restore order, or the ledger's own facts as JSON |
 | `riel_todo` | — | the PLAN mirror (JSON) |
-| `riel_context` | `keywords=[…]` (rarely) | the contract's context index |
-| `riel_contract` | `verb` (new/validate/digest/slice) + `template`/`params`/`file`/`phase` | contracts and packets |
-| `riel_shaping` | `verb` (new/validate) + `params`/`file`/`force` | the pre-contract research |
+| `riel_plan` | `verb` (new/validate/digest/slice/fetch) + `kind` (contract/shaping) + `template`/`params`/`file`/`phase`/`force`/`url`/`out`/`sha256`/`headers`/`allow_http` | the contract, the pre-contract shaping and the remote fetch — one door; a successful contract new/validate carries `keywords` |
 | `riel_clean` | `scope` (ledger/all/purge) | archives `.riel/` state |
-| `riel_fetch` | `url`, `out`, `sha256`, `headers`, `allow_http` | a remote contract, on disk |
 | `riel_check` | `file`, `mermaid=true` | dense-register check, graph digest, and the parser-level check of every diagram |
 
 Every tool returns the same envelope: `{tool, worktree, exit_code, passed,
@@ -138,8 +135,8 @@ default (rule in `riel_guide(topic="ledger")`, "Opening over an existing `.riel/
 ### Shaping (Spec 7)
 
 ```
-riel_shaping(verb="new", params=["name=reset flow"])    # writes .riel/shaping.md
-riel_shaping(verb="validate", file=".riel/shaping.md")  # the rules
+riel_plan(verb="new", kind="shaping", params=["name=reset flow"])    # writes .riel/shaping.md
+riel_plan(verb="validate", kind="shaping", file=".riel/shaping.md")  # the rules
 ```
 
 `verb="new"` drops the shipped skeleton into `.riel/shaping.md`; it refuses to
@@ -166,10 +163,10 @@ whole contract. A claim with no anchor or an unresolvable one is reported; a
 
 ### Context keywords (Spec 2)
 
-`riel_context` prints `{"keywords": [{"term": …, "source": …}]}` — the index the
-memory search reads (one term per line under `### Context keywords`; `→ dran`
-is an optional source hint). Empty list when the contract has none; it reports
-a failure only when the contract is missing.
+A successful contract `new`/`validate` carries `keywords` —
+`[{"term": …, "source": …}]`, the index the memory search reads (one term per
+line under `### Context keywords`; `→ dran` is an optional source hint). The
+key is absent when the contract has none.
 
 ### Session todo (Hermes mirror, Spec 6)
 
@@ -203,7 +200,7 @@ What each tool reports, in the envelope's `exit_code`:
 - `riel_note` / `riel_seam` / `riel_todo`: 0
   unless the arguments are invalid or the ledger is missing (1).
 - `riel_clean`: always 0 — "nothing to clean" is a message, not an error.
-- `riel_shaping(verb="validate")`: 0 with WARNs only; 1 with an `ISSUE` or a
+- `riel_plan(verb="validate", kind="shaping")`: 0 with WARNs only; 1 with an `ISSUE` or a
   missing file. `verb="new"`: 0; 3 when the destination already exists (pass
   `force=true`).
 - `riel_seam(anchors=true)`: the seam's own code, and the anchor half reports
@@ -216,15 +213,15 @@ What each tool reports, in the envelope's `exit_code`:
 
 ```
 # the contract (the plan) — from a typed skeleton, then write it yourself
-riel_contract(verb="new", template="feature",
+riel_plan(verb="new", template="feature",
            params=["name=reset flow", "one_sentence=add password reset via email"])
 # → returns the rendered text; write it to .riel/contract.md with write_file
 
-riel_contract(verb="validate", file=".riel/contract.md")
-riel_contract(verb="digest",   file=".riel/contract.md")   # the graph as explicit text
+riel_plan(verb="validate", file=".riel/contract.md")
+riel_plan(verb="digest",   file=".riel/contract.md")   # the graph as explicit text
 
 # a child's packet — one phase sliced from the contract
-riel_contract(verb="slice", file=".riel/contract.md", phase="F2")
+riel_plan(verb="slice", file=".riel/contract.md", phase="F2")
 ```
 
 `verb="new"` searches templates in order:
@@ -266,7 +263,7 @@ humans). `riel_check` runs the same expansion on any file.
 ### Fetch (download a contract, Spec 2 — local-first)
 
 ```
-riel_fetch(url=URL, out=".riel/contract.md", sha256=H, headers=["Name: value"],
+riel_plan(verb="fetch", url=URL, out=".riel/contract.md", sha256=H, headers=["Name: value"],
            allow_http=False)
 ```
 
@@ -281,7 +278,7 @@ is single-use, so the tool needs no credentials.
 **When to run it:** at the *opening* of a task that uses a remote contract —
 `riel_seam(mode="resume")` / `riel_note(from_contract=true)`, before the
 context fetch — **not only when delegating**. A solo task fetches its contract
-the same way; `riel_contract(verb="slice")` (for a child) is a later, separate
+the same way; `riel_plan(verb="slice")` (for a child) is a later, separate
 moment and is never the trigger.
 
 Security defaults (not optional): **HTTPS required** — plain `http` is refused

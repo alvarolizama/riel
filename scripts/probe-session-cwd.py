@@ -14,7 +14,7 @@ What it proves, against a real Hermes install:
   5. the `pre_verify` gate fires through Hermes' own hook dispatch
      (`get_pre_verify_continue_message`) and closes once a ✓ with evidence is
      in the ledger;
-  6. `riel_context` returns the contract's keyword index and stops there — the
+  6. the plan tool returns the contract's keyword index and stops there — the
      search belongs to the agent, whose memory backends a plugin cannot reach.
 
 The Hermes import bootstraps itself: a managed install keeps the agent tree
@@ -105,12 +105,18 @@ def _seed(worktree: str, *argv) -> None:
 
 
 def _seed_contract(worktree: str, keywords: str) -> None:
-    """Write a minimal contract with a Context keywords block."""
+    """Write a valid contract with a Context keywords block."""
     path = Path(worktree) / ".riel" / "contract.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         "# Task: probe\n\n## Objective\nWe need to probe\n\n## Context\n\n"
-        "### Context keywords\n" + keywords + "\n## DO NOT\n- x\n",
+        "### Context keywords\n" + keywords +
+        "\n## Constraints\n- r\n\n"
+        "## Pre-registered claims\n- P1: a — verify with: true\n\n"
+        "## Execution graph\n\n```mermaid\nflowchart TD\n"
+        '  S1["RUN true"] --> G1{"ok?"}\n  G1 -->|yes| END([Done])\n'
+        '  G1 -->|no| S1\n```\n\n'
+        "## Verification gates\ng\n\n## Deliverable\nd\n\n## DO NOT\n- x\n",
         encoding="utf-8",
     )
 
@@ -217,19 +223,21 @@ def main() -> int:
         assert get_pre_verify_continue_message(attempt=0, **payload) is None
         print("gate       -> cierra el turno cuando hay un ✓ con evidencia")
 
-        # --- riel_context through the real registry -------------------------
+        # --- the plan's context index through the real registry --------------
         # It hands over the index and stops there: memory lives in the agent's
         # memory manager, not in the registry, so the plugin cannot search.
         _seed_contract(gate_tree, "- login flow → dran\n- phoenix streams\n")
-        ctx_out = _dispatch(registry, "riel_context", {"worktree": gate_tree}, "probe-a")
-        print(f"context    -> origin={ctx_out.get('origin')} "
+        ctx_out = _dispatch(registry, "riel_plan",
+                            {"verb": "validate", "file": ".riel/contract.md",
+                             "worktree": gate_tree}, "probe-a")
+        print(f"plan        -> passed={ctx_out.get('passed')} "
               f"keywords={[k['term'] for k in ctx_out.get('keywords', [])]}")
         assert [k["term"] for k in ctx_out["keywords"]] == ["login flow", "phoenix streams"], ctx_out
-        assert "hits" not in ctx_out and "next" in ctx_out, ctx_out
-        print("context    -> solo entrega el índice (la búsqueda es del agente)")
+        assert "hits" not in ctx_out and "keywords_note" in ctx_out, ctx_out
+        print("plan        -> solo entrega el índice (la búsqueda es del agente)")
 
         print("\nOK: discovery, registry dispatch, session cwd resolution, per-session")
-        print("    isolation, the pre_verify gate and riel_context verified")
+        print("    isolation, the pre_verify gate and the plan's context index verified")
         return 0
     finally:
         os.chdir(cwd_before)

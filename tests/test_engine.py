@@ -484,7 +484,7 @@ d
         path = self._write("plain.md", "# Task: x\n\nno graph here\n")
         rc, _, err = run("contract", "digest", path)
         self.assertEqual(rc, 1)
-        self.assertIn("no mermaid", err)
+        self.assertIn("no execution graph found", err)
 
     def test_digest_top_level_any_file(self):
         path = self._write("ok.md", self.VALID)
@@ -1192,7 +1192,7 @@ class CleanTests(TempDirTest):
 
 
 class FetchTests(TempDirTest):
-    """`riel_fetch` — HTTP(S) download with integrity + security defaults."""
+    """`riel_plan(verb="fetch")` — HTTP(S) download with integrity + security defaults."""
 
     def _serve(self, payload):
         import http.server
@@ -1723,3 +1723,141 @@ class BackupBeforeWriteTest(TempDirTest):
         self.assertEqual(len(baks), 1)
         with open(os.path.join(self.tmp, ".riel", baks[0]), encoding="utf-8") as fh:
             self.assertIn("t1", fh.read())
+
+
+class ListGraphTests(TempDirTest):
+    """The PLAIN list register of `## Execution graph` — mermaid optional.
+
+    The canonical simple plan: `- F1: phase` with nested steps, linear
+    funnel, each phase's last step is its gate. validate/todo/digest/slice
+    must accept it exactly like a mermaid graph.
+    """
+
+    LIST_CONTRACT = """# Task: lista plana
+
+## Objective
+We need que la lista plana valide igual que mermaid
+
+## Context
+c
+
+### Why
+porque el diagrama es opcional, la verificación no
+
+## Constraints
+- r
+
+## Pre-registered claims
+- P1: la lista valida — verify with: true
+- P2: la fase se alcanza tras verificar — verify with: true — anchor: F2
+
+## Execution graph
+
+- F1: preparar
+  - READ README.md — contexto del cambio
+  - RUN make test
+- F2: cerrar
+  - EDIT main.py — ajuste final
+  - VERIFY git diff sin cambios fuera de alcance
+
+## Verification gates
+g
+
+## Deliverable
+d
+
+## DO NOT
+- x
+"""
+
+    def _write(self, content):
+        path = os.path.join(self.tmp, "list-contract.md")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        return path
+
+    def test_validate_accepts_the_list_register(self):
+        rc, out, err = run("contract", "validate", self._write(self.LIST_CONTRACT))
+        self.assertEqual(rc, 0, out + err)
+
+    def test_validate_rejects_a_phase_without_its_gate(self):
+        bad = self.LIST_CONTRACT.replace(
+            "  - VERIFY git diff sin cambios fuera de alcance\n",
+            "  - READ main.py — nada que verificar\n")
+        rc, out, _ = run("contract", "validate", self._write(bad))
+        self.assertEqual(rc, 1)
+        self.assertIn("F2 ends with", out)
+
+    def test_validate_rejects_a_step_off_the_closed_vocabulary(self):
+        bad = self.LIST_CONTRACT.replace(
+            "  - READ README.md — contexto del cambio",
+            "  - leer el README primero")
+        rc, out, _ = run("contract", "validate", self._write(bad))
+        self.assertEqual(rc, 1)
+        self.assertIn("closed verb", out)
+
+    def test_validate_rejects_a_text_without_any_graph(self):
+        bare = self.LIST_CONTRACT.replace(
+            "\n## Execution graph\n\n- F1: preparar\n  - READ README.md — contexto del cambio\n  - RUN make test\n- F2: cerrar\n  - EDIT main.py — ajuste final\n  - VERIFY git diff sin cambios fuera de alcance\n",
+            "\n")
+        rc, out, _ = run("contract", "validate", self._write(bare))
+        self.assertEqual(rc, 1)
+        self.assertIn("no execution graph found", out)
+
+    def test_seed_takes_goal_phase_and_next_from_the_list(self):
+        path = self._write(self.LIST_CONTRACT)
+        rc, _, err = run("note", "--from-contract", path)
+        self.assertEqual(rc, 0, err)
+        rc, out, _ = run("seam", "--mode", "json")
+        self.assertEqual(rc, 0, out)
+        items = json.loads(out)
+        kinds = {i["id"] for i in items}
+        self.assertIn("goal", kinds)
+        self.assertTrue(any(i["id"].startswith("claim-") for i in items))
+        # Next is the list's first phase label (the entry node)
+        next_item = next(i for i in items if i["id"] == "next")
+        self.assertIn("preparar", next_item["content"])
+
+    def test_todo_derives_phases_and_steps_from_the_list(self):
+        path = self._write(self.LIST_CONTRACT)
+        d = os.path.join(self.tmp, ".riel")
+        os.makedirs(d, exist_ok=True)
+        shutil.copy(path, os.path.join(d, "contract.md"))
+        run("note", "--goal", "probar", "--next", "READ README.md")
+        rc, out, _ = run("todo")
+        self.assertEqual(rc, 0, out)
+        items = json.loads(out)
+        by_id = {i["id"]: i for i in items}
+        # the root is the CONTRACT's goal (the list register serves it too)
+        self.assertEqual(
+            by_id["goal"]["content"],
+            "GOAL: We need que la lista plana valide igual que mermaid")
+        self.assertIn("phase-F1", by_id)
+        self.assertIn("phase-F2", by_id)
+        self.assertIn("preparar", by_id["phase-F1"]["content"])
+        self.assertEqual(by_id["step-F1-S1"]["parent"], "phase-F1")
+        self.assertIn("READ README.md", by_id["step-F1-S1"]["content"])
+        self.assertEqual(by_id["step-F2-S3"]["parent"], "phase-F2")
+        # exactly one in_progress: the step the Next points at
+        self.assertEqual(
+            sum(1 for i in items if i["status"] == "in_progress"), 1)
+        self.assertEqual(by_id["step-F1-S1"]["status"], "in_progress")
+
+    def test_digest_expands_the_list(self):
+        rc, out, _ = run("digest", self._write(self.LIST_CONTRACT))
+        self.assertEqual(rc, 0, out)
+        self.assertIn("F1 — preparar", out)
+        self.assertIn("S1", out)
+        self.assertIn("F1 -> S1", out)
+
+    def test_slice_renders_the_list_phase_as_mermaid(self):
+        rc, out, _ = run("contract", "slice", self._write(self.LIST_CONTRACT),
+                         "--phase", "F1")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("F1[\"preparar\"]", out)
+        self.assertIn("S1[\"READ README.md — contexto del cambio\"]", out)
+        self.assertIn("F1 --> S1", out)
+        # the next phase stays out of the SLICE's graph (the copied claims
+        # may still mention F2 as their anchor — that is provenance)
+        graph = out.split("```mermaid", 1)[1].split("```", 1)[0]
+        self.assertNotIn("F2", graph)

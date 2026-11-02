@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The engine behind Riel's tools — one stdlib file, no user surface.
 
-Every subcommand below is reached through a TOOL (`riel_note`, `riel_contract`,
+Every subcommand below is reached through a TOOL (`riel_note`, `riel_plan`,
 `riel_seam`, …); nothing here is typed into a shell, and no flag travels as
 data. The tools pass named parameters, this file owns the formats and decides
 nothing semantic.
@@ -51,6 +51,10 @@ import urllib.parse
 import urllib.request
 
 VERSION = "1.7.0"
+# A by-path load may hand us a RELATIVE `__file__`; a later chdir (the CLI's
+# --worktree, or the caller's) would then break every `dirname(__file__)`.
+# Bind it absolute ONCE, at import time.
+__file__ = os.path.abspath(__file__)
 LEDGER_DIR = ".riel"
 LEDGER_PATH = os.path.join(LEDGER_DIR, "ledger.md")
 CONTRACT_PATH = os.path.join(LEDGER_DIR, "contract.md")
@@ -395,9 +399,8 @@ def seed_from_contract(path):
     if not fields["claims"]:
         warnings.append("no P# claims found")
 
-    block = _graph_block(text)
-    if block:
-        nodes, edges = mermaid_graph(block)
+    nodes, edges, _register = graph_any(text)
+    if nodes:
         backs = set(graph_back_edges(edges))
         incoming = {v for u, l, v in edges if (u, l, v) not in backs}
         for nid, (_shape, label) in nodes.items():
@@ -594,8 +597,8 @@ def cmd_seam(args):
             "right mode; (4) set Next to the first action back."
         )
     anchored = []
-    if os.path.isfile(CONTRACT_PATH):
-        with open(CONTRACT_PATH, encoding="utf-8") as fh:
+    if os.path.isfile(args._contract):
+        with open(args._contract, encoding="utf-8") as fh:
             anchored = [c for c in claim_anchors(fh.read()) if c["anchor"]]
     if anchored:
         print("\n[anchor] {} of the claims carry an anchor — `riel_seam(anchors=true)` "
@@ -676,10 +679,7 @@ def contract_to_todo_items(text, st):
     those are served by `seam --mode json`.
     """
     items = []
-    block = _graph_block(text)
-    if not block:
-        return items
-    nodes, edges = mermaid_graph(block)
+    nodes, edges, _register = graph_any(text)
     if not nodes:
         return items
 
@@ -882,14 +882,14 @@ def cmd_clean(args):
     nothing to clean it exits 0 with a message. The agent asks the user
     first (backup / purge / keep the existing ledger) — clean never decides.
     """
-    targets = [LEDGER_PATH]
+    targets = [args._ledger]
     if args.all:
-        targets.extend([CONTRACT_PATH, SHAPING_PATH])
+        targets.extend([args._contract, args._shaping])
 
     present = [p for p in targets if os.path.isfile(p)]
     if not present:
         print("nothing to clean in {} (no {})".format(
-            LEDGER_DIR, ", ".join(targets)))
+            args._riel_dir, ", ".join(targets)))
         return 0
 
     stamp = time.strftime("%Y%m%d-%H%M%S")
@@ -897,12 +897,12 @@ def cmd_clean(args):
         if not args.purge:
             base = os.path.basename(path)[:-len(".md")]
             backup = os.path.join(
-                LEDGER_DIR, "{}-{}.bak.md".format(base, stamp))
+                args._riel_dir, "{}-{}.bak.md".format(base, stamp))
             # a second clean within the same second must not clobber
             n = 1
             while os.path.exists(backup):
                 backup = os.path.join(
-                    LEDGER_DIR, "{}-{}-{}.bak.md".format(base, stamp, n))
+                    args._riel_dir, "{}-{}-{}.bak.md".format(base, stamp, n))
                 n += 1
             shutil.copy2(path, backup)
             os.remove(path)
@@ -922,7 +922,7 @@ def cmd_shaping_validate(args):
     a Verdict with no Objective line, and a contract claim anchored to a
     finding this shaping does not have.
     """
-    path = args.file or SHAPING_PATH
+    path = args.file or args._shaping
     try:
         with open(path, encoding="utf-8") as fh:
             text = fh.read()
@@ -1016,7 +1016,7 @@ def cmd_shaping_new(args):
     if args.output == "-":
         print(result)
         return 0
-    out = args.output or SHAPING_PATH
+    out = args.output or args._shaping
     if os.path.exists(out) and not args.force:
         print("{} already exists — a shaping is research, not a template drop; "
               "pass --force to overwrite".format(out), file=sys.stderr)
@@ -1276,6 +1276,79 @@ def _graph_block(text):
     return block if block is not None else _first_mermaid(text)
 
 
+LIST_PHASE_RE = re.compile(r"^- (F\d+|W\d+)\s*:\s*(.+)$", re.M)
+LIST_STEP_RE = re.compile(r"^\s+- (.+)$")
+
+
+def list_graph(body):
+    """Best-effort parse of a PLAIN phase list → (nodes, edges).
+
+    The list register of `## Execution graph` — mermaid without the diagram:
+
+        - F1: phase label
+          - READ path — what for
+          - RUN make test
+        - F2: next phase label
+
+    Phases carry F#/W# ids; steps are nested bullets with ids S1..Sn
+    (global, authored order). Edges are linear: phase → its steps → the next
+    phase — the funnel is structural (a phase is only reached once the
+    previous one verified), which is what the list cannot express as
+    branches. Returns the SAME (nodes, edges) shape as `mermaid_graph`, so
+    todo/digest/slice need no second code path.
+    """
+    nodes: dict = {}
+    edges: list = []
+    current_phase = None
+    last_step = None
+    step_no = 0
+    for raw in body.splitlines():
+        phase = LIST_PHASE_RE.match(raw.strip()) if not raw.startswith(" ") else None
+        if phase:
+            current_phase = phase.group(1)
+            nodes[current_phase] = ("[", phase.group(2).strip())
+            last_step = None
+            continue
+        step = LIST_STEP_RE.match(raw.rstrip())
+        if not step or current_phase is None:
+            continue
+        step_no += 1
+        sid = "S{}".format(step_no)
+        nodes[sid] = ("[", step.group(1).strip())
+        edges.append((current_phase, "", sid))
+        if last_step is not None:
+            edges.append((last_step, "", sid))
+        last_step = sid
+        continue
+    # chain: last step of a phase → next phase (the implicit gate)
+    phase_ids = [nid for nid in nodes if re.match(r"^[FW]\d+$", nid)]
+    for a, b in zip(phase_ids, phase_ids[1:]):
+        steps = [v for u, _l, v in edges if u == a]
+        if steps:
+            edges.append((steps[-1], "", b))
+        else:
+            edges.append((a, "", b))
+    return nodes, edges
+
+
+def graph_any(text):
+    """The plan's graph in EITHER register → (nodes, edges, register).
+
+    mermaid wins when a ```mermaid block exists under `## Execution graph`;
+    otherwise the plain phase list is parsed. register is "" when neither
+    holds a graph.
+    """
+    block = _graph_block(text)
+    if block is not None:
+        nodes, edges = mermaid_graph(block)
+        if nodes:
+            return nodes, edges, "mermaid"
+    nodes, edges = list_graph(_section(text, "Execution graph"))
+    if nodes:
+        return nodes, edges, "list"
+    return {}, [], ""
+
+
 def mermaid_graph(block):
     """Best-effort parse of a mermaid flowchart block → (nodes, edges).
 
@@ -1377,10 +1450,9 @@ def _digest_report(path):
             text = fh.read()
     except OSError as exc:
         return False, "digest: cannot read {}: {}".format(path, exc)
-    block = _graph_block(text)
-    if block is None:
-        return False, "no mermaid graph found in {}".format(path)
-    nodes, edges = mermaid_graph(block)
+    nodes, edges, _register = graph_any(text)
+    if not nodes:
+        return False, "no execution graph found in {}".format(path)
     out = []
     out.append("Graph digest — explicit structure (the diagram stays for humans)")
     out.append("")
@@ -1411,7 +1483,7 @@ def _digest_report(path):
     out.append("Terminals (no outgoing): " + ", ".join(terminals))
     backs = graph_back_edges(edges)
     if backs:
-        counter = re.search("< *[0-9]|>= *[0-9]", block)
+        counter = re.search("< *[0-9]|>= *[0-9]", text)
         guarded = ("  guards: yes" if counter
                    else "  guards: NONE — add a bounded '< 3 / >= 3'")
         out.append("Loops (back-edges): " + ", ".join(
@@ -1472,11 +1544,11 @@ def cmd_contract_slice(args):
     """
     with open(args.file, encoding="utf-8") as fh:
         text = fh.read()
-    block = _graph_block(text)
-    if block is None:
-        print("no mermaid graph found in {}".format(args.file), file=sys.stderr)
+    nodes, edges, _register = graph_any(text)
+    if not nodes:
+        print("no execution graph found in {}".format(args.file),
+              file=sys.stderr)
         return 1
-    nodes, edges = mermaid_graph(block)
 
     start = args.phase or _first_phase_id(nodes)
     if not start or start not in nodes:
@@ -1637,11 +1709,48 @@ def cmd_contract_validate(args):
             "no '### Context keywords' under ## Context "
             "(nothing for the context fetch to search)")
 
-    # Graph conventions
+    # Graph conventions — two registers: a ```mermaid block (rich: branches,
+    # loops, decision nodes) or a plain F#/W# phase list (canonical simple:
+    # linear funnel, the gate is each phase's last step). Rules become
+    # greps either way — a register without any graph is an ISSUE.
     parsed_nodes = {}
+    parsed_edges = []
     blocks = re.findall(r"```mermaid\n(.*?)```", text, re.S)
     if not blocks:
-        issues.append("no mermaid execution graph found")
+        parsed_nodes, parsed_edges = list_graph(
+            _section(text, "Execution graph"))
+        if not parsed_nodes:
+            issues.append(
+                "no execution graph found (a mermaid block or a plain "
+                "F#/W# phase list under ## Execution graph)")
+        else:
+            # List register: linear funnel. Each phase's LAST step is its
+            # gate — a phase that does not end in RUN/VERIFY has no
+            # verification, and every step must use the closed verbs.
+            phase_ids = [nid for nid in parsed_nodes
+                         if re.match(r"^[FW]\d+$", nid)]
+            for pid in phase_ids:
+                outs = [v for u, _l, v in parsed_edges if u == pid]
+                last = outs[-1] if outs else None
+                gate = parsed_nodes.get(last, ("", ""))[1] if last else ""
+                if not re.match(r"(RUN|VERIFY)\b", gate):
+                    issues.append(
+                        "list phase {} ends with {!r} — the last step of a "
+                        "phase is its gate (RUN or VERIFY)".format(
+                            pid, gate or "<no steps>"))
+            bad_verbs = []
+            for nid, (_shape, label) in parsed_nodes.items():
+                if re.match(r"^[FW]\d+$", nid):
+                    continue
+                m = re.match("[A-Za-z]+", label.strip())
+                verb = m.group(0).upper() if m else ""
+                if verb not in _CLOSED_VERBS:
+                    bad_verbs.append((nid, label[:50]))
+            if bad_verbs:
+                issues.append(
+                    "list step(s) not starting with a closed verb "
+                    "(READ/EDIT/CREATE/RUN/VERIFY/ASK): {}".format(
+                        sorted(set(bad_verbs))))
     else:
         g = blocks[0]
         parsed_nodes, parsed_edges = mermaid_graph(g)
@@ -1953,6 +2062,80 @@ def _note_params():
 
 
 def main(argv=None):
+    p = build_parser()
+    args = p.parse_args(argv)
+    if args.worktree:
+        target = os.path.abspath(os.path.expanduser(args.worktree))
+        if not os.path.isdir(target):
+            print("worktree is not a directory: {}".format(target), file=sys.stderr)
+            return 2
+        # One chdir, before any subcommand: every relative path below (the
+        # ledger, the contract, the shaping, a fetch destination, `.riel/` in
+        # clean) is then resolved against the WORKTREE, never against whatever
+        # directory the caller happened to run from.
+        os.chdir(target)
+    else:
+        target = os.getcwd()
+    _absolutize(args, target)
+    return args.fn(args)
+
+
+# ------------------------------------------------------------ in-process ----
+# The tools' fast path: one verb against ONE worktree, resolved by PARAMETER.
+# The CLI path above keeps its chdir (it is a whole process, so the cwd is
+# its own); an in-process caller (the plugin handlers) must NOT chdir — a
+# gateway serves several sessions from one process — so `run_verb` binds
+# every path the verb may touch to the worktree instead.
+
+_PATH_KEYS = ("ledger", "contract", "shaping", "file", "output", "from_contract")
+
+
+def _absolutize(args, worktree):
+    """Point every path the verb may touch at the WORKTREE — no cwd assumptions.
+
+    The argparse defaults are relative (`.riel/ledger.md`, …); against a real
+    directory they become absolute here, and the four places that fall back
+    to a constant (`or SHAPING_PATH`, `clean`'s targets, `seam`'s anchor
+    hint) read the bound `args._*` mirrors instead. A `-` (stdout) stays.
+    """
+    args._riel_dir = os.path.join(worktree, LEDGER_DIR)
+    args._ledger = os.path.join(args._riel_dir, "ledger.md")
+    args._contract = os.path.join(args._riel_dir, "contract.md")
+    args._shaping = os.path.join(args._riel_dir, "shaping.md")
+    for key in _PATH_KEYS:
+        value = getattr(args, key, None)
+        if isinstance(value, str) and value and value != "-":
+            expanded = os.path.expanduser(value)
+            if not os.path.isabs(expanded):
+                setattr(args, key, os.path.join(worktree, expanded))
+        elif isinstance(value, list) and value and all(
+                isinstance(item, str) for item in value):
+            setattr(args, key, [
+                item if os.path.isabs(os.path.expanduser(item))
+                else os.path.join(worktree, os.path.expanduser(item))
+                for item in value])
+
+
+def run_verb(argv, worktree=None):
+    """One verb against one worktree, IN-PROCESS, without touching the cwd.
+
+    `argv` is the same shape the CLI takes (`["seam", "--mode", "json"]`);
+    `worktree` replaces the `--worktree` chdir. Safe to call from a
+    multiplexed process: nothing here is process-global state. Returns the
+    verb's exit code; an argparse refusal raises SystemExit like the CLI.
+    """
+    args = build_parser().parse_args(argv)
+    if args.worktree:
+        worktree = args.worktree
+    worktree = os.path.abspath(os.path.expanduser(worktree or os.getcwd()))
+    if not os.path.isdir(worktree):
+        print("worktree is not a directory: {}".format(worktree), file=sys.stderr)
+        return 2
+    _absolutize(args, worktree)
+    return args.fn(args)
+
+
+def build_parser():
     p = argparse.ArgumentParser(prog="riel", description=__doc__)
     p.add_argument("--version", action="version", version=VERSION)
     p.add_argument(
@@ -1961,7 +2144,7 @@ def main(argv=None):
     )
     p.add_argument(
         "--worktree", default=None,
-        help="directory whose .riel/ is the task state; the engine chdirs into "
+        help="directory whose .riel/ is the task state; the CLI chdirs into "
              "it, so no relative path is ever resolved against the caller's cwd "
              "(default: the process cwd)",
     )
@@ -2119,18 +2302,7 @@ def main(argv=None):
                    help="abort if the body exceeds this many bytes (default: 5MB)")
     f.set_defaults(fn=cmd_fetch)
 
-    args = p.parse_args(argv)
-    if args.worktree:
-        target = os.path.abspath(os.path.expanduser(args.worktree))
-        if not os.path.isdir(target):
-            print("worktree is not a directory: {}".format(target), file=sys.stderr)
-            return 2
-        # One chdir, before any subcommand: every relative path below (the
-        # ledger, the contract, the shaping, a fetch destination, `.riel/` in
-        # clean) is then resolved against the WORKTREE, never against whatever
-        # directory the caller happened to run from.
-        os.chdir(target)
-    return args.fn(args)
+    return p
 
 
 if __name__ == "__main__":

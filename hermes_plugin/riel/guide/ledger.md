@@ -1,7 +1,7 @@
 ---
 topic: ledger
 trigger: "Use when running a loop-mode task — write the local Goal/Core/Verified/Open/Next ledger in the worktree, re-read at every seam, verify before done. No remote dependency."
-version: 1.16.0
+version: 1.17.0
 ---
 
 # ledger — Local verified state for long tasks (Riel)
@@ -186,8 +186,8 @@ flowchart TD
    a tracked item, set Source and take Goal from its title.
 2. Set Core — max 2 live items with their defining facts. When the task has
    a contract, the facts usually already exist: search its
-   `### Context keywords` (the `riel_context` tool
-   plugin) and keep what answers, instead of rediscovering it. A Core item
+   `### Context keywords` (they travel in `riel_plan`'s
+   answer) and keep what answers, instead of rediscovering it. A Core item
    you could not find is one you had to establish — say which.
 3. Set Phase if the task has a phases graph — the first phase without a
    checkbox.

@@ -116,86 +116,48 @@ RIEL_TODO = {
     "parameters": {"type": "object", "properties": {"worktree": _WORKTREE}},
 }
 
-RIEL_CONTEXT = {
-    "name": "riel_context",
+RIEL_PLAN = {
+    "name": "riel_plan",
     "description": (
-        "Riel contract's context index, for the memory search YOU run — `### Context keywords` "
-        "as a list of terms with an optional source hint. Call it when opening a Riel task and "
-        "when advancing to a new phase, then do the searching YOURSELF with the memory tools you "
-        "have configured (DRAN, your own memory, search_files) and keep the answers in the "
-        "ledger's `## Core` (max 2 live items). This tool does not search: a plugin cannot reach "
-        "the memory backends, so it gives you the terms and nothing else."
+        "Riel plan artifacts — ONE door for the contract, the shaping and the remote "
+        "fetch. verb=new renders the shipped template for template (returns the text — "
+        "you write it), validate runs the structural rules over file and exits 1 on an "
+        "ISSUE, digest expands the graph of file into explicit text (mermaid or plain "
+        "F#/W# list), slice extracts one phase of file as a child packet — pass phase, "
+        "fetch materializes a remote contract into the worktree (HTTPS, atomic, "
+        "sha256-pinned, the URL is never printed). kind=shaping aims new/validate at "
+        "the pre-plan research (Spec 7); a successful contract new/validate also "
+        "carries keywords — the contract's context index for the memory search YOU run."
     ),
     "parameters": {
         "type": "object",
         "properties": {
-            "keywords": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": (
-                    "Terms to return instead of reading them from the contract. Omit in the "
-                    "normal case: the contract carries the index, and both parent and child "
-                    "read the same one."
-                ),
+            "verb": {"type": "string", "description": "One of: new, validate, digest, slice, fetch."},
+            "kind": {
+                "type": "string",
+                "description": "contract (default) | shaping — what new renders and validate checks.",
             },
-            "worktree": _WORKTREE,
-        },
-    },
-}
-
-RIEL_CONTRACT = {
-    "name": "riel_contract",
-    "description": (
-        "Riel plan artifacts — instantiate, validate, digest or slice a contract or a "
-        "delegated packet. `verb='new'` renders the shipped template for `template` (feature, "
-        "bugfix, refactor, research, writing, packet, shaping) with `params` as [\"key=value\"] "
-        "placeholders and RETURNS the text — write it to .riel/contract.md yourself. "
-        "`verb='validate'` runs the structural rules (closed verb vocabulary, funnel, ids, "
-        "claim anchors) over `file` and exits 1 on an ISSUE. `verb='digest'` expands the "
-        "graph of `file` into explicit text (the agent reads the digest, not the diagram). "
-        "`verb='slice'` extracts one phase of `file` as a child packet — pass `phase`."
-    ),
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "verb": {"type": "string", "description": "One of: new, validate, digest, slice."},
             "template": {"type": "string", "description": "For verb='new': the template name."},
             "params": {
                 "type": "array",
                 "items": {"type": "string"},
                 "description": 'For verb=new: placeholder values as ["key=value", …].',
             },
-            "file": {"type": "string", "description": "For validate/digest/slice: the contract or packet path."},
+            "file": {"type": "string", "description": "For validate/digest/slice: the contract, shaping or packet path."},
             "phase": {"type": "string", "description": "For verb='slice': the phase id (e.g. F2)."},
-            "worktree": _WORKTREE,
-        },
-        "required": ["verb"],
-    },
-}
-
-RIEL_SHAPING = {
-    "name": "riel_shaping",
-    "description": (
-        "Riel shaping — the research that precedes the contract: instantiate the skeleton "
-        "(`verb='new'`, with `params`) and check it against Spec 7 (`verb='validate'`, with "
-        "`file`, default .riel/shaping.md). A shaped task writes findings with their sources "
-        "and a confidence, the alternatives that lost, and a verdict that opens the contract; "
-        "validate exits 1 on an ISSUE and warns on a finding without a source."
-    ),
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "verb": {"type": "string", "description": "One of: new, validate."},
-            "params": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": 'For verb=new: placeholder values as ["key=value", …].',
-            },
-            "file": {"type": "string", "description": "For verb=validate: the shaping path."},
             "force": {
                 "type": "boolean",
-                "description": "For verb=new: overwrite an existing .riel/shaping.md (a shaping is research).",
+                "description": "For verb=new kind=shaping: overwrite an existing .riel/shaping.md (a shaping is research).",
             },
+            "url": {"type": "string", "description": "For verb=fetch: the export URL (single-use, short-lived token)."},
+            "out": {"type": "string", "description": "For verb=fetch: destination path (default .riel/contract.md)."},
+            "sha256": {"type": "string", "description": "For verb=fetch: expected sha256 of the body, if the server gave one."},
+            "headers": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": 'For verb=fetch: extra headers as ["Name: value", …].',
+            },
+            "allow_http": {"type": "boolean", "description": "For verb=fetch: allow plain http (localhost or a trusted VPN)."},
             "worktree": _WORKTREE,
         },
         "required": ["verb"],
@@ -217,33 +179,6 @@ RIEL_CLEAN = {
             "scope": {"type": "string", "description": "One of: ledger, all, purge (default ledger)."},
             "worktree": _WORKTREE,
         },
-    },
-}
-
-RIEL_FETCH = {
-    "name": "riel_fetch",
-    "description": (
-        "Riel remote contract — materialize a contract that lives on a server into the "
-        "worktree (default .riel/contract.md), without routing the body through the model's "
-        "context. HTTPS only (plain http needs allow_http on a trusted transport), the body is "
-        "bounded, the write is atomic, and the URL is never printed — a short-lived token in "
-        "the query string must not leak. Pass sha256 to pin integrity end to end."
-    ),
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "url": {"type": "string", "description": "The export URL (single-use, short-lived token)."},
-            "out": {"type": "string", "description": "Destination path (default .riel/contract.md)."},
-            "sha256": {"type": "string", "description": "Expected sha256 of the body, if the server gave one."},
-            "headers": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": 'Extra headers as ["Name: value", …], when the export needs them.',
-            },
-            "allow_http": {"type": "boolean", "description": "Allow plain http (localhost or a trusted VPN)."},
-            "worktree": _WORKTREE,
-        },
-        "required": ["url"],
     },
 }
 
@@ -284,7 +219,7 @@ RIEL_GUIDE = {
         "a topic and a section for just that slice. Read the guide that matches the work "
         "in front of you: 'contract' before authoring a plan, 'ledger' before running a "
         "loop task, 'shaping' before researching the evidence, 'delegate' before delegating, "
-        "'protocol' when opening a conversation, 'tools' for the tool surface."
+        "'tools' for the tool surface."
     ),
     "parameters": {
         "type": "object",
@@ -292,7 +227,7 @@ RIEL_GUIDE = {
             "topic": {
                 "type": "string",
                 "description": (
-                    "protocol | ledger | contract | shaping | delegate | tools. "
+                    "contract | ledger | shaping | delegate | tools. "
                     "Omit for the index."
                 ),
             },
@@ -315,5 +250,4 @@ RIEL_GUIDE = {
     },
 }
 
-SCHEMAS = (RIEL_NOTE, RIEL_SEAM, RIEL_TODO, RIEL_CONTEXT, RIEL_CONTRACT,
-           RIEL_SHAPING, RIEL_CLEAN, RIEL_FETCH, RIEL_CHECK, RIEL_GUIDE)
+SCHEMAS = (RIEL_NOTE, RIEL_SEAM, RIEL_TODO, RIEL_PLAN, RIEL_CHECK, RIEL_CLEAN, RIEL_GUIDE)

@@ -55,7 +55,7 @@ that drifts into it just duplicates what the contract must state.
 
 ## Validation
 
-`riel_shaping(verb="validate", file=PATH)` — default `.riel/shaping.md`.
+`riel_plan(verb="validate", kind="shaping", file=PATH)` — default `.riel/shaping.md`.
 
 Errors (exit 1): a missing section, an empty `## Question`, a `## Findings`
 section with no `F#` line.
@@ -80,7 +80,7 @@ instead of after it has been "verified".
 
 ## The handoff
 
-`riel_shaping(verb="new")` instantiates `templates/shaping.md`. The
+`riel_plan(verb="new", kind="shaping")` instantiates `templates/shaping.md`. The
 handoff into the contract is authored, never generated: the Verdict seeds
 `## Objective`, the `### Why` and `## Pre-registered claims`, and each claim
 keeps its provenance anchor.

@@ -11,7 +11,7 @@
 {{why}}
 <!-- El racional: por qué este objetivo y no otro — qué lo dispara, qué
      alternativa se descartó. Una o dos frases. Viaja al hijo en cada slice
-     (riel_contract(verb="slice") lo hereda); sin él, el delegado sabe qué hacer
+     (riel_plan(verb="slice") lo hereda); sin él, el delegado sabe qué hacer
      pero no por qué. Ante un conflicto con la ejecución, el hijo escala
      (ASK[goal-changing]) en vez de reinterpretar. -->
 
@@ -46,8 +46,8 @@
 <!-- What will be TRUE when done, declared BEFORE executing. Once created,
      never edited: a failed claim is refuted, never reinterpreted.
      A claim may end with its ANCHOR: the region of this contract that
-     supports it, re-read at every seam with `riel_seam(anchors=true)` (distinct from
-     the "anchored opening" of the protocol guide). Three forms only:
+     supports it, re-read at every seam with `riel_seam(anchors=true)`.
+     Three forms only:
        '— anchor: §Constraints#2'  the n-th bullet of that section
        '— anchor: G2'              a node of the execution graph
        '— anchor: shaping:F1'      a finding of .riel/shaping.md
