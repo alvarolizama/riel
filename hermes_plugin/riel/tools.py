@@ -1,17 +1,18 @@
 """Tool handlers — machinery for the Riel plugin.
 
-Every task handler runs the **bundled engine** in a fresh subprocess whose cwd
-is the session's worktree. That script is the engine, never an interface: the
-agent sees tools, and no tool accepts argv — every parameter is typed. The
-engine stays the sole writer of `.riel/ledger.md`: this module adds no ledger
-semantics, no format, no state of its own.
+Every task handler runs the **bundled engine** in-process (`run_verb` binds
+every path to the worktree by parameter — no chdir, so concurrent sessions in
+one gateway process stay isolated) with the same subprocess call as fallback
+when the engine cannot load. That script is the engine, never an interface:
+the agent sees tools, and no tool accepts argv — every parameter is typed.
+The engine stays the sole writer of `.riel/ledger.md`: this module adds no
+ledger semantics, no format, no state of its own.
 
-Why a subprocess instead of importing the engine in-process: the engine resolves
-`.riel/` relative to the process cwd, and a gateway serves several sessions from
-one process — an `os.chdir` would be global state shared by every session. The
-subprocess gives each call its own cwd AND its own `--worktree`, so concurrent
-sessions cannot write into each other's ledger. The cost is ~40 ms per call; the
-isolation is worth more than 40 ms.
+Isolation without a subprocess: the engine resolves `.riel/` from the explicit
+worktree argument, never from the process cwd — an `os.chdir` would be global
+state shared by every session in a gateway, while a worktree parameter is
+per-call. The fast path costs ~1 ms per call instead of ~40 ms; the fallback
+keeps the same `--worktree` subprocess shape.
 
 Three rules this module follows by construction (see `_load.py`):
 

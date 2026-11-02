@@ -1,5 +1,5 @@
 name: riel
-version: 0.9.0
+version: 1.0.0
 description: "Riel — the whole package: the prose (read on demand through `riel_guide`, sectioned by default), the seven typed tools that write the ledger, the plan and its checks, the pre_verify gate and the desktop chip. No command line and no skills: the tools are the surface."
 author: Álvaro Lizama
 license: MIT

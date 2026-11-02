@@ -9,7 +9,7 @@
 ### Steering layer for harness/LLM
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.9.0-8B5CF6.svg)](./hermes_plugin/riel/plugin.yaml)
+[![Version](https://img.shields.io/badge/version-1.0.0-8B5CF6.svg)](./hermes_plugin/riel/plugin.yaml)
 [![Python](https://img.shields.io/badge/Python-3-3776AB?logo=python&logoColor=white)](https://www.python.org)
 [![Hermes](https://img.shields.io/badge/Hermes-plugin-5B8DEF)](https://www.nousresearch.com)
 
@@ -176,7 +176,7 @@ flowchart LR
   MODE -->|"delegating\nto subagents"| DELEG["delegate\npacket + ledger + JSON\noutput_schema"]
 ```
 
-The solo path (fast/full/loop) keeps markdown + mermaid + gates + ledger.
+The solo path (fast/full/loop) keeps markdown + execution graph (mermaid for rich flows, a plain F#/W# phase list otherwise) + gates + ledger.
 Delegation adds JSON contracts and `output_schema` — only where a second
 agent's report needs to be parsed, not read.
 
@@ -240,9 +240,9 @@ protocol is enforced by the runtime:
   `riel_plan` (the contract, the shaping and the remote fetch, in typed verbs),
   `riel_clean`, `riel_check`. Each call resolves
   the session's worktree (session cwd, never the Hermes process cwd) and runs
-  the bundled engine in a subprocess — concurrent sessions never touch each
+  the bundled engine in-process against it — concurrent sessions never touch each
   other's ledger. `riel_seam(anchors=true)` folds the anchor re-read into the
-  seam; `riel_plan` and `riel_plan` take a typed `verb`, never argv.
+  seam; `riel_plan` takes a typed `verb` (+ `kind`), never argv.
 - **The prose ships inside the package, read on demand and BY SECTION**: five
   guides served by `riel_guide` — the index with no argument, a guide's section
   outline by topic (name, first line and size of each `## heading`), one section
@@ -349,6 +349,7 @@ the parser-level mmdc check. Nothing in the runtime path requires mmdc.
 ```
 riel/
 ├── README.md          ← this file
+├── CHANGELOG.md       ← notable changes per version
 ├── Makefile           ← test · validate · digest · lint (no build, no install)
 ├── LICENSE
 ├── assets/            ← header image
@@ -370,8 +371,9 @@ riel/
 │   ├── spec-shaping-format.md   ← .riel/shaping.md format (the evidence before the plan)
 │   └── spec-todo-hermes.md      ← session-todo mirror (the plan) + ledger mirror (state)
 └── scripts/           ← repo tooling
-    └── probe-session-cwd.py    ← the LIVE probe: real discovery, registry
-                                dispatch, session cwd, the gate (needs Hermes)
+    ├── probe-session-cwd.py   ← the LIVE probe: real discovery, registry
+    │                            dispatch, session cwd, the gate (needs Hermes)
+    └── bench-engine.py        ← engine latency: in-process vs subprocess
 └── tests/             ← stdlib unittest suite (engine, guide, plugin, chip)
 ```
 
@@ -381,7 +383,7 @@ riel/
 make test     # or: python3 -m unittest discover -s tests -v
 ```
 
-Stdlib-only, subprocess-driven. 312 tests cover `riel_note` (every declared
+Stdlib-only, in-process-driven. 312 tests cover `riel_note` (every declared
 parameter accepted by the engine — the schema and the parser cannot drift),
 `riel_seam` (all three modes, with anchors), `riel_todo`, `riel_plan`
 (new/validate/digest/slice/fetch, con kind=shaping para la investigación),
