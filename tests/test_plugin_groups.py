@@ -3,7 +3,8 @@
 Stdlib-only and Hermes-free: `hermes_cli.config` (the reader) and
 `hermes_cli.plugins_state` (the writer) are faked, so these tests drive the
 real `settings.py`, the real handler guard, the real `/riel` command and the
-gate's live read.
+gate's live read. The fakes hand over FROZEN mappings
+(`types.MappingProxyType`) — a read path that mutates its input fails here.
 """
 
 import json
@@ -13,25 +14,39 @@ import sys
 import tempfile
 import types
 import unittest
+from pathlib import Path
+from types import MappingProxyType
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.dirname(HERE)
-PLUGIN = os.path.join(REPO, "hermes_plugin", "riel")
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parent
+PLUGIN = REPO / "hermes_plugin" / "riel"
 
-if REPO not in sys.path:
-    sys.path.insert(0, REPO)
+sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(REPO))
 
+import _stub_engine as stub  # noqa: E402
 from hermes_plugin.riel import commands, hooks, settings, tools  # noqa: E402
+
+stub.install(tools)
 
 WRITES = []
 
 
 def fake_hermes(values=None, writer=True):
-    """Install fake `hermes_cli.config` / `hermes_cli.plugins_state` over *values*."""
+    """Install fake `hermes_cli.config` / `hermes_cli.plugins_state` over *values*.
+
+    The config surface the plugin reads comes back FROZEN — exactly what a
+    real config loader hands over after its own validation — so any mutation
+    the read path attempts explodes instead of sliding through.
+    """
     live = dict(values or {})
     module = types.ModuleType("hermes_cli.config")
     setattr(module, "load_config_readonly",
-            lambda: {"plugins": {"entries": {"riel": {"settings": dict(live)}}}})
+            lambda: MappingProxyType(
+                {"plugins": MappingProxyType(
+                    {"entries": MappingProxyType(
+                        {"riel": MappingProxyType(
+                            {"settings": MappingProxyType(live)})})})}))
     package = types.ModuleType("hermes_cli")
     setattr(package, "config", module)
     sys.modules["hermes_cli"] = package
@@ -81,11 +96,35 @@ class SettingsTest(unittest.TestCase):
         self.live["harness_note"] = ["nope"]
         self.assertEqual(settings.read_note(), "")
 
+    def test_attempts_is_read_as_an_integer(self):
+        self.assertEqual(settings.read("gate_attempts", 1), 1)
+        self.live["gate_attempts"] = 3
+        self.assertEqual(settings.read("gate_attempts", 1), 3)
+        self.live["gate_attempts"] = "3"
+        self.assertEqual(hooks.gate_attempts(), 3, "a digit string is honoured")
+        self.live["gate_attempts"] = "many"
+        self.assertEqual(hooks.gate_attempts(), 1, "junk falls back to 1")
+
     def test_validate_refuses_junk(self):
         for bad in ({}, {"nope": True}, {"tools": "off"}, {"harness_note": 7},
-                    {"harness_note": "x" * (settings.NOTE_MAX_CHARS + 1)}):
+                    {"harness_note": "x" * (settings.NOTE_MAX_CHARS + 1)},
+                    {"gate_attempts": "many"},
+                    {"gate_attempts": True},
+                    {"gate_attempts": -1},
+                    {"gate_attempts": settings.ATTEMPTS_MAX + 1}):
             with self.assertRaises(settings.Rejected, msg=bad):
                 settings.validate(bad)
+
+    def test_validate_accepts_an_integer_attempts_value(self):
+        self.assertEqual(settings.validate({"gate_attempts": 2}), {"gate_attempts": 2})
+        self.assertEqual(settings.validate({"gate_attempts": 0}), {"gate_attempts": 0})
+        self.assertEqual(settings.validate({"gate_attempts": settings.ATTEMPTS_MAX}),
+                         {"gate_attempts": settings.ATTEMPTS_MAX})
+
+    def test_state_carries_the_whole_surface(self):
+        state = settings.state()
+        for key in (*settings.GROUP_KEYS, settings.NOTE_KEY, settings.ATTEMPTS_KEY):
+            self.assertIn(key, state)
 
     def test_apply_writes_through_hermes_and_returns_the_state(self):
         state = settings.apply({"tools": False, "harness_note": "deferred tools"})
@@ -113,15 +152,16 @@ class GuardTest(unittest.TestCase):
             if name.startswith("hermes_cli"):
                 sys.modules.pop(name, None)
 
-    def ledger_path(self):
-        return os.path.join(self.tmp, ".riel", "ledger.md")
+    def run_path(self):
+        return Path(self.tmp) / ".riel" / "run.md"
 
     def test_tools_off_refuses_without_running_the_engine(self):
         self.live["tools"] = False
-        payload = json.loads(tools.HANDLERS["riel_note"]({"goal": "must not run", "worktree": self.tmp}))
+        payload = json.loads(tools.HANDLERS["riel_note"](
+            {"core": "must not run", "worktree": self.tmp}))
         self.assertIn("the 'tools' group is off", payload["error"])
         self.assertEqual(payload["group"], "tools")
-        self.assertFalse(os.path.exists(self.ledger_path()), "the engine ran while the group was off")
+        self.assertFalse(self.run_path().exists(), "the engine ran while the group was off")
 
     def test_every_registered_tool_is_guarded(self):
         self.live["tools"] = False
@@ -129,19 +169,16 @@ class GuardTest(unittest.TestCase):
             payload = json.loads(handler({"worktree": self.tmp}))
             self.assertIn("group is off", payload.get("error", ""), name)
 
-    def test_tools_on_runs_the_real_engine(self):
-        payload = json.loads(tools.HANDLERS["riel_note"]({"goal": "ship it", "worktree": self.tmp}))
+    def test_tools_on_runs_the_real_handler(self):
+        payload = json.loads(tools.HANDLERS["riel_note"](
+            {"core": "fact — x", "worktree": self.tmp}))
         self.assertTrue(payload["passed"], payload)
-        self.assertTrue(os.path.exists(self.ledger_path()))
+        self.assertTrue(self.run_path().exists())
 
     def test_the_gate_reads_its_switch_per_call(self):
         self.assertTrue(hooks.gate_enabled())
         self.live["gate"] = False
         self.assertFalse(hooks.gate_enabled())
-        self.live["gate_attempts"] = "3"
-        self.assertEqual(hooks.gate_attempts(), 3, "a digit string is honoured")
-        self.live["gate_attempts"] = "many"
-        self.assertEqual(hooks.gate_attempts(), 1, "junk falls back to 1")
 
     def test_the_gate_stands_down_when_off(self):
         hooks.SETTINGS["enabled"] = True
@@ -178,6 +215,12 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(self.live["harness_note"], "deferred tools")
         commands.handle("note -")
         self.assertEqual(self.live["harness_note"], "")
+
+    def test_note_over_the_cap_is_refused_not_truncated(self):
+        """The same 400-char promise the POST route makes, `/riel note` keeps."""
+        out = commands.handle("note " + "x" * (settings.NOTE_MAX_CHARS + 1))
+        self.assertIn("note refused", out)
+        self.assertNotIn("harness_note", self.live)
 
     def test_a_refused_write_is_reported_not_hidden(self):
         """No writer (a bare process, a managed install): say it, do not pretend."""

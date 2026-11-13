@@ -1,37 +1,93 @@
-"""Regression tests for engine/run.py.
+"""Regression tests for engine/run.py — riel-run/v1 (riel 2.0, clean break).
 
-Stdlib-only (unittest). Each test runs the CLI in a fresh tempdir via
-subprocess so we exercise exactly what an agent would invoke.
+Stdlib-only (unittest). Each test runs the real CLI in a fresh tempdir via
+subprocess, so exit codes are the ACTUAL process exit codes.
 
 Run:
-    python3 -m unittest discover -s tests -v
+    python3 -m unittest tests.test_engine -v
 """
 import hashlib
+import importlib.util
+import io
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
-PLUGIN = os.path.join(REPO, "hermes_plugin", "riel")
-# The engine lives INSIDE the package: it is the product's own tree, not a copy.
-ENGINE = os.path.join(PLUGIN, "engine", "run.py")
-BRIEFS_TEMPLATES = os.path.join(PLUGIN, "templates")
+ENGINE = os.path.join(REPO, "hermes_plugin", "riel", "engine", "run.py")
+
+LIST_RUN = """# Run: engine v2
+<!-- riel-run/v1 -->
+
+## Objective
+The engine records evidence against riel-run/v1 plans.
+
+## Context
+
+### Why
+The v1 contract/ledger pair made seams expensive.
+
+### Context keywords
+- riel → repo
+
+## Constraints
+- stdlib only.
+
+## Claims
+- P1: the parser reads the list register — anchor: §Graph
+- P2: evidence closes gates — anchor: §Gates
+
+## Graph
+- F1: build parser
+  - READ the spec
+  - RUN make test
+- F2: wire verbs
+  - EDIT tools.py
+  - RUN make test
+
+## Gates
+- G1: parser tests pass — phase: F1
+- G2: verbs wired — phase: F2
+
+## Deliverable
+engine/run.py rewired.
+
+## DO NOT
+- touch tools.py.
+"""
+
+MERMAID_RUN = LIST_RUN.replace(
+    """## Graph
+- F1: build parser
+  - READ the spec
+  - RUN make test
+- F2: wire verbs
+  - EDIT tools.py
+  - RUN make test
+""",
+    """## Graph
+```mermaid
+flowchart TD
+  F1["build parser"] --> S1["READ the spec"]
+  S1 --> D1{"tests ok?"}
+  D1 -->|yes| F2["wire verbs"]
+  D1 -->|no| S2["RUN make test"]
+  S2 --> D1
+```
+""")
 
 
 def run(*argv, cwd=None):
-    """Run the engine and return (exit_code, stdout, stderr)."""
-    proc = subprocess.run(
-        [sys.executable, ENGINE] + list(argv),
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-    )
+    proc = subprocess.run([sys.executable, ENGINE] + list(argv),
+                          cwd=cwd, capture_output=True, text=True, timeout=120)
     return proc.returncode, proc.stdout, proc.stderr
 
 
@@ -39,1825 +95,631 @@ class TempDirTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="riel-engine-test-")
         self.cwd = os.getcwd()
-        os.chdir(self.tmp)
 
     def tearDown(self):
-        os.chdir(self.cwd)
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def ledger_path(self):
-        return os.path.join(self.tmp, ".riel", "ledger.md")
+    def activate(self, text=LIST_RUN, shaping=None):
+        os.makedirs(os.path.join(self.tmp, ".riel"), exist_ok=True)
+        with open(self.run_path(), "w", encoding="utf-8") as fh:
+            fh.write(text)
+        if shaping:
+            with open(self.shaping_path(), "w", encoding="utf-8") as fh:
+                fh.write(shaping)
+        rc, out, err = run("run", "activate", cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        return rc, out, err
 
-    def read_ledger(self):
-        with open(self.ledger_path(), encoding="utf-8") as fh:
+    def run_path(self):
+        return os.path.join(self.tmp, ".riel", "run.md")
+
+    def shaping_path(self):
+        return os.path.join(self.tmp, ".riel", "shaping.md")
+
+    def status(self):
+        rc, out, err = run("run", "status", cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        return json.loads(out)
+
+    def read_run(self):
+        with open(self.run_path(), encoding="utf-8") as fh:
             return fh.read()
 
 
+class FormatTests(TempDirTest):
+    def test_new_renders_stdout_without_state(self):
+        rc, out, err = run("run", "new", "--param", "title=demo", cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        self.assertIn("<!-- riel-run/v1 -->", out)
+        self.assertIn("# Run: demo", out)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, ".riel")))
+
+    def test_legacy_state_is_refused(self):
+        os.makedirs(os.path.join(self.tmp, ".riel"))
+        for legacy in ("contract.md", "ledger.md"):
+            with open(os.path.join(self.tmp, ".riel", legacy), "w") as fh:
+                fh.write("# legacy\n")
+        rc, out, err = run("run", "status", cwd=self.tmp)
+        self.assertEqual(rc, 2)
+        self.assertIn("legacy riel v1 state", err)
+        self.assertIn("no converter", err)
+        rc, _out, err = run("note", "--core", "x — y", cwd=self.tmp)
+        self.assertEqual(rc, 2)
+        self.assertIn("legacy", err)
+        rc, _out, err = run("run", "validate",
+                            os.path.join(self.tmp, ".riel", "contract.md"),
+                            cwd=self.tmp)
+        self.assertEqual(rc, 2)
+        self.assertIn("riel-run/v1", err)
+
+    def test_draft_and_active_validate(self):
+        os.makedirs(os.path.join(self.tmp, ".riel"))
+        with open(self.run_path(), "w", encoding="utf-8") as fh:
+            fh.write(LIST_RUN)
+        rc, out, _err = run("run", "validate", cwd=self.tmp)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("valid draft run", out)
+        st = self.status()
+        self.assertEqual(st["status"], "draft")
+        self.assertIsNone(st["revision"])
+        self.assertEqual(st["current_phase"], "F1")
+        self.assertFalse(st["done"])
+        self.activate()
+        st = self.status()
+        self.assertEqual(st["status"], "active")
+        self.assertEqual(st["revision"], "r1")
+        self.assertTrue(os.path.isdir(os.path.join(self.tmp, ".riel")))
+        body = self.read_run()
+        self.assertIn("plan_sha256", body)
+        self.assertIn("## Evidence", body)
+        rc, out, err = run("run", "activate", cwd=self.tmp)
+        self.assertEqual(rc, 2, out + err)
+        self.assertIn("already active", out + err)
+
+    def test_template_comments_are_not_data(self):
+        text = LIST_RUN.replace(
+            "- P2: evidence closes gates — anchor: §Gates",
+            "<!-- - P2: commented out — anchor: §Gates -->\n"
+            "- P2: evidence closes gates — anchor: §Gates")
+        os.makedirs(os.path.join(self.tmp, ".riel"))
+        with open(self.run_path(), "w", encoding="utf-8") as fh:
+            fh.write(text)
+        rc, out, _err = run("run", "validate", cwd=self.tmp)
+        self.assertEqual(rc, 0, out)
+
+
 class NoteTests(TempDirTest):
-    def test_open_writes_all_sections(self):
-        rc, out, _ = run(
-            "note", "--goal", "ship login", "--phase", "F1",
-            "--source", "todo:login", "--next", "read spec",
-        )
-        self.assertEqual(rc, 0)
-        body = self.read_ledger()
-        for marker in (
-            "## Goal\nship login",
-            "## Source\ntodo:login",
-            "## Phase\nF1",
-            "## Claims",
-            "## Core",
-            "## Verified",
-            "## Open",
-            "## Next\nread spec",
-        ):
-            self.assertIn(marker, body, "missing: %r" % marker)
-
-    def test_versions_of_sections_separated_by_blank_lines(self):
-        run("note", "--goal", "g", "--source", "s", "--phase", "F1",
-            "--next", "n")
-        body = self.read_ledger()
-        # every section header is followed or preceded by a blank line
-        # (i.e., no two headings are adjacent with no breathing room)
-        self.assertNotIn("\n## Source\ntodo:login\n## Phase\n", body)
-        self.assertNotIn("\n## Phase\nF1\n## Claims\n", body)
-
-    def test_claims_number_sequentially(self):
-        run("note", "--goal", "g", "--next", "n")
-        run("note", "--claim", "first", "--verify-with", "cmd")
-        run("note", "--claim", "second", "--verify-with", "cmd")
-        body = self.read_ledger()
-        self.assertIn("- P1: first", body)
-        self.assertIn("- P2: second", body)
-
-    def test_checks_number_sequentially_with_confidence(self):
-        run("note", "--goal", "g", "--next", "n")
-        run("note", "--check", "compile", "--by", "mix compile",
-            "--covering", "lib")
-        run("note", "--check", "test", "--by", "mix test",
-            "--covering", "unit", "--confidence", "15")
-        verified = self.read_ledger()
-        self.assertIn("✓01 compile", verified)
-        self.assertIn("✓02 test", verified)
-        self.assertIn("confidence 15/20", verified)
-
-    def test_core_max_two_without_slot(self):
-        run("note", "--goal", "g", "--next", "n")
-        run("note", "--core", "A — one")
-        run("note", "--core", "B — two")
-        rc, _, err = run("note", "--core", "C — three")
-        self.assertEqual(rc, 2)
-        self.assertIn("Core is full", err)
-
-    def test_core_slot_replaces(self):
-        run("note", "--goal", "g", "--next", "n")
-        run("note", "--core", "A — one")
-        run("note", "--core", "B — two")
-        rc, _, _ = run("note", "--core", "B — replaced", "--core-slot", "1")
-        self.assertEqual(rc, 0)
-        body = self.read_ledger()
-        self.assertIn("B — replaced", body)
-        self.assertNotIn("B — two", body)
-
-    def test_core_requires_dash_separator(self):
-        run("note", "--goal", "g", "--next", "n")
-        rc, _, err = run("note", "--core", "noseparator")
-        self.assertEqual(rc, 2)
-        self.assertIn("name", err)
-
-    def test_check_requires_by(self):
-        run("note", "--goal", "g", "--next", "n")
-        rc, _, err = run("note", "--check", "orphan")
-        self.assertEqual(rc, 2)
-        self.assertIn("--by", err)
-
-    def test_open_requires_settled_by(self):
-        run("note", "--goal", "g", "--next", "n")
-        rc, _, err = run("note", "--open", "orphan question")
-        self.assertEqual(rc, 2)
-        self.assertIn("--settled-by", err)
-
-    def test_close_removes_question(self):
-        run("note", "--goal", "g", "--next", "n")
-        run("note", "--open", "q1", "--settled-by", "t")
-        run("note", "--open", "q2", "--settled-by", "t")
-        rc, _, _ = run("note", "--close", "1", "--check", "settled",
-                       "--by", "t")
-        self.assertEqual(rc, 0)
-        body = self.read_ledger()
-        self.assertNotIn("q1", body)
-        self.assertIn("q2", body)
-
-    def test_close_missing_errors(self):
-        run("note", "--goal", "g", "--next", "n")
-        rc, _, err = run("note", "--close", "99")
-        self.assertEqual(rc, 2)
-        self.assertIn("no such open question", err)
-
-    def test_close_requires_check(self):
-        # a question is closed against a checkpoint, never dropped silently
-        run("note", "--goal", "g", "--next", "n")
-        run("note", "--open", "q1", "--settled-by", "t")
-        rc, _, err = run("note", "--close", "1")
-        self.assertEqual(rc, 2)
-        self.assertIn("requires --check", err)
-        # nothing was written — the open question is untouched
-        self.assertIn("q1", self.read_ledger())
-
-    def test_close_with_check_records_checkpoint(self):
-        run("note", "--goal", "g", "--next", "n")
-        run("note", "--open", "q1", "--settled-by", "t")
-        rc, out, _ = run("note", "--close", "1", "--check", "settled",
-                         "--by", "t")
-        self.assertEqual(rc, 0, out)
-        body = self.read_ledger()
-        self.assertNotIn("q1", body)
-        self.assertIn("✓01 settled", body)
-
-
-class TodoTests(TempDirTest):
-    def test_todo_without_ledger_errors(self):
-        rc, _, err = run("todo")
-        self.assertEqual(rc, 1)
-        self.assertIn("no ledger", err)
-
-    def test_status_is_the_full_ledger_mirror(self):
-        """`riel_state` carries the ledger's own facts (chip + gate)."""
-        run("note", "--goal", "ship login", "--phase", "F1",
-            "--next", "wire controller")
-        run("note", "--claim", "login works", "--verify-with", "mix test")
-        run("note", "--open", "link encodes?", "--settled-by", "property test")
-        run("note", "--check", "compiles", "--by", "mix compile",
-            "--covering", "lib")
-        rc, out, _ = run("status")
-        self.assertEqual(rc, 0, out)
-        items = json.loads(out)
-        by_id = {i["id"]: i for i in items}
-        self.assertEqual(by_id["goal"]["status"], "pending")
-        self.assertIn("ship login", by_id["goal"]["content"])
-        self.assertEqual(by_id["phase"]["parent"], "goal")
-        self.assertIn("F1", by_id["phase"]["content"])
-        self.assertEqual(by_id["next"]["status"], "in_progress")
-        self.assertEqual(by_id["open-1"]["status"], "pending")
-        self.assertTrue(by_id["open-1"]["content"].startswith("OPEN 01"))
-        self.assertEqual(by_id["claim-1"]["status"], "pending")
-        self.assertTrue(by_id["claim-1"]["content"].startswith("CLAIM:"))
-        self.assertEqual(by_id["done-1"]["status"], "completed")
-        self.assertTrue(by_id["done-1"]["content"].startswith("DONE 01"))
-        self.assertEqual(
-            sum(1 for i in items if i["status"] == "in_progress"), 1)
-
-    def test_status_without_ledger_errors(self):
-        rc, _, err = run("status")
-        self.assertEqual(rc, 1)
-        self.assertIn("no ledger", err)
-
-    def test_todo_next_empty_warns(self):
-        run("note", "--goal", "g")
-        rc, out, err = run("todo")
-        self.assertEqual(rc, 0)
-        self.assertIn("no in_progress", err)
-        items = json.loads(out)
-        self.assertEqual([i["id"] for i in items], ["goal"])
-
-    CONTRACT_V2 = """# Task: probe
-
-## Objective
-We need probar el todo v2
-
-## Context
-c
-
-## Pre-registered claims
-- P1: la cosa — verify with: make test
-
-## Execution graph
-
-```mermaid
-flowchart TD
-  F1["READ exports"] --> S1["EDIT plugin.js"]
-  S1 --> S2["RUN make test"]
-  S2 --> G1{"green?"}
-  G1 -->|no| S1
-  G1 -->|yes| F2["EDIT labels"]
-  F2 --> S3["RUN lint"]
-  S3 --> END([Done])
-```
-
-## Verification gates
-**Command:** `make test`
-
-## Deliverable
-d
-
-## DO NOT
-- x
-"""
-
-    def _write_contract(self):
-        d = os.path.join(self.tmp, ".riel")
-        os.makedirs(d, exist_ok=True)
-        with open(os.path.join(d, "contract.md"), "w", encoding="utf-8") as fh:
-            fh.write(self.CONTRACT_V2)
-
-    def test_todo_with_contract_is_the_plan_only(self):
-        """Spec 6 v3: the todo is the plan — no ledger row leaks into it."""
-        self._write_contract()
-        run("note", "--goal", "probar", "--next", "EDIT plugin.js")
-        run("note", "--claim", "P1: la cosa", "--verify-with", "make test")
-        run("note", "--open", "sobrevive?", "--settled-by", "probe")
-        run("note", "--check", "algo", "--by", "make test")
-        rc, out, _ = run("todo")
-        self.assertEqual(rc, 0, out)
-        items = json.loads(out)
-        by_id = {i["id"]: i for i in items}
-        # the root is the CONTRACT's goal, not the ledger's
-        self.assertEqual(by_id["goal"]["content"], "GOAL: We need probar el todo v2")
-        # phases as rows, in authored order
-        self.assertIn("phase-F1", by_id)
-        self.assertIn("phase-F2", by_id)
-        self.assertEqual(by_id["phase-F1"]["parent"], "goal")
-        self.assertIn("READ exports", by_id["phase-F1"]["content"])
-        # steps nested under their phase
-        self.assertEqual(by_id["step-F1-S1"]["parent"], "phase-F1")
-        self.assertEqual(by_id["step-F1-S1"]["content"], "EDIT plugin.js")
-        self.assertIn("step-F1-S2", by_id)                      # RUN make test
-        self.assertEqual(by_id["step-F2-S3"]["parent"], "phase-F2")
-        # gates and terminals are NOT steps
-        self.assertNotIn("step-F1-G1", by_id)
-        self.assertNotIn("step-F2-END", by_id)
-        # no ledger rows: next, claims, opens and ✓ stay out of the plan
-        self.assertFalse([i for i in by_id
-                          if i == "next" or i.startswith(("claim-", "open-", "done-"))])
-        # exactly one in_progress: the step the Next points at
-        self.assertEqual(sum(1 for i in items if i["status"] == "in_progress"), 1)
-        self.assertEqual(by_id["step-F1-S1"]["status"], "in_progress")
-
-    def test_todo_marks_the_current_step_and_closes_the_earlier_ones(self):
-        self._write_contract()
-        run("note", "--goal", "probar", "--next", "RUN make test")
-        rc, out, _ = run("todo")
-        items = json.loads(out)
-        by_id = {i["id"]: i for i in items}
-        self.assertEqual(by_id["step-F1-S1"]["status"], "completed")
-        self.assertEqual(by_id["step-F1-S2"]["status"], "in_progress")
-        self.assertEqual(by_id["phase-F1"]["status"], "pending")
-        self.assertEqual(by_id["step-F2-S3"]["status"], "pending")
-        self.assertEqual(sum(1 for i in items if i["status"] == "in_progress"), 1)
-
-    def test_todo_phase_completed_when_its_gate_is_verified(self):
-        self._write_contract()
-        run("note", "--goal", "probar", "--next", "EDIT labels")
-        run("note", "--check", "F1 gate", "--by", "make test")
-        rc, out, _ = run("todo")
-        items = json.loads(out)
-        by_id = {i["id"]: i for i in items}
-        self.assertEqual(by_id["phase-F1"]["status"], "completed")
-        # its steps completed too (the gate covers the phase)
-        self.assertEqual(by_id["step-F1-S1"]["status"], "completed")
-        self.assertEqual(by_id["step-F1-S2"]["status"], "completed")
-        # the active phase (owns the Next) stays pending; its step is in_progress
-        self.assertEqual(by_id["phase-F2"]["status"], "pending")
-        self.assertEqual(by_id["step-F2-S3"]["status"], "in_progress")
-
-    def test_todo_goal_carries_in_progress_when_every_phase_is_gated(self):
-        self._write_contract()
-        run("note", "--goal", "probar", "--next", "cerrar")
-        run("note", "--check", "F1 gate", "--by", "make test")
-        run("note", "--check", "F2 gate", "--by", "make test")
-        rc, out, _ = run("todo")
-        items = json.loads(out)
-        by_id = {i["id"]: i for i in items}
-        self.assertEqual(by_id["phase-F1"]["status"], "completed")
-        self.assertEqual(by_id["phase-F2"]["status"], "completed")
-        # the plan is fully gated: the done-check (the goal) is in_progress
-        self.assertEqual(by_id["goal"]["status"], "in_progress")
-        self.assertEqual(sum(1 for i in items if i["status"] == "in_progress"), 1)
-
-    def test_todo_without_contract_is_goal_and_the_ledger_phase(self):
-        run("note", "--goal", "g", "--phase", "F1 algo", "--next", "n")
-        rc, out, _ = run("todo")
-        items = json.loads(out)
-        self.assertEqual([i["id"] for i in items], ["goal", "phase"])
-        by_id = {i["id"]: i for i in items}
-        self.assertIn("F1 algo", by_id["phase"]["content"])
-        self.assertEqual(by_id["phase"]["status"], "in_progress")
-
-
-class SeamResumeShipTests(TempDirTest):
-    def test_seam_without_ledger_errors(self):
-        rc, _, err = run("seam")
-        self.assertEqual(rc, 1)
-        self.assertIn("no ledger", err)
-
-    def test_seam_warns_no_checkpoints(self):
-        run("note", "--goal", "g", "--next", "n")
-        rc, out, _ = run("seam")
-        self.assertEqual(rc, 0)
-        self.assertIn("No ✓NN yet", out)
-
-    def test_resume_is_the_seam_in_resume_mode(self):
-        run("note", "--goal", "g", "--next", "n")
-        rc, out, _ = run("seam", "--mode", "resume")
-        self.assertEqual(rc, 0)
-        self.assertIn("[resume] Restore order", out)
-
-    def test_ship_clean(self):
-        path = os.path.join(self.tmp, "ok.md")
-        with open(path, "w", encoding="utf-8") as fh:
-            fh.write("hello\n")
-        rc, out, _ = run("ship", path)
-        self.assertEqual(rc, 0)
-        self.assertIn("clean", out)
-
-    def test_ship_detects_dense_marker(self):
-        path = os.path.join(self.tmp, "bad.md")
-        with open(path, "w", encoding="utf-8") as fh:
-            fh.write("verified ✓01 the fix\n")
-        rc, out, _ = run("ship", path)
-        self.assertEqual(rc, 1)
-        self.assertIn("dense markers", out)
-
-    def test_ship_missing_file(self):
-        rc, _, err = run("ship", os.path.join(self.tmp, "nope.md"))
-        self.assertEqual(rc, 1)
-        self.assertIn("cannot read", err)
-
-
-class CLITests(TempDirTest):
-    def test_version(self):
-        rc, out, _ = run("--version")
-        self.assertEqual(rc, 0)
-        with open(ENGINE, encoding="utf-8") as fh:
-            declared = re.search(r'VERSION = "([^"]+)"', fh.read()).group(1)
-        self.assertIn(declared, out)
-
-
-class GraphAndValidateTests(TempDirTest):
-    VALID = """# Task: x
-
-## Objective
-We need x
-
-## Context
-c
-
-## Constraints
-- r
-
-## Pre-registered claims
-- P1: a — verify with: true
-
-## Execution graph
-
-```mermaid
-flowchart TD
-  S1["RUN ls"] --> G1{"ok?"}
-  G1 -->|yes| END([Done])
-  G1 -->|no| S1
-```
-
-## Verification gates
-g
-
-## Deliverable
-d
-
-## DO NOT
-- x
-"""
-
-    def _write(self, name, content):
-        path = os.path.join(self.tmp, name)
-        with open(path, "w", encoding="utf-8") as fh:
-            fh.write(content)
-        return path
-
-    def test_rejects_non_verb_execution_node(self):
-        bad = self.VALID.replace('S1["RUN ls"]', 'S1["Fetch it"]')
-        rc, out, _ = run("contract", "validate", self._write("b.md", bad))
-        self.assertEqual(rc, 1)
-        self.assertIn("closed verb", out)
-
-    def test_rejects_br_tag(self):
-        bad = self.VALID.replace('{"ok?"}', '{"ok?<br/>x"}')
-        rc, out, _ = run("contract", "validate", self._write("b.md", bad))
-        self.assertEqual(rc, 1)
-        self.assertIn("<br/>", out)
-
-    def test_rejects_style_in_execution_graph(self):
-        bad = self.VALID.replace('  G1 -->|no| S1\n',
-                                 '  G1 -->|no| S1\n  style S1 fill:#f00\n')
-        rc, out, _ = run("contract", "validate", self._write("b.md", bad))
-        self.assertEqual(rc, 1)
-        self.assertIn("style", out)
-
-    def test_rejects_tool_name_in_label(self):
-        bad = self.VALID.replace('S1["RUN ls"]', 'S1["RUN read_file x"]')
-        rc, out, _ = run("contract", "validate", self._write("b.md", bad))
-        self.assertEqual(rc, 1)
-        self.assertIn("tool name", out)
-
-    def test_warns_loop_without_counter(self):
-        rc, out, err = run("contract", "validate",
-                           self._write("ok.md", self.VALID))
-        self.assertEqual(rc, 0, out)
-        self.assertIn("WARN", err)
-
-    def test_digest_lists_structure(self):
-        path = self._write("ok.md", self.VALID)
-        rc, out, _ = run("contract", "digest", path)
-        self.assertEqual(rc, 0, out)
-        for marker in ("Elements", "Edges", "Branches", "Entry", "Terminals",
-                       "S1", "G1", "END"):
-            self.assertIn(marker, out)
-
-    def test_digest_writes_output_file(self):
-        path = self._write("ok.md", self.VALID)
-        outp = os.path.join(self.tmp, "digest.txt")
-        rc, _, _ = run("contract", "digest", path, "-o", outp)
-        self.assertEqual(rc, 0)
-        with open(outp, encoding="utf-8") as fh:
-            self.assertIn("Elements", fh.read())
-
-    def test_digest_without_graph_errors(self):
-        path = self._write("plain.md", "# Task: x\n\nno graph here\n")
-        rc, _, err = run("contract", "digest", path)
-        self.assertEqual(rc, 1)
-        self.assertIn("no execution graph found", err)
-
-    def test_digest_top_level_any_file(self):
-        path = self._write("ok.md", self.VALID)
-        rc, out, _ = run("digest", path)
-        self.assertEqual(rc, 0, out)
-        self.assertIn("Elements", out)
-
-    def test_rejects_ask_without_trigger(self):
-        bad = self.VALID.replace('S1["RUN ls"]',
-                                 'S1["ASK should we proceed?"]')
-        rc, out, _ = run("contract", "validate", self._write("b.md", bad))
-        self.assertEqual(rc, 1)
-        self.assertIn("ASK", out)
-
-    def test_accepts_ask_with_trigger(self):
-        ok = self.VALID.replace('S1["RUN ls"]',
-                                'S1["ASK[irreversible] proceed?"]')
-        rc, out, err = run("contract", "validate", self._write("ok.md", ok))
-        # the ASK node is valid; only the (unrelated) no-RUN-gate issue may fire
-        self.assertNotIn("must start with its trigger", out + err)
-
-
-class ContractTests(TempDirTest):
-    MINIMAL_VALID = """# Task: x
-
-## Objective
-We need x
-
-## Context
-c
-
-## Constraints
-- r
-
-## Pre-registered claims
-- P1: a — verify with: true
-
-## Execution graph
-
-```mermaid
-flowchart TD
-  S1["RUN ls"] --> G1{"ok?"}
-  G1 -->|yes| END([Done])
-  G1 -->|no| S1
-```
-
-## Verification gates
-g
-
-## Deliverable
-d
-
-## DO NOT
-- x
-"""
-
-    def _write(self, name, content):
-        path = os.path.join(self.tmp, name)
-        with open(path, "w", encoding="utf-8") as fh:
-            fh.write(content)
-        return path
-
-    def test_contract_new_lists_all_builtin(self):
-        rc, out, _ = run("contract", "new", "--list")
-        self.assertEqual(rc, 0)
-        for name in ("feature", "bugfix", "refactor", "research",
-                     "writing", "packet"):
-            self.assertIn(name, out)
-
-    def test_contract_new_substitutes_params_leaves_rest(self):
-        rc, out, err = run(
-            "contract", "new", "--type", "feature",
-            "--param", "name=login fix",
-            "--param", "one_sentence=fix login",
-        )
+    def test_command_really_runs_and_exit_code_is_real(self):
+        self.activate()
+        marker = os.path.join(self.tmp, "ran.txt")
+        rc, _out, err = run(
+            "note", "--gate", "G1", "--claim", "P1",
+            "--command", "python3 -c \"open('ran.txt','w').write('hi')\"",
+            "--covering", "parser", cwd=self.tmp)
         self.assertEqual(rc, 0, err)
-        self.assertIn("# Task: login fix", out)
-        self.assertIn("We need fix login.", out)
-        self.assertIn("{{repo_path}}", out)  # left for manual fill
-
-    def test_contract_new_strict_fails_on_missing_param(self):
-        rc, _, err = run(
-            "contract", "new", "--type", "feature",
-            "--strict", "--param", "name=x",
-        )
-        self.assertEqual(rc, 2)
-        self.assertIn("missing --param", err)
-
-    def test_contract_new_strict_message_not_quoted(self):
-        # the message is a plain sentence, not repr()'d
-        rc, _, err = run(
-            "contract", "new", "--type", "feature",
-            "--strict", "--param", "name=x",
-        )
-        self.assertEqual(rc, 2)
-        self.assertNotIn("'missing --param", err)
-
-    def test_contract_new_output_writes_file(self):
-        out_path = os.path.join(self.tmp, "packet.md")
-        rc, _, err = run(
-            "contract", "new", "--type", "feature",
-            "--param", "name=reset flow",
-            "--param", "one_sentence=add reset",
-            "-o", out_path,
-        )
+        self.assertTrue(os.path.isfile(marker))  # the shell command RAN here
+        body = self.read_run()
+        self.assertIn("exit_code:0", body)
+        self.assertIn("gate:G1", body)
+        self.assertIn("claims:P1", body)
+        st = self.status()
+        self.assertEqual(st["gates"]["G1"], "passed")
+        self.assertEqual(st["claims"]["P1"], "covered")
+        # a failing command records its REAL exit code and does not pass
+        rc, _out, err = run(
+            "note", "--gate", "G2", "--command", "false",
+            "--covering", "verbs", cwd=self.tmp)
         self.assertEqual(rc, 0, err)
-        with open(out_path, encoding="utf-8") as fh:
-            self.assertIn("# Task: reset flow", fh.read())
+        st = self.status()
+        self.assertEqual(st["gates"]["G2"], "pending")
 
-    def test_contract_new_finds_project_template(self):
-        tdir = os.path.join(self.tmp, ".riel", "templates")
-        os.makedirs(tdir, exist_ok=True)
-        with open(os.path.join(tdir, "custom.md"), "w",
+    def test_unrelated_gate_does_not_advance_phase(self):
+        self.activate()
+        rc, _out, err = run(
+            "note", "--gate", "G2", "--command", "true",
+            "--covering", "verbs", cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        st = self.status()
+        self.assertEqual(st["gates"]["G2"], "passed")
+        self.assertEqual(st["current_phase"], "F1")  # G2 is not F1's gate
+        rc, _out, err = run(
+            "note", "--gate", "G1", "--command", "true",
+            "--covering", "parser", cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        # its own gate now passed: F1 completes, and F2 was already complete
+        # — no incomplete phase remains
+        self.assertIsNone(self.status()["current_phase"])
+
+    def test_done_requires_all_claims_and_all_gates(self):
+        self.activate()
+        run("note", "--gate", "G1", "--claim", "P1",
+            "--command", "true", "--covering", "parser", cwd=self.tmp)
+        st = self.status()
+        self.assertFalse(st["done"])  # P2 open, G2 pending
+        run("note", "--gate", "G2", "--claim", "P2",
+            "--command", "true", "--covering", "verbs", cwd=self.tmp)
+        self.assertTrue(self.status()["done"])
+
+    def test_unknown_gate_and_claim_rejected(self):
+        self.activate()
+        rc, _out, err = run("note", "--gate", "G9", "--command", "true",
+                            "--covering", "x", cwd=self.tmp)
+        self.assertEqual(rc, 2)
+        self.assertIn("unknown gate", err)
+        rc, _out, err = run("note", "--gate", "G1", "--claim", "P9",
+                            "--command", "true", "--covering", "x",
+                            cwd=self.tmp)
+        self.assertEqual(rc, 2)
+        self.assertIn("unknown claim", err)
+
+    def test_confidence_bounds_and_low_confidence_vetoes(self):
+        self.activate()
+        rc, _out, err = run("note", "--gate", "G1", "--command", "true",
+                            "--covering", "x", "--confidence", "22",
+                            cwd=self.tmp)
+        self.assertEqual(rc, 2)
+        self.assertIn("1..20", err)
+        rc, _out, err = run("note", "--gate", "G1", "--command", "true",
+                            "--covering", "x", "--confidence", "5",
+                            cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(self.status()["gates"]["G1"], "pending")
+
+    def test_core_slots_are_1_based(self):
+        self.activate()
+        run("note", "--core", "alpha — first fact", cwd=self.tmp)
+        run("note", "--core", "beta — second fact", cwd=self.tmp)
+        rc, _out, err = run("note", "--core", "zeta — replaced",
+                            "--core-slot", "1", cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        body = self.read_run()
+        self.assertIn("- 1. zeta — replaced", body)
+        self.assertIn("- 2. beta — second fact", body)
+        rc, _out, err = run("note", "--core", "omega — x",
+                            "--core-slot", "9", cwd=self.tmp)
+        self.assertEqual(rc, 2)
+        self.assertIn("1..3", err)
+
+    def test_open_ids_are_never_reused(self):
+        self.activate()
+        run("note", "--gate", "G1", "--command", "true",
+            "--covering", "parser", cwd=self.tmp)  # E1
+        run("note", "--open", "does it blend?", "--settled-by", "blend.test",
+            cwd=self.tmp)
+        self.assertIn("Q1", self.read_run())
+        run("note", "--close", "1", "--evidence", "1", cwd=self.tmp)
+        run("note", "--open", "again?", "--settled-by", "t2", cwd=self.tmp)
+        body = self.read_run()
+        self.assertIn("Q1: does it blend?", body)
+        self.assertIn("closed by: E1", body)
+        self.assertIn("Q2: again?", body)  # no reuse of Q1
+        rc, _out, err = run("note", "--close", "2", "--evidence", "99",
+                            cwd=self.tmp)
+        self.assertEqual(rc, 2)
+        self.assertIn("E99 does not exist", err)
+
+    def test_note_cannot_self_supply_exit_code_or_mix_kinds(self):
+        self.activate()
+        rc, _out, _err = run("note", "--gate", "G1", "--command", "true",
+                             "--covering", "x", "--core", "a — b", cwd=self.tmp)
+        self.assertEqual(rc, 2)
+        self.assertIn("one note, one kind", _err)
+
+    def test_command_does_not_hide_a_second_line(self):
+        self.activate()
+        target = "true # a comment must not swallow the next line\nfalse"
+        rc, _out, err = run("note", "--gate", "G1", "--command", target,
+                            "--covering", "multiline preservation", cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(self.status()["gates"]["G1"], "pending")
+        specs = importlib.util.spec_from_file_location("riel_value", ENGINE)
+        if specs is None or specs.loader is None:
+            self.fail("the packaged engine cannot be loaded")
+        engine = importlib.util.module_from_spec(specs)
+        specs.loader.exec_module(engine)
+        stored = engine.load_state(self.tmp)["evidence"][0]["command"]
+        self.assertEqual(stored, target)
+
+    def test_claim_without_gate_does_not_write_state(self):
+        self.activate()
+        before = self.read_run()
+        rc, out, err = run("note", "--claim", "P1", "--command", "true",
+                           "--covering", "no gate", cwd=self.tmp)
+        self.assertEqual(rc, 2)
+        self.assertIn("needs at least one --gate", out + err)
+        self.assertEqual(self.read_run(), before)
+
+    def test_atomic_concurrent_notes_reader_never_sees_partial(self):
+        self.activate()
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("riel_engine", ENGINE)
+        engine = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(engine)
+        errors = []
+        reads = [0]
+
+        def reader():
+            while not done.is_set():
+                try:
+                    engine.load_state(self.tmp, require_active=True)
+                    reads[0] += 1
+                except Exception as exc:  # a partial read would land here
+                    errors.append(repr(exc))
+                time.sleep(0.001)
+
+        done = threading.Event()
+        t = threading.Thread(target=reader)
+        t.start()
+        procs = [subprocess.Popen(
+            [sys.executable, ENGINE, "note", "--gate", "G1",
+             "--command", "true", "--covering", "writer %d" % i],
+            cwd=self.tmp, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            for i in range(3)]
+        codes = [p.wait(timeout=60) for p in procs]
+        done.set()
+        t.join()
+        self.assertEqual(codes, [0, 0, 0])
+        self.assertEqual(errors, [])
+        self.assertGreater(reads[0], 0)
+        body = self.read_run()
+        for evidence_id in ("E1", "E2", "E3"):
+            self.assertIn(evidence_id + " gate:G1", body)
+
+    def test_symlinked_state_is_refused(self):
+        self.activate()
+        # (a) symlink INSIDE the worktree: the component walk refuses it
+        with open(os.path.join(self.tmp, ".riel", "other.md"), "w",
                   encoding="utf-8") as fh:
-            fh.write("# Task: {{name}}\n")
-        rc, out, err = run("contract", "new", "--type", "custom",
-                           "--param", "name=proj")
-        self.assertEqual(rc, 0, err)
-        self.assertIn("# Task: proj", out)
-
-    def test_contract_new_unknown_type_errors(self):
-        rc, _, err = run("contract", "new", "--type", "no-such")
+            fh.write(self.read_run())
+        os.remove(self.run_path())
+        os.symlink(os.path.join(self.tmp, ".riel", "other.md"),
+                   self.run_path())
+        rc, _out, err = run("note", "--core", "a — b", cwd=self.tmp)
         self.assertEqual(rc, 2)
-        self.assertIn("no template", err)
-
-    def test_contract_validate_accepts_minimal_valid(self):
-        path = self._write("ok.md", self.MINIMAL_VALID)
-        rc, out, _ = run("contract", "validate", path)
-        self.assertEqual(rc, 0, out)
-
-    def test_contract_validate_missing_claims(self):
-        bad = self.MINIMAL_VALID.replace(
-            "\n## Pre-registered claims\n- P1: a — verify with: true\n", "\n"
-        )
-        path = self._write("bad.md", bad)
-        rc, out, _ = run("contract", "validate", path)
-        self.assertEqual(rc, 1)
-        self.assertIn("Pre-registered claims", out)
-
-    def test_contract_validate_rejects_non_we_need_objective(self):
-        bad = self.MINIMAL_VALID.replace("We need x", "Make x better")
-        path = self._write("bad.md", bad)
-        rc, out, _ = run("contract", "validate", path)
-        self.assertEqual(rc, 1)
-        self.assertIn("We need", out)
-
-    def test_contract_validate_warns_on_multi_sentence_objective(self):
-        multi = self.MINIMAL_VALID.replace(
-            "We need x",
-            "We need x. It matters because y. And also z.")
-        path = self._write("multi.md", multi)
-        rc, out, err = run("contract", "validate", path)
-        self.assertEqual(rc, 0, out)              # non-fatal: a warn, not a gate
-        self.assertIn("more than one sentence", err)
-        self.assertIn("### Why", err)            # points at the rationale home
-
-    def test_contract_validate_quiet_on_single_wrapped_sentence(self):
-        wrapped = self.MINIMAL_VALID.replace(
-            "We need x",
-            "We need a password-reset flow that emails a signed link and\n"
-            "accepts the new password through that link.")
-        path = self._write("wrapped.md", wrapped)
-        rc, out, err = run("contract", "validate", path)
-        self.assertEqual(rc, 0, out)
-        self.assertNotIn("more than one sentence", err)
-
-    def test_contract_validate_warns_on_multi_paragraph_objective(self):
-        paras = self.MINIMAL_VALID.replace(
-            "We need x",
-            "We need x.\n\nSecond paragraph with more intent.")
-        path = self._write("paras.md", paras)
-        rc, out, err = run("contract", "validate", path)
-        self.assertEqual(rc, 0, out)
-        self.assertIn("more than one sentence", err)
-
-    def test_contract_validate_rejects_out_of_order_sections(self):
-        bad = self.MINIMAL_VALID.replace(
-            "\n## Context\nc\n\n## Constraints\n- r\n",
-            "\n## Constraints\n- r\n\n## Context\nc\n",
-        )
-        path = self._write("bad.md", bad)
-        rc, out, _ = run("contract", "validate", path)
-        self.assertEqual(rc, 1)
-        self.assertIn("out of order", out)
-
-    def test_contract_validate_builtin_example(self):
-        path = os.path.join(BRIEFS_TEMPLATES, "example-password-reset.md")
-        rc, out, _ = run("contract", "validate", path)
-        self.assertEqual(rc, 0, out)
-
-    def test_contract_validate_builtin_skeletons(self):
-        # packet.md is the empty template (Objective = placeholder),
-        # so it is intentionally NOT required to validate.
-        for name in ("feature", "bugfix", "refactor",
-                     "research", "writing"):
-            path = os.path.join(BRIEFS_TEMPLATES, name + ".md")
-            rc, out, _ = run("contract", "validate", path)
-            self.assertEqual(rc, 0, "%s: %s" % (name, out))
-
-
-class MermaidTests(TempDirTest):
-    """`mermaid FILE...` — the parser-level check the repo gate and riel_check use.
-
-    Silence is the contract: no mmdc (or no blocks) is exit 0, never an error.
-    """
-
-    def _write(self, name, content):
-        path = os.path.join(self.tmp, name)
-        with open(path, "w", encoding="utf-8") as fh:
-            fh.write(content)
-        return path
-
-    def test_a_clean_file_passes(self):
-        md = self._write(
-            "doc.md",
-            "# t\n\n```mermaid\nflowchart TD\n  A --> B\n```\n\nprose\n",
-        )
-        rc, out, err = run("mermaid", md)
-        self.assertEqual(rc, 0, err)
-        self.assertIn("PASS:", out)
-
-    def test_a_file_without_blocks_is_skipped_not_failed(self):
-        md = self._write("plain.md", "just prose, no diagrams\n")
-        rc, out, _ = run("mermaid", md)
-        self.assertEqual(rc, 0)
-        self.assertIn("SKIP:", out)
-        self.assertIn("0 failed", out)
-
-    def test_a_broken_block_fails_with_a_line_per_block(self):
-        md = self._write(
-            "broken.md",
-            "# t\n\n```mermaid\nflowchart TD\n  A --> B\n  C -->\n```\n",
-        )
-        rc, out, _ = run("mermaid", md)
-        # Without mmdc installed the check is silent: only assert the failure when
-        # the parser is actually there (the gate runs where it is).
-        if shutil.which(os.environ.get("RIEL_MMDC", "mmdc")):
-            self.assertEqual(rc, 1, out)
-            self.assertIn("FAIL:", out)
-        else:
-            self.assertEqual(rc, 0, out)
-
-    def test_a_missing_file_fails_loudly(self):
-        rc, out, _ = run("mermaid", os.path.join(self.tmp, "nope.md"))
-        self.assertEqual(rc, 1)
-        self.assertIn("MISSING:", out)
-
-    def test_several_files_in_one_call(self):
-        a = self._write("a.md", "# a\n\n```mermaid\nflowchart TD\n  A --> B\n```\n")
-        b = self._write("b.md", "# b\nno diagrams\n")
-        rc, out, err = run("mermaid", a, b)
-        self.assertEqual(rc, 0, err)
-        self.assertIn("b.md", out)
-
-
-class ContractSeedTests(TempDirTest):
-    CONTRACT = """# Task: x
-
-## Objective
-We need the thing to work.
-
-## Context
-c
-
-## Constraints
-- r
-
-## Pre-registered claims
-- P1: a — verify with: true
-- P2: b — verify with: cmd
-
-## Execution graph
-
-```mermaid
-flowchart TD
-  F1["EDIT a.ex — x"] --> F2["RUN test"]
-  F2 --> G1{"green?"}
-  G1 -->|no| F1
-  G1 -->|yes| END([Done])
-```
-
-## Verification gates
-g
-
-## Deliverable
-d
-
-## DO NOT
-- x
-"""
-
-    def _write_contract(self, content=None):
-        d = os.path.join(self.tmp, ".riel")
-        os.makedirs(d, exist_ok=True)
-        with open(os.path.join(d, "contract.md"), "w", encoding="utf-8") as fh:
-            fh.write(content if content is not None else self.CONTRACT)
-
-    def test_seeds_goal_phase_claims_next(self):
-        self._write_contract()
-        rc, _, err = run("note", "--from-contract")
-        self.assertEqual(rc, 0, err)
-        body = self.read_ledger()
-        self.assertIn("## Goal\nWe need the thing to work.", body)
-        self.assertIn("## Phase\nEDIT a.ex — x", body)
-        self.assertIn("- P1: a — verify with: true", body)
-        self.assertIn("- P2: b — verify with: cmd", body)
-        # entry node ignores the back-edge F1 <- G1
-        self.assertIn("## Next\nEDIT a.ex — x", body)
-
-    def test_missing_contract_errors(self):
-        rc, _, err = run("note", "--from-contract")
+        self.assertIn("symlink", err)
+        with open(os.path.join(self.tmp, ".riel", "other.md"),
+                  encoding="utf-8") as fh:
+            self.assertNotIn("a — b", fh.read())  # nothing written through
+        # (b) symlink OUTSIDE the worktree: containment refuses it
+        outside = os.path.join(tempfile.mkdtemp(prefix="riel-outside-"),
+                               "victim.md")
+        shutil.copy2(os.path.join(self.tmp, ".riel", "other.md"), outside)
+        os.remove(self.run_path())
+        os.symlink(outside, self.run_path())
+        rc, _out, err = run("note", "--core", "a — b", cwd=self.tmp)
         self.assertEqual(rc, 2)
-        self.assertIn("no contract found", err)
+        self.assertIn("escapes the worktree", err)
+        with open(outside, encoding="utf-8") as fh:
+            self.assertNotIn("a — b", fh.read())  # nothing written through
 
-    def test_explicit_flag_overrides_seed(self):
-        self._write_contract()
-        run("note", "--from-contract", "--goal", "explicit")
-        self.assertIn("## Goal\nexplicit", self.read_ledger())
 
-    def test_seed_idempotent_on_claims(self):
-        self._write_contract()
-        run("note", "--from-contract")
-        run("note", "--from-contract")
-        self.assertEqual(
-            self.read_ledger().count("- P1: a — verify with: true"), 1)
+class ProjectionTests(TempDirTest):
+    def test_projection_shape_and_shaping_version(self):
+        self.activate()
+        rc, output, err = run("todo", cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        items = json.loads(output)
+        self.assertEqual(items[0]["status"], "pending")
+        self.assertEqual(items[1]["id"], "riel-phase-F1")
+        self.assertEqual(items[1]["status"], "in_progress")
+        self.assertEqual(items[2]["id"], "riel-gate-G1")
+        self.assertEqual(items[2]["status"], "in_progress")
+        self.assertEqual(items[3]["status"], "in_progress")
+        self.assertEqual(items[3]["parent"], "riel-gate-G1")
+        self.assertIn(items[3]["status"], ("pending", "in_progress", "completed"))
 
-    def test_from_contract_custom_path(self):
-        path = os.path.join(self.tmp, "c.md")
-        with open(path, "w", encoding="utf-8") as fh:
-            fh.write(self.CONTRACT)
-        rc, _, _ = run("note", "--from-contract", path)
+        shape_path = os.path.join(self.tmp, "shape.md")
+        rc, draft, _ = run("shape", "new", "--param", "name=demo", cwd=self.tmp)
         self.assertEqual(rc, 0)
-        self.assertIn("## Goal\nWe need the thing to work.", self.read_ledger())
+        self.assertIn("<!-- riel-shaping/v1 -->", draft)
+        with open(shape_path, "w", encoding="utf-8") as handle:
+            handle.write(draft.replace("<!-- riel-shaping/v1 -->", ""))
+        rc, _out, _err = run("shape", "validate", shape_path, cwd=self.tmp)
+        self.assertEqual(rc, 1)
+        rc, _out, err = run("run", "new", "--param", "invalid", cwd=self.tmp)
+        self.assertNotEqual(rc, 0)
+        self.assertIn("want key=value", err)
+
+    def test_projection_of_parallel_gates_keeps_real_phase(self):
+        self.activate()
+        run("note", "--gate", "G2", "--command", "true",
+            "--covering", "another phase", cwd=self.tmp)
+        rc, output, err = run("todo", cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        states = {row["id"]: row["status"] for row in json.loads(output)}
+        self.assertEqual(states["riel-phase-F1"], "in_progress")
+        self.assertEqual(states["riel-phase-F2"], "pending")
+
+
+    def test_global_gate_does_not_complete_a_phase_early(self):
+        self.activate(text=LIST_RUN.replace(" — phase: F1", ""))
+        state = self.status()
+        self.assertEqual(state["current_phase"], "F1")
+        self.assertEqual(state["gates"]["G1"], "pending")
+        rc, output, err = run("todo", cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        rows = {row["id"]: row["status"] for row in json.loads(output)}
+        self.assertEqual(rows["riel-phase-F1"], "in_progress")
+        self.assertEqual(rows["riel-step-F1-S1"], "in_progress")
+
+
+class FailedEvidenceTests(TempDirTest):
+    def test_failed_command_never_covers_its_claim(self):
+        self.activate()
+        for claim, command in (("P1", "true"), ("P2", "false")):
+            result = run("note", "--gate", "G1", "--claim", claim,
+                         "--command", command, "--covering", claim, cwd=self.tmp)
+            self.assertEqual(result[0], 0)  # evidence is recorded; its gate failed
+        self.assertEqual(self.status()["claims"]["P2"], "open")
+        run("note", "--gate", "G2", "--command", "true",
+            "--covering", "second phase", cwd=self.tmp)
+        state = self.status()
+        self.assertFalse(state["done"])
+        self.assertIn("P2", repr(state["claims"]))
 
 
 class SliceTests(TempDirTest):
-    CONTRACT = """# Task: login flow
+    def test_slice_self_validates_in_both_registers(self):
+        for text in (LIST_RUN, MERMAID_RUN):
+            with self.subTest(register="mermaid" if "```" in text else "list"):
+                self.activate(text=text)
+                rc, packet, err = run("run", "slice", "F1", cwd=self.tmp)
+                self.assertEqual(rc, 0, err)
+                self.assertNotIn("## Metadata", packet)  # no global state
+                packet_path = os.path.join(self.tmp, "packet.md")
+                with open(packet_path, "w", encoding="utf-8") as fh:
+                    fh.write(packet)
+                rc, out, err = run("run", "validate", packet_path,
+                                   cwd=self.tmp)
+                self.assertEqual(rc, 0, out + err)
 
-## Objective
-We need the login to validate both providers.
+    def test_slice_is_iterative_on_cycles(self):
+        self.activate(text=MERMAID_RUN)
+        sys.setrecursionlimit(200)
+        try:
+            rc, _packet, err = run("run", "slice", "F1", cwd=self.tmp)
+            self.assertEqual(rc, 0, err)
+            rc, _out, err = run("todo", cwd=self.tmp)
+            self.assertEqual(rc, 0, err)
+        finally:
+            sys.setrecursionlimit(1000)
 
-## Context
-c
 
-## Constraints
-- no new deps
+class RebaseTests(TempDirTest):
+    SHAPING = """# Shaping: engine
 
-## Pre-registered claims
-- P1: both providers validate — verify with: mix test auth_test.exs
+<!-- riel-shaping/v1 -->
 
-## Execution graph
+## Question
+Does the v2 engine read one state file?
 
-```mermaid
-flowchart TD
-  F1["EDIT a.ex — x"] --> F2["RUN mix test"]
-  F2 --> G1{"green?"}
-  G1 -->|no| F1
-  G1 -->|yes| END([Done])
-```
+## Findings
+- F1: the single run.md parse works — source: scratch probe, confidence high
 
-## Verification gates
-g
+## Facts
+- stdlib only.
 
-## Deliverable
-d
-
-## DO NOT
-- x
+## Verdict (→ run)
+- We need one file
 """
 
-    def _contract(self):
-        d = os.path.join(self.tmp, ".riel")
-        os.makedirs(d, exist_ok=True)
-        path = os.path.join(d, "contract.md")
-        with open(path, "w", encoding="utf-8") as fh:
-            fh.write(self.CONTRACT)
-        return path
+    @staticmethod
+    def anchored(text):
+        return text.replace(
+            "- P1: the parser reads the list register — anchor: §Graph",
+            "- P1: the parser reads the list register — anchor: shaping:F1")
 
-    def test_slice_keeps_phase_subgraph_only(self):
-        self._contract()
-        rc, out, _ = run("contract", "slice", ".riel/contract.md", "--phase", "F2")
-        self.assertEqual(rc, 0)
-        self.assertIn('F2["RUN mix test"]', out)
-        self.assertIn('G1{"green?"}', out)
-        self.assertNotIn("F1", out)      # does not cross into the other phase
-        self.assertNotIn("|no|", out)    # back-edge to F1 dropped
+    def test_rebase_reserves_old_evidence(self):
+        self.activate(text=self.anchored(LIST_RUN), shaping=self.SHAPING)
+        body = self.read_run()
+        self.assertIn("### Basis", body)
+        self.assertIn("F1: the single run.md parse works", body)
+        self.assertIn("— source: scratch probe", body)
+        run("note", "--gate", "G1", "--claim", "P1", "--command", "true",
+            "--covering", "parser", cwd=self.tmp)
+        with open(self.shaping_path(), "a", encoding="utf-8") as fh:
+            fh.write("- F2: extra finding — source: later probe\n")
+        rc, _out, err = run("note", "--gate", "G2", "--command", "true",
+                            "--covering", "verbs", cwd=self.tmp)
+        self.assertEqual(rc, 3, err)  # stale
+        self.assertIn("stale state", err)
+        self.assertIn("run rebase", err)
+        rc, out, err = run("run", "rebase", cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        st = self.status()
+        self.assertEqual(st["revision"], "r2")
+        self.assertEqual(st["evidence"]["total"], 1)     # retained
+        self.assertEqual(st["evidence"]["counted"], 0)   # but not counted
+        self.assertEqual(st["gates"]["G1"], "pending")
+        rc, _out, err = run("note", "--gate", "G1", "--claim", "P1",
+                            "--command", "true", "--covering", "parser",
+                            cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        st = self.status()
+        self.assertEqual(st["gates"]["G1"], "passed")
 
-    def test_slice_default_first_phase(self):
-        self._contract()
-        rc, out, _ = run("contract", "slice", ".riel/contract.md")
-        self.assertEqual(rc, 0)
-        self.assertIn('F1["EDIT a.ex — x"]', out)
+    def test_slice_is_valid_without_external_shaping(self):
+        self.activate(text=self.anchored(LIST_RUN), shaping=self.SHAPING)
+        os.remove(self.shaping_path())
+        rc, packet, err = run("run", "slice", "F1", cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        packet_path = os.path.join(self.tmp, "packet.md")
+        with open(packet_path, "w", encoding="utf-8") as handle:
+            handle.write(packet)
+        rc, out, err = run("run", "validate", packet_path, cwd=self.tmp)
+        self.assertEqual(rc, 0, out + err)
 
-    def test_slice_output_validates(self):
-        self._contract()
-        rc, _, _ = run("contract", "slice", ".riel/contract.md",
-                       "--phase", "F2", "-o", "mini.md")
-        self.assertEqual(rc, 0)
-        rc2, out2, _ = run("contract", "validate", "mini.md")
-        self.assertEqual(rc2, 0, out2)
-
-    def test_slice_carries_constraints_with_suffixed_heading(self):
-        # real template heading is "## Constraints (hard rules)"
-        self.CONTRACT = self.CONTRACT.replace(
-            "## Constraints\n", "## Constraints (hard rules)\n")
-        self._contract()
-        rc, out, _ = run("contract", "slice", ".riel/contract.md", "--phase", "F1")
-        self.assertEqual(rc, 0)
-        self.assertIn("## Constraints\n- no new deps", out)
-
-    def test_slice_inherits_the_why_subsection(self):
-        self.CONTRACT = self.CONTRACT.replace(
-            "## Context\nc\n",
-            "## Context\n\n### Why\nSin el racional el hijo reinterpreta.\n\n"
-            "### Project\n- c\n")
-        self._contract()
-        rc, out, _ = run("contract", "slice", ".riel/contract.md", "--phase", "F1")
-        self.assertEqual(rc, 0)
-        self.assertIn("### Why", out)
-        self.assertIn("Sin el racional el hijo reinterpreta.", out)
-        # the inherited copy carries the do-not-reinterpret guidance
-        self.assertIn("ASK[goal-changing]", out)
-
-    def test_slice_without_why_keeps_the_plain_context(self):
-        self._contract()
-        rc, out, _ = run("contract", "slice", ".riel/contract.md", "--phase", "F1")
-        self.assertEqual(rc, 0)
-        self.assertNotIn("### Why", out)
-        self.assertIn("<!-- FILL: only what this phase needs -->", out)
-
-    def test_graph_prefers_execution_graph_section(self):
-        doc = (
-            "# Task: x\n\n## Objective\nWe need x\n\n## Context\n\n"
-            "```mermaid\nflowchart TD\n  Z1[\"RUN decoy\"] --> Z2[\"RUN d2\"]\n```\n\n"
-            "## Execution graph\n\n"
-            "```mermaid\nflowchart TD\n  S1[\"RUN real\"] --> G1{\"ok?\"}\n"
-            "  G1 -->|yes| END([Done])\n```\n\n"
-            "## Pre-registered claims\n- P1: p — verify with: true\n\n"
-            "## DO NOT\n- x\n"
-        )
-        path = os.path.join(self.tmp, "c.md")
-        with open(path, "w", encoding="utf-8") as fh:
-            fh.write(doc)
-        rc, out, _ = run("contract", "digest", path)
-        self.assertEqual(rc, 0)
-        self.assertIn("S1", out)       # the Execution graph block wins
-        self.assertNotIn("Z1", out)    # the decoy before it is ignored
-
-    def test_slice_unknown_phase_errors(self):
-        self._contract()
-        rc, _, err = run("contract", "slice", ".riel/contract.md", "--phase", "F9")
-        self.assertEqual(rc, 2)
-        self.assertIn("no phase node", err)
-
-
-class ContextKeywordTests(TempDirTest):
-    """Context keywords: the contract's index into memory (Spec 2)."""
-
-    CONTRACT = """# Task: login flow
-
-## Objective
-We need the login to validate both providers.
-
-## Context
-
-### Project
-- **Path:** /repo
-
-### Context keywords
-<!-- one per line; the source hint is optional -->
-- login flow → dran
-- phoenix streams
-- `top-level await`
-
-## Constraints
-- no new deps
-
-## Pre-registered claims
-- P1: a — verify with: true
-
-## Execution graph
-
-```mermaid
-flowchart TD
-  F1["EDIT a.ex — x"] --> F2["RUN mix test"]
-  F2 --> G1{"green?"}
-  G1 -->|no| F1
-  G1 -->|yes| END([Done])
-```
-
-## Verification gates
-g
-
-## Deliverable
-d
-
-## DO NOT
-- x
-"""
-
-    NO_KEYWORDS = """# Task: plain
-
-## Objective
-We need x
-
-## Context
-c
-
-## Constraints
-- x
-
-## Pre-registered claims
-- P1: a — verify with: true
-
-## Execution graph
-
-```mermaid
-flowchart TD
-  S1["RUN true"] --> G1{"ok?"}
-  G1 -->|yes| END([Done])
-```
-
-## Verification gates
-g
-
-## Deliverable
-d
-
-## DO NOT
-- x
-"""
-
-    def _contract(self, text=None):
-        d = os.path.join(self.tmp, ".riel")
-        os.makedirs(d, exist_ok=True)
-        path = os.path.join(d, "contract.md")
-        with open(path, "w", encoding="utf-8") as fh:
-            fh.write(self.CONTRACT if text is None else text)
-        return path
-
-    def test_context_emits_terms_and_source_hints(self):
-        self._contract()
-        rc, out, _ = run("context")
-        self.assertEqual(rc, 0)
-        self.assertEqual(json.loads(out)["keywords"], [
-            {"term": "login flow", "source": "dran"},
-            {"term": "phoenix streams", "source": ""},
-            {"term": "top-level await", "source": ""},
-        ])
-
-    def test_context_skips_comments_and_placeholders(self):
-        self._contract("# t\n\n## Context\n\n### Context keywords\n"
-                       "- real term\n- {{term}}\n<!-- - comentado -->\n\n## DO NOT\n- x\n")
-        rc, out, _ = run("context")
-        self.assertEqual(rc, 0)
-        self.assertEqual([k["term"] for k in json.loads(out)["keywords"]], ["real term"])
-
-    def test_context_without_a_contract_is_an_error(self):
-        rc, _, err = run("context")
+    def test_activate_requires_shaping_when_anchored(self):
+        text = self.anchored(LIST_RUN)
+        os.makedirs(os.path.join(self.tmp, ".riel"), exist_ok=True)
+        with open(self.run_path(), "w", encoding="utf-8") as fh:
+            fh.write(text)
+        rc, out, err = run("run", "activate", cwd=self.tmp)
         self.assertEqual(rc, 1)
-        self.assertIn("no contract", err)
-
-    def test_context_without_the_subsection_is_empty_not_an_error(self):
-        self._contract(self.NO_KEYWORDS)
-        rc, out, _ = run("context")
-        self.assertEqual(rc, 0)
-        self.assertEqual(json.loads(out)["keywords"], [])
-
-    def test_context_output_flag_writes_the_same_json(self):
-        self._contract()
-        rc, out, _ = run("context", "-o", "kw.json")
-        self.assertEqual(rc, 0)
-        with open(os.path.join(self.tmp, "kw.json"), encoding="utf-8") as fh:
-            self.assertEqual(json.load(fh), json.loads(out))
-
-    def test_slice_inherits_the_keywords(self):
-        self._contract()
-        rc, out, _ = run("contract", "slice", ".riel/contract.md", "--phase", "F1")
-        self.assertEqual(rc, 0)
-        self.assertIn("### Context keywords", out)
-        self.assertIn("- login flow → dran", out)
-        self.assertIn("<!-- FILL: el resto del contexto", out)
-
-    def test_slice_without_keywords_keeps_the_plain_fill(self):
-        self._contract(self.NO_KEYWORDS)
-        rc, out, _ = run("contract", "slice", ".riel/contract.md", "--phase", "S1")
-        self.assertEqual(rc, 0)
-        self.assertNotIn("Context keywords", out)
-        self.assertIn("<!-- FILL: only what this phase needs -->", out)
-
-    def test_validate_warns_but_accepts_when_keywords_are_missing(self):
-        path = self._contract(self.NO_KEYWORDS)
-        rc, out, err = run("contract", "validate", path)
-        self.assertEqual(rc, 0, out)                  # non-fatal: a warn, not a gate
-        self.assertIn("Context keywords", err)        # warnings go to stderr
-
-    def test_validate_is_quiet_when_keywords_are_present(self):
-        path = self._contract()
-        rc, out, err = run("contract", "validate", path)
-        self.assertEqual(rc, 0, out)
-        self.assertNotIn("Context keywords", err)
+        self.assertIn("shaping.md does not exist", out + err)
 
 
-class CleanTests(TempDirTest):
-    LEDGER = "# Riel ledger\n\n## Goal\ng\n\n## Next\nn\n"
-    CONTRACT = "# Task: t\n\n## Objective\nWe need t\n"
+class SinkTests(TempDirTest):
+    def test_outputs_go_to_explicit_sinks_only(self):
+        import importlib.util
+        import io
+        spec = importlib.util.spec_from_file_location("riel_engine", ENGINE)
+        engine = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(engine)
+        self.activate()
+        real_stdout, real_stderr = sys.stdout, sys.stderr
+        sys.stdout = io.StringIO()
+        sys.stderr = io.StringIO()
+        try:
+            sink, sink_err = io.StringIO(), io.StringIO()
+            code = engine.run_verb(["run", "status"], worktree=self.tmp,
+                                   out=sink, err=sink_err)
+            leaked = sys.stdout.getvalue() + sys.stderr.getvalue()
+        finally:
+            sys.stdout, sys.stderr = real_stdout, real_stderr
+        self.assertEqual(code, 0)
+        self.assertEqual(leaked, "")
+        payload = json.loads(sink.getvalue())
+        self.assertEqual(payload["format"], "riel-run/v1")
+        # captured mode: (code, out_text, err_text)
+        code2, out2, err2 = engine.run_verb(["run", "status"],
+                                            worktree=self.tmp)
+        self.assertEqual(code2, 0)
+        self.assertIn('"status": "active"', out2)
 
-    SHAPING = "# Shaping: t\n\n## Findings\n- F1: f — source: a:1\n"
 
-    def _riel(self, ledger=True, contract=False, shaping=False):
-        d = os.path.join(self.tmp, ".riel")
-        os.makedirs(d, exist_ok=True)
-        for flag, name, body in ((ledger, "ledger.md", self.LEDGER),
-                                 (contract, "contract.md", self.CONTRACT),
-                                 (shaping, "shaping.md", self.SHAPING)):
-            if flag:
-                with open(os.path.join(d, name), "w",
-                          encoding="utf-8") as fh:
-                    fh.write(body)
-        return d
+    def test_parser_rejections_use_only_the_call_sinks(self):
+        spec = importlib.util.spec_from_file_location("riel_parser_test", ENGINE)
+        if spec is None or spec.loader is None:
+            self.fail("the packaged engine cannot be loaded")
+        engine = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(engine)
+        stdout, stderr = sys.stdout, sys.stderr
+        out, err = io.StringIO(), io.StringIO()
+        code = engine.run_verb(
+            ["run", "new", "--template", "bogus"], worktree=self.tmp,
+            out=out, err=err)
+        self.assertEqual(code, 2)
+        self.assertIn("invalid choice", err.getvalue())
+        self.assertIs(sys.stdout, stdout)
+        self.assertIs(sys.stderr, stderr)
+        self.assertEqual(out.getvalue(), "")
 
-    def _files(self, d):
-        return sorted(os.listdir(d))
-
-    def test_clean_backs_up_the_ledger_inside_riel_as_a_flat_file(self):
-        d = self._riel()
-        rc, out, _ = run("clean")
-        self.assertEqual(rc, 0, out)
-        self.assertIn("backed up", out)
-        names = self._files(d)
-        self.assertNotIn("ledger.md", names)
-        backups = [n for n in names if n.startswith("ledger-")
-                   and n.endswith(".bak.md")]
-        self.assertEqual(len(backups), 1)
-        # flat file, never a subdirectory
-        self.assertTrue(os.path.isfile(os.path.join(d, backups[0])))
-        # byte-identical content
-        with open(os.path.join(d, backups[0]), encoding="utf-8") as fh:
-            self.assertEqual(fh.read(), self.LEDGER)
-
-    def test_clean_keeps_the_contract_by_default(self):
-        d = self._riel(ledger=True, contract=True)
-        rc, _, _ = run("clean")
-        self.assertEqual(rc, 0)
-        names = self._files(d)
-        self.assertIn("contract.md", names)
-        self.assertNotIn("ledger.md", names)
-
-    def test_clean_all_includes_the_contract(self):
-        d = self._riel(ledger=True, contract=True)
-        rc, out, _ = run("clean", "--all")
-        self.assertEqual(rc, 0, out)
-        names = self._files(d)
-        self.assertNotIn("ledger.md", names)
-        self.assertNotIn("contract.md", names)
-        self.assertTrue(any(n.startswith("ledger-") for n in names))
-        self.assertTrue(any(n.startswith("contract-") for n in names))
-
-    def test_clean_keeps_the_shaping_by_default(self):
-        d = self._riel(ledger=True, shaping=True)
-        rc, _, _ = run("clean")
-        self.assertEqual(rc, 0)
-        names = self._files(d)
-        self.assertIn("shaping.md", names)
-        self.assertNotIn("ledger.md", names)
-
-    def test_clean_all_includes_the_shaping_with_a_flat_backup(self):
-        d = self._riel(ledger=True, contract=True, shaping=True)
-        rc, out, _ = run("clean", "--all")
-        self.assertEqual(rc, 0, out)
-        names = self._files(d)
-        self.assertNotIn("shaping.md", names)
-        self.assertTrue(any(n.startswith("shaping-") and n.endswith(".bak.md")
-                            for n in names), names)
-
-    def test_clean_purge_removes_without_backup(self):
-        d = self._riel()
-        rc, out, _ = run("clean", "--purge")
-        self.assertEqual(rc, 0, out)
-        self.assertIn("purged", out)
-        self.assertEqual(self._files(d), [])
-
-    def test_clean_is_idempotent_with_nothing_to_clean(self):
-        self._riel(ledger=False)          # .riel/ exists, no ledger
-        rc, out, _ = run("clean")
-        self.assertEqual(rc, 0, out)
-        self.assertIn("nothing to clean", out)
-
-    def test_clean_without_riel_dir_is_a_noop(self):
-        rc, out, _ = run("clean")
-        self.assertEqual(rc, 0, out)
-        self.assertIn("nothing to clean", out)
-
-    def test_second_clean_in_the_same_second_does_not_clobber(self):
-        d = self._riel()
-        run("clean")
-        with open(os.path.join(d, "ledger.md"), "w",
-                  encoding="utf-8") as fh:
-            fh.write(self.LEDGER + "\n## More\nm\n")
-        rc, _, _ = run("clean")
-        self.assertEqual(rc, 0)
-        backups = [n for n in self._files(d)
-                   if n.startswith("ledger-") and n.endswith(".bak.md")]
-        self.assertEqual(len(backups), 2)   # both survive, distinct names
-
+    def test_unknown_gate_parameter_is_rejected_by_typed_tool(self):
+        if REPO not in sys.path:
+            sys.path.insert(0, REPO)
+        from hermes_plugin.riel import tools
+        result = json.loads(tools.riel_note({
+            "gate": "G1", "command": "true", "worktree": self.tmp,
+        }))
+        self.assertEqual(result["exit_code"], 1)
+        self.assertIn("unknown parameter", result["error"])
+        self.assertFalse(os.path.exists(self.run_path()))
 
 class FetchTests(TempDirTest):
-    """`riel_plan(verb="fetch")` — HTTP(S) download with integrity + security defaults."""
+    BODY = b"hello run"
 
-    def _serve(self, payload):
-        import http.server
-        import threading
+    @classmethod
+    def setUpClass(cls):
+        cls.hits = []
 
-        class Handler(http.server.BaseHTTPRequestHandler):
+        class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
-                self.send_response(200)
-                self.send_header("Content-Type", "text/markdown; charset=utf-8")
-                self.send_header("Content-Length", str(len(payload)))
-                self.end_headers()
-                self.wfile.write(payload)
+                cls.hits.append(
+                    (self.path, self.headers.get("Authorization")))
+                if self.path == "/redir":
+                    self.send_response(302)
+                    self.send_header("Location",
+                                     "http://localhost:%d/file"
+                                     % cls.server.server_port)
+                    self.end_headers()
+                elif self.path == "/trunc":
+                    self.send_response(200)
+                    self.send_header("Content-Length", "100")
+                    self.end_headers()
+                    self.wfile.write(b"x" * 50)
+                elif self.path == "/binary":
+                    body = b"\xff"
+                    self.send_response(200)
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                elif self.path == "/file":
+                    self.send_response(200)
+                    self.send_header("Content-Length", str(len(cls.BODY)))
+                    self.end_headers()
+                    self.wfile.write(cls.BODY)
+                else:
+                    self.send_response(404)
+                    self.end_headers()
 
             def log_message(self, format, *args):
                 pass
 
-        srv = http.server.HTTPServer(("127.0.0.1", 0), Handler)
-        threading.Thread(target=srv.serve_forever, daemon=True).start()
-        self.addCleanup(srv.server_close)
-        self.addCleanup(srv.shutdown)
-        return "http://127.0.0.1:{}".format(srv.server_address[1])
+        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        cls.port = cls.server.server_port
+        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
 
-    def test_writes_file_and_verifies_sha256(self):
-        payload = b"# Task: demo\n\n## Objective\nWe need...\n"
-        digest = hashlib.sha256(payload).hexdigest()
-        base = self._serve(payload)
-        out = os.path.join(self.tmp, ".riel", "contract.md")
-        rc, stdout, err = run("fetch", base + "/contract.md", "-o", out,
-                              "--sha256", digest)
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+
+    def test_fetch_happy_path_is_atomic_and_not_activated(self):
+        out = os.path.join(self.tmp, "fetched.md")
+        sha = hashlib.sha256(self.BODY).hexdigest()
+        rc, out_text, err = run("run", "fetch",
+                                "http://127.0.0.1:%d/file" % self.port,
+                                "-o", out, "--sha256", sha, cwd=self.tmp)
         self.assertEqual(rc, 0, err)
         with open(out, "rb") as fh:
-            self.assertEqual(fh.read(), payload)
-        self.assertIn(digest, stdout)
+            self.assertEqual(fh.read(), self.BODY)
 
-    def test_rejects_sha256_mismatch_without_writing(self):
-        base = self._serve(b"payload")
-        out = os.path.join(self.tmp, "x.md")
-        rc, _, err = run("fetch", base + "/x", "-o", out, "--sha256", "0" * 64)
-        self.assertEqual(rc, 4)
+    def test_fetch_requires_sha256(self):
+        rc, _out, err = run("run", "fetch",
+                            "http://127.0.0.1:%d/file" % self.port,
+                            "-o", "f.md", cwd=self.tmp)
+        self.assertEqual(rc, 2)  # argparse: --sha256 mandatory
+
+    def test_fetch_sha_mismatch_rejected(self):
+        rc, _out, err = run("run", "fetch",
+                            "http://127.0.0.1:%d/file" % self.port,
+                            "-o", "f.md",
+                            "--sha256", "0" * 64, cwd=self.tmp)
+        self.assertEqual(rc, 2)
         self.assertIn("sha256 mismatch", err)
-        self.assertFalse(os.path.exists(out))          # no partial write
 
-    def test_refuses_plain_http_for_non_local_host(self):
-        rc, _, err = run("fetch", "http://example.com/x", "-o", "x.md")
+    def test_fetch_rejects_incomplete_body(self):
+        rc, _out, err = run("run", "fetch",
+                            "http://127.0.0.1:%d/trunc" % self.port,
+                            "-o", "f.md", "--sha256",
+                            hashlib.sha256(b"x" * 50).hexdigest(),
+                            cwd=self.tmp)
         self.assertEqual(rc, 2)
-        self.assertIn("refusing plain http", err)
+        self.assertIn("incomplete body", err)
 
-    def test_allow_http_flag_permits_non_local_host(self):
-        # without the flag the host is refused (exit 2); with it the request is
-        # attempted (here the name does not resolve → network error, exit 1)
-        rc, _, err = run("fetch", "http://nonexistent.invalid/x", "-o", "x.md",
-                         "--allow-http", "--timeout", "2")
-        self.assertEqual(rc, 1)
-        self.assertNotIn("refusing plain http", err)
+    def test_fetch_redirect_strips_authorization_on_origin_change(self):
+        sha = hashlib.sha256(self.BODY).hexdigest()
+        rc, _out, err = run(
+            "run", "fetch", "http://127.0.0.1:%d/redir" % self.port,
+            "-o", "f.md", "--sha256", sha,
+            "--header", "Authorization: Bearer secret", cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        paths = {path: auth for path, auth in type(self).hits}
+        self.assertEqual(paths["/redir"], "Bearer secret")
+        self.assertIsNone(paths["/file"])  # stripped across the origin change
 
-    def test_rejects_unsupported_scheme(self):
-        rc, _, err = run("fetch", "ftp://example.com/x", "-o", "x.md")
+
+    def test_fetch_never_replaces_active_state(self):
+        self.activate()
+        before = self.read_run()
+        sha = hashlib.sha256(self.BODY).hexdigest()
+        rc, _out, err = run(
+            "run", "fetch", "http://127.0.0.1:%d/file" % self.port,
+            "-o", self.run_path(), "--sha256", sha, cwd=self.tmp)
         self.assertEqual(rc, 2)
-        self.assertIn("unsupported scheme", err)
-
-    def test_does_not_leak_token_on_error(self):
-        # connection refused → URLError; the query token must not reach stderr
-        rc, _, err = run("fetch", "http://127.0.0.1:1/contract.md?token=SECRET",
-                         "-o", "x.md", "--timeout", "1")
-        self.assertNotEqual(rc, 0)
-        self.assertNotIn("SECRET", err)
-
-    def test_aborts_when_body_exceeds_max_bytes(self):
-        base = self._serve(b"x" * 5000)
-        out = os.path.join(self.tmp, "big.md")
-        rc, _, err = run("fetch", base + "/big", "-o", out, "--max-bytes", "1024")
-        self.assertEqual(rc, 3)
-        self.assertIn("exceeds", err)
-        self.assertFalse(os.path.exists(out))
-
-
-class ShapingValidateTests(TempDirTest):
-    """Spec 7 — .riel/shaping.md: its sections, its sources, its verdict."""
-
-    VALID = """# Shaping: x
-
-## Question
-¿qué decisión cierra este shaping?
-
-## Findings
-- F1: hay un helper de secciones — source: engine/run.py:145, confidence high
-- F2: el slice hereda los claims — source: `make test`, confidence med
-
-## Facts
-- el prefijo F# del grafo se solapa con el de las fases
-
-## Alternatives bounced
-- A1: spec propio y validado — pro: tiene dientes / contra: más superficie — verdict: kept
-
-## Open
-- Q1: ¿bullet o párrafo? — settled by: un test con las dos formas
-
-## Verdict (→ contract)
-- We need que exista el shaping antes del contrato
-- Decision: escribirlo — because el contrato no puede portar la evidencia
-"""
-
-    def _write(self, content, relpath="shaping.md"):
-        path = os.path.join(self.tmp, relpath)
-        parent = os.path.dirname(path)
-        if parent:
-            os.makedirs(parent, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as fh:
-            fh.write(content)
-        return path
-
-    def test_accepts_a_shaping_with_every_section(self):
-        rc, out, err = run("shaping", "validate", self._write(self.VALID))
-        self.assertEqual(rc, 0, out + err)
-        self.assertIn("valid", out)
-
-    def test_validates_the_default_path_with_no_argument(self):
-        self._write(self.VALID, os.path.join(".riel", "shaping.md"))
-        rc, out, _ = run("shaping", "validate")
-        self.assertEqual(rc, 0, out)
-        self.assertIn(".riel/shaping.md", out)
-
-    def test_missing_file_is_an_error(self):
-        rc, _, err = run("shaping", "validate")
-        self.assertEqual(rc, 1)
-        self.assertIn("no shaping found", err)
-
-    def test_missing_section_is_an_issue(self):
-        bad = self.VALID.replace("## Question\n", "")
-        rc, out, _ = run("shaping", "validate", self._write(bad))
-        self.assertEqual(rc, 1)
-        self.assertIn("missing section", out)
-        self.assertIn("'Question'", out)
-
-    def test_empty_question_is_an_issue(self):
-        bad = self.VALID.replace(
-            "## Question\n¿qué decisión cierra este shaping?\n", "## Question\n\n")
-        rc, out, _ = run("shaping", "validate", self._write(bad))
-        self.assertEqual(rc, 1)
-        self.assertIn("Question is empty", out)
-
-    def test_the_optional_diagrams_section_does_not_break_validation(self):
-        with_diagrams = self.VALID.replace("## Alternatives bounced", """## Diagrams
-<!-- OPTIONAL -->
-```mermaid
-flowchart LR
-  A["hoy"] --> B["propuesto"]
-```
-
-## Alternatives bounced""")
-        rc, out, err = run("shaping", "validate", self._write(with_diagrams))
-        self.assertEqual(rc, 0, out + err)
-        self.assertNotIn("WARN", err)
-
-    def test_findings_without_a_single_f_is_an_issue(self):
-        bad = re.sub(r"## Findings\n(.*?)\n\n## Facts", "## Findings\n\n## Facts",
-                     self.VALID, flags=re.S)
-        rc, out, _ = run("shaping", "validate", self._write(bad))
-        self.assertEqual(rc, 1)
-        self.assertIn("no F# line", out)
-
-    def test_empty_verdict_is_an_issue(self):
-        bad = re.sub(r"## Verdict \(→ contract\)\n.*$", "## Verdict (→ contract)\n",
-                     self.VALID, flags=re.S)
-        rc, out, _ = run("shaping", "validate", self._write(bad))
-        self.assertEqual(rc, 1)
-        self.assertIn("Verdict is empty", out)
-
-    def test_sections_out_of_order_is_an_issue(self):
-        bad = self.VALID.replace("""## Findings
-- F1: hay un helper de secciones — source: engine/run.py:145, confidence high
-- F2: el slice hereda los claims — source: `make test`, confidence med
-
-""", "").replace("""## Facts
-- el prefijo F# del grafo se solapa con el de las fases
-""", """## Facts
-- el prefijo F# del grafo se solapa con el de las fases
-
-## Findings
-- F1: hay un helper de secciones — source: engine/run.py:145, confidence high
-""")
-        rc, out, _ = run("shaping", "validate", self._write(bad))
-        self.assertEqual(rc, 1)
-        self.assertIn("out of order", out)
-
-    def test_a_finding_without_source_warns_but_validates(self):
-        bad = self.VALID.replace(" — source: engine/run.py:145, confidence high", "")
-        rc, _, err = run("shaping", "validate", self._write(bad))
-        self.assertEqual(rc, 0)
-        self.assertIn("WARN", err)
-        self.assertIn("no 'source:'", err)
-
-    def test_a_finding_without_confidence_warns(self):
-        bad = self.VALID.replace(", confidence high", "")
-        rc, _, err = run("shaping", "validate", self._write(bad))
-        self.assertEqual(rc, 0)
-        self.assertIn("confidence", err)
-
-    def test_an_alternative_without_verdict_warns(self):
-        bad = self.VALID.replace(" — verdict: kept", "")
-        rc, _, err = run("shaping", "validate", self._write(bad))
-        self.assertEqual(rc, 0)
-        self.assertIn("no 'verdict:'", err)
-
-    def test_an_open_question_without_its_test_warns(self):
-        bad = self.VALID.replace(" — settled by: un test con las dos formas", "")
-        rc, _, err = run("shaping", "validate", self._write(bad))
-        self.assertEqual(rc, 0)
-        self.assertIn("settled by:", err)
-
-    def test_a_verdict_without_an_objective_line_warns(self):
-        bad = self.VALID.replace(
-            "- We need que exista el shaping antes del contrato\n", "")
-        rc, _, err = run("shaping", "validate", self._write(bad))
-        self.assertEqual(rc, 0)
-        self.assertIn("Objective line", err)
-
-    def test_a_contract_anchored_to_a_missing_finding_warns(self):
-        self._write(self.VALID, os.path.join(".riel", "shaping.md"))
-        self._write("# Task: x\n\n## Pre-registered claims\n"
-                    "- P1: c — verify with: true — anchor: shaping:F9\n",
-                    os.path.join(".riel", "contract.md"))
-        rc, _, err = run("shaping", "validate", os.path.join(".riel", "shaping.md"),
-                         "--contract", os.path.join(".riel", "contract.md"))
-        self.assertEqual(rc, 0)
-        self.assertIn("no such finding", err)
-
-
-class ShapingNewTests(TempDirTest):
-    """`shaping new` drops the skeleton; it never clobbers research."""
-
-    def test_instantiates_the_skeleton_into_riel(self):
-        rc, out, _ = run("shaping", "new", "--param", "name=x")
-        self.assertEqual(rc, 0, out)
-        path = os.path.join(self.tmp, ".riel", "shaping.md")
-        self.assertTrue(os.path.exists(path))
-        with open(path, encoding="utf-8") as fh:
-            body = fh.read()
-        for heading in ("## Question", "## Findings", "## Facts",
-                        "## Alternatives bounced", "## Open", "## Verdict"):
-            self.assertIn(heading, body)
-        self.assertIn("# Shaping: x", body)
-
-    def test_the_skeleton_validates_like_any_shipped_fixture(self):
-        # Every rule must clear the shipped fixtures: the template carries one
-        # placeholder F1 line (with its source/confidence slots), so a fresh
-        # shaping validates — the research is missing, not the structure.
-        run("shaping", "new")
-        rc, out, err = run("shaping", "validate")
-        self.assertEqual(rc, 0, out + err)
-        self.assertNotIn("WARN", err)
-
-    def test_refuses_to_overwrite_an_existing_shaping(self):
-        run("shaping", "new")
-        rc, _, err = run("shaping", "new")
-        self.assertEqual(rc, 3)
-        self.assertIn("already exists", err)
-
-    def test_force_overwrites(self):
-        run("shaping", "new")
-        path = os.path.join(self.tmp, ".riel", "shaping.md")
-        with open(path, "a", encoding="utf-8") as fh:
-            fh.write("\nresearch\n")
-        rc, _, _ = run("shaping", "new", "--force")
-        self.assertEqual(rc, 0)
-        with open(path, encoding="utf-8") as fh:
-            self.assertNotIn("research", fh.read())
-
-    def test_dash_writes_to_stdout(self):
-        rc, out, _ = run("shaping", "new", "-o", "-")
-        self.assertEqual(rc, 0)
-        self.assertIn("# Shaping:", out)
-
-
-class ClaimAnchorTests(TempDirTest):
-    """Spec 2 + Spec 7 — a claim's anchor: declared, resolved, re-read."""
-
-    CONTRACT = """# Task: x
-
-## Objective
-We need x
-
-## Context
-c
-
-### Context keywords
-- una keyword
-
-## Constraints
-- r1
-- r2
-
-## Pre-registered claims
-- P1: la sección lo sostiene — verify with: true — anchor: §Constraints#2
-- P2: el nodo lo sostiene — verify with: true — anchor: S1
-- P3: el hallazgo lo sostiene — verify with: true — anchor: shaping:F1
-
-## Execution graph
-
-```mermaid
-flowchart TD
-  S1["RUN ls"] --> G1{"ok?"}
-  G1 -->|"no (< 3)"| S1
-  G1 -->|yes| END([Done])
-```
-
-## Verification gates
-g
-
-## Deliverable
-d
-
-## DO NOT
-- x
-"""
-
-    SHAPING = """# Shaping: x
-
-## Question
-¿q?
-
-## Findings
-- F1: el hallazgo que sostiene P3 — source: a.py:1, confidence high
-
-## Facts
-- f
-
-## Alternatives bounced
-- A1: a — pro: p / contra: c — verdict: kept
-
-## Open
-- Q1: q — settled by: t
-
-## Verdict (→ contract)
-- We need x
-"""
-
-    SLICEABLE = """# Task: x
-
-## Objective
-We need x
-
-## Context
-c
-
-## Constraints
-- r
-
-## Pre-registered claims
-- P1: la sección lo sostiene — verify with: true — anchor: §Constraints#1
-
-## Execution graph
-
-```mermaid
-flowchart TD
-  W1{"Wave 1: primera"} -->|"open"| S1["RUN ls"]
-  S1 --> G1{"ok?"}
-  G1 -->|"no (< 3)"| W1
-  G1 -->|yes| W2{"Wave 2: segunda"}
-  W2 -->|"open"| S2["RUN ls"]
-  S2 --> G2{"ok?"}
-  G2 -->|"no (< 3)"| W2
-  G2 -->|yes| END([Done])
-```
-
-## Verification gates
-g
-
-## Deliverable
-d
-
-## DO NOT
-- x
-"""
-
-    def _write(self, content, relpath="contract.md"):
-        path = os.path.join(self.tmp, relpath)
-        parent = os.path.dirname(path)
-        if parent:
-            os.makedirs(parent, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as fh:
-            fh.write(content)
-        return path
-
-    def _riel(self, contract=None, shaping=True):
-        self._write(contract if contract is not None else self.CONTRACT,
-                    os.path.join(".riel", "contract.md"))
-        if shaping:
-            self._write(self.SHAPING, os.path.join(".riel", "shaping.md"))
-        return os.path.join(".riel", "contract.md")
-
-    def test_a_contract_with_resolvable_anchors_validates_quietly(self):
-        rc, out, err = run("contract", "validate", self._riel())
-        self.assertEqual(rc, 0, out + "|" + err)
-        self.assertNotIn("WARN", err)
-
-    def test_a_claim_without_an_anchor_warns_but_validates(self):
-        c = self.CONTRACT.replace(" — anchor: S1", "")
-        rc, _, err = run("contract", "validate", self._riel(c))
-        self.assertEqual(rc, 0)
-        self.assertIn("P2 has no anchor", err)
-
-    def test_a_section_anchor_that_does_not_resolve_is_an_issue(self):
-        for bad in ("§Nope#1", "§Constraints#9"):
-            c = self.CONTRACT.replace("§Constraints#2", bad)
-            rc, out, _ = run("contract", "validate", self._riel(c))
-            self.assertEqual(rc, 1, bad)
-            self.assertIn("does not resolve", out)
-
-    def test_a_node_outside_the_graph_warns(self):
-        c = self.CONTRACT.replace(" — anchor: S1", " — anchor: S9")
-        rc, _, err = run("contract", "validate", self._riel(c))
-        self.assertEqual(rc, 0)
-        self.assertIn("not a node of this graph", err)
-
-    def test_a_malformed_anchor_is_an_issue(self):
-        c = self.CONTRACT.replace(" — anchor: S1", " — anchor: ¿esto?")
-        rc, out, _ = run("contract", "validate", self._riel(c))
-        self.assertEqual(rc, 1)
-        self.assertIn("not a valid form", out)
-
-    def test_a_shaping_anchor_without_the_finding_warns(self):
-        c = self.CONTRACT.replace("shaping:F1", "shaping:F9")
-        rc, _, err = run("contract", "validate", self._riel(c))
-        self.assertEqual(rc, 0)
-        self.assertIn("no such finding", err)
-
-    def test_a_shaping_anchor_with_no_shaping_file_only_warns(self):
-        rc, _, err = run("contract", "validate", self._riel(shaping=False))
-        self.assertEqual(rc, 0)
-        self.assertIn("no shaping file", err)
-
-    def test_prose_mentioning_the_syntax_is_not_taken_for_an_anchor(self):
-        c = self.CONTRACT.replace(
-            "- P2: el nodo lo sostiene — verify with: true — anchor: S1",
-            "- P2: el nodo lo sostiene, no su sintaxis `— anchor:`"
-            " — verify with: true")
-        rc, _, err = run("contract", "validate", self._riel(c))
-        self.assertEqual(rc, 0)
-        self.assertIn("P2 has no anchor", err)
-
-    def test_the_ledger_seed_keeps_the_anchor(self):
-        self._riel()
-        rc, _, _ = run("note", "--from-contract",
-                       os.path.join(".riel", "contract.md"))
-        self.assertEqual(rc, 0)
-        with open(os.path.join(".riel", "ledger.md"), encoding="utf-8") as fh:
-            self.assertIn("— anchor: §Constraints#2", fh.read())
-
-    def test_a_slice_inherits_the_anchors_verbatim(self):
-        path = self._write(self.SLICEABLE)
-        rc, out, _ = run("contract", "slice", path, "--phase", "W1")
-        self.assertEqual(rc, 0, out)
-        self.assertIn("— anchor: §Constraints#1", out)
-
-    def test_anchor_prints_every_claim_with_its_region(self):
-        path = self._riel()
-        rc, out, _ = run("anchor", "--contract", path)
-        self.assertEqual(rc, 0, out)
-        self.assertIn("P1:", out)
-        self.assertIn("§Constraints#2", out)
-        self.assertIn("| r2", out)
-        self.assertIn("| RUN ls", out)
-        self.assertIn("el hallazgo que sostiene P3", out)
-
-    def test_anchor_filters_a_single_claim(self):
-        rc, out, _ = run("anchor", "P2", "--contract", self._riel())
-        self.assertEqual(rc, 0)
-        self.assertIn("P2:", out)
-        self.assertNotIn("P1:", out)
-
-    def test_anchor_reports_an_unresolvable_one(self):
-        c = self.CONTRACT.replace(" — anchor: S1", " — anchor: S9")
-        rc, out, _ = run("anchor", "--contract", self._riel(c))
-        self.assertEqual(rc, 0)
-        self.assertIn("does not resolve", out)
-
-    def test_anchor_without_a_contract_errors(self):
-        rc, _, err = run("anchor")
-        self.assertEqual(rc, 1)
-        self.assertIn("no contract found", err)
-
-    def test_anchor_of_an_unknown_claim_errors(self):
-        rc, _, err = run("anchor", "P9", "--contract", self._riel())
-        self.assertEqual(rc, 2)
-        self.assertIn("no claim", err)
+        self.assertIn("refuses to replace", err)
+        self.assertEqual(self.read_run(), before)
 
 
 if __name__ == "__main__":
     unittest.main()
-
-
-class BackupBeforeWriteTest(TempDirTest):
-    """Every engine write over an existing artifact leaves a flat .bak.md.
-
-    The ledger is state that cannot be re-derived: a concurrent writer
-    clobbering it must always leave the previous version reachable.
-    """
-
-    def baks(self, prefix):
-        return [n for n in os.listdir(os.path.join(self.tmp, ".riel"))
-                if n.startswith(prefix) and n.endswith(".bak.md")]
-
-    def test_first_note_has_no_backup(self):
-        rc, out, err = run("note", "--goal", "g1", "--next", "n1")
-        self.assertEqual(rc, 0, err)
-        self.assertEqual(self.baks("ledger-"), [],
-                         "a first write backed up nothing that existed")
-
-    def test_second_note_backs_up_previous(self):
-        run("note", "--goal", "g1", "--next", "n1")
-        rc, out, err = run("note", "--check", "c1", "--by", "make test")
-        self.assertEqual(rc, 0, err)
-        baks = self.baks("ledger-")
-        self.assertEqual(len(baks), 1, "the previous ledger was not backed up")
-        with open(os.path.join(self.tmp, ".riel", baks[0]), encoding="utf-8") as fh:
-            previous = fh.read()
-        self.assertIn("g1", previous)
-        self.assertNotIn("c1", previous, "the backup holds the PREVIOUS state")
-
-    def test_contract_new_over_existing_backs_up(self):
-        contract = os.path.join(self.tmp, ".riel", "contract.md")
-        run("contract", "new", "--type", "packet", "--param", "name=t1", "-o", contract)
-        rc, out, err = run("contract", "new", "--type", "packet", "--param", "name=t2",
-                           "-o", contract)
-        self.assertEqual(rc, 0, err)
-        baks = self.baks("contract-")
-        self.assertEqual(len(baks), 1)
-        with open(os.path.join(self.tmp, ".riel", baks[0]), encoding="utf-8") as fh:
-            self.assertIn("t1", fh.read())
-
-
-class ListGraphTests(TempDirTest):
-    """The PLAIN list register of `## Execution graph` — mermaid optional.
-
-    The canonical simple plan: `- F1: phase` with nested steps, linear
-    funnel, each phase's last step is its gate. validate/todo/digest/slice
-    must accept it exactly like a mermaid graph.
-    """
-
-    LIST_CONTRACT = """# Task: lista plana
-
-## Objective
-We need que la lista plana valide igual que mermaid
-
-## Context
-c
-
-### Why
-porque el diagrama es opcional, la verificación no
-
-## Constraints
-- r
-
-## Pre-registered claims
-- P1: la lista valida — verify with: true
-- P2: la fase se alcanza tras verificar — verify with: true — anchor: F2
-
-## Execution graph
-
-- F1: preparar
-  - READ README.md — contexto del cambio
-  - RUN make test
-- F2: cerrar
-  - EDIT main.py — ajuste final
-  - VERIFY git diff sin cambios fuera de alcance
-
-## Verification gates
-g
-
-## Deliverable
-d
-
-## DO NOT
-- x
-"""
-
-    def _write(self, content):
-        path = os.path.join(self.tmp, "list-contract.md")
-        with open(path, "w", encoding="utf-8") as fh:
-            fh.write(content)
-        return path
-
-    def test_validate_accepts_the_list_register(self):
-        rc, out, err = run("contract", "validate", self._write(self.LIST_CONTRACT))
-        self.assertEqual(rc, 0, out + err)
-
-    def test_validate_rejects_a_phase_without_its_gate(self):
-        bad = self.LIST_CONTRACT.replace(
-            "  - VERIFY git diff sin cambios fuera de alcance\n",
-            "  - READ main.py — nada que verificar\n")
-        rc, out, _ = run("contract", "validate", self._write(bad))
-        self.assertEqual(rc, 1)
-        self.assertIn("F2 ends with", out)
-
-    def test_validate_rejects_a_step_off_the_closed_vocabulary(self):
-        bad = self.LIST_CONTRACT.replace(
-            "  - READ README.md — contexto del cambio",
-            "  - leer el README primero")
-        rc, out, _ = run("contract", "validate", self._write(bad))
-        self.assertEqual(rc, 1)
-        self.assertIn("closed verb", out)
-
-    def test_validate_rejects_a_text_without_any_graph(self):
-        bare = self.LIST_CONTRACT.replace(
-            "\n## Execution graph\n\n- F1: preparar\n  - READ README.md — contexto del cambio\n  - RUN make test\n- F2: cerrar\n  - EDIT main.py — ajuste final\n  - VERIFY git diff sin cambios fuera de alcance\n",
-            "\n")
-        rc, out, _ = run("contract", "validate", self._write(bare))
-        self.assertEqual(rc, 1)
-        self.assertIn("no execution graph found", out)
-
-    def test_seed_takes_goal_phase_and_next_from_the_list(self):
-        path = self._write(self.LIST_CONTRACT)
-        rc, _, err = run("note", "--from-contract", path)
-        self.assertEqual(rc, 0, err)
-        rc, out, _ = run("seam", "--mode", "json")
-        self.assertEqual(rc, 0, out)
-        items = json.loads(out)
-        kinds = {i["id"] for i in items}
-        self.assertIn("goal", kinds)
-        self.assertTrue(any(i["id"].startswith("claim-") for i in items))
-        # Next is the list's first phase label (the entry node)
-        next_item = next(i for i in items if i["id"] == "next")
-        self.assertIn("preparar", next_item["content"])
-
-    def test_todo_derives_phases_and_steps_from_the_list(self):
-        path = self._write(self.LIST_CONTRACT)
-        d = os.path.join(self.tmp, ".riel")
-        os.makedirs(d, exist_ok=True)
-        shutil.copy(path, os.path.join(d, "contract.md"))
-        run("note", "--goal", "probar", "--next", "READ README.md")
-        rc, out, _ = run("todo")
-        self.assertEqual(rc, 0, out)
-        items = json.loads(out)
-        by_id = {i["id"]: i for i in items}
-        # the root is the CONTRACT's goal (the list register serves it too)
-        self.assertEqual(
-            by_id["goal"]["content"],
-            "GOAL: We need que la lista plana valide igual que mermaid")
-        self.assertIn("phase-F1", by_id)
-        self.assertIn("phase-F2", by_id)
-        self.assertIn("preparar", by_id["phase-F1"]["content"])
-        self.assertEqual(by_id["step-F1-S1"]["parent"], "phase-F1")
-        self.assertIn("READ README.md", by_id["step-F1-S1"]["content"])
-        self.assertEqual(by_id["step-F2-S3"]["parent"], "phase-F2")
-        # exactly one in_progress: the step the Next points at
-        self.assertEqual(
-            sum(1 for i in items if i["status"] == "in_progress"), 1)
-        self.assertEqual(by_id["step-F1-S1"]["status"], "in_progress")
-
-    def test_digest_expands_the_list(self):
-        rc, out, _ = run("digest", self._write(self.LIST_CONTRACT))
-        self.assertEqual(rc, 0, out)
-        self.assertIn("F1 — preparar", out)
-        self.assertIn("S1", out)
-        self.assertIn("F1 -> S1", out)
-
-    def test_slice_renders_the_list_phase_as_mermaid(self):
-        rc, out, _ = run("contract", "slice", self._write(self.LIST_CONTRACT),
-                         "--phase", "F1")
-        self.assertEqual(rc, 0, out)
-        self.assertIn("F1[\"preparar\"]", out)
-        self.assertIn("S1[\"READ README.md — contexto del cambio\"]", out)
-        self.assertIn("F1 --> S1", out)
-        # the next phase stays out of the SLICE's graph (the copied claims
-        # may still mention F2 as their anchor — that is provenance)
-        graph = out.split("```mermaid", 1)[1].split("```", 1)[0]
-        self.assertNotIn("F2", graph)

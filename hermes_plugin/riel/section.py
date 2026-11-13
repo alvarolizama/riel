@@ -4,13 +4,14 @@ One block, rendered once per session and frozen into the prompt by Hermes
 (`ctx.register_system_prompt_section`, position `after_memory`). It answers the
 one question no tool can: **that the prose exists at all**. The tools live in
 the model's catalog; the guide's topics do not, so this block names the door
-(`riel_guide`) and the worktree's ledger state.
+(`riel_guide`) and the worktree's active run.
 
 The rules that keep it honest:
 
-  * **No network.** The only subprocess is the engine's `status`, capped at
-    {@link STATE_TIMEOUT_SECS}s; its failure is SILENCE — never an error in the
-    prompt.
+  * **No network.** The only engine call is `run status`, reached the safe
+    in-process way (`dashboard/ledger_status.read_run`), capped at
+    {@link STATE_TIMEOUT_SECS}s of patience; its failure is SILENCE — never an
+    error in the prompt.
   * **The files are the truth.** The topic list comes from `guide/*.md` at
     render time, so the block cannot drift from the prose.
   * **Never over budget.** The note is dropped before the door, the state line
@@ -24,6 +25,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 from typing import Any, List, Optional
+from collections.abc import Mapping
 
 try:  # a package import when the host loaded us as one …
     from . import _load
@@ -47,12 +49,11 @@ guide = _load.guide()
 settings = _load.settings()
 
 PLUGIN_DIR = Path(__file__).resolve().parent
-ENGINE = PLUGIN_DIR / "engine" / "run.py"
 
 HEAD = (
-    "Riel — steering for long tasks: externalized state (the ledger) and a "
-    "machine-checkable plan (the contract). The prose ships with this plugin "
-    "and is read through the riel_guide tool."
+    "Riel — steering for long tasks: externalized state (.riel/run.md: plan, "
+    "execution state, typed gate evidence) fed by the shaping. The prose ships "
+    "with this plugin and is read through the riel_guide tool."
 )
 
 
@@ -69,58 +70,87 @@ def index_line() -> str:
     return (
         "Prose: riel_guide() lists the topics ("
         + ", ".join(topics)
-        + '); riel_guide(topic="contract") lists that guide\'s sections by size, '
+        + '); riel_guide(topic="run") lists that guide\'s sections by size, '
         "section= reads just one, full=true reads the whole body."
     )
 
 
 def _door_line() -> str:
     return (
-        "Door: everything Riel does is a tool — riel_guide, riel_note, riel_seam "
-        "(mode=read|resume|json), riel_todo, riel_plan (the contract, the shaping "
-        "and the remote fetch), riel_clean, riel_check (deferred: reach them with "
-        "tool_search \"riel\"). No command line, no PATH."
+        "Door: everything Riel does is a tool — riel_guide, riel_shape "
+        "(new|validate|fetch), riel_run (new|validate|activate|rebase|status|"
+        "slice|fetch), riel_note, riel_clean, riel_check (deferred: "
+        "reach them with tool_search \"riel\"). No command line, no PATH."
     )
 
 
-def _read_status(worktree: str) -> Optional[dict]:
-    """`ledger_status.read_status` loaded by path; `None` when unavailable."""
-    path = PLUGIN_DIR / "dashboard" / "ledger_status.py"
-    try:
+_LEDGER_STATUS = None
+
+
+def _ledger_status():
+    """`dashboard/ledger_status.py` loaded by path, once per process."""
+    global _LEDGER_STATUS
+    if _LEDGER_STATUS is None:
+        path = PLUGIN_DIR / "dashboard" / "ledger_status.py"
         spec = importlib.util.spec_from_file_location("riel_section_ledger_status", path)
         if spec is None or spec.loader is None:  # pragma: no cover - defensive
             return None
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        return module.read_status(worktree, timeout=STATE_TIMEOUT_SECS)
+        _LEDGER_STATUS = module
+    return _LEDGER_STATUS
+
+
+def _read_run(worktree: str) -> Optional[dict]:
+    """`ledger_status.read_run`; `None` when unavailable."""
+    module = _ledger_status()
+    if module is None:
+        return None
+    try:
+        return module.read_run(worktree)
     except Exception:
         return None
 
 
 def state_line(worktree: str) -> str:
-    """One line about the worktree's ledger, or `""` (no ledger, no engine, slow)."""
+    """One line about the worktree's active run, or `""` (no run, slow)."""
     worktree = str(worktree or "").strip()
     if not worktree:
         return ""
-    status = _read_status(worktree)
-    if not isinstance(status, dict) or not status.get("present") or status.get("error"):
+    report = _read_run(worktree)
+    if not isinstance(report, dict) or not report.get("present") or report.get("error"):
+        return ""
+    status = report.get("status")
+    if not isinstance(status, dict) or status.get("error"):
         return ""
     parts: List[str] = []
     goal = _cap(status.get("goal"), STATE_FIELD_CHARS)
+    if not goal:
+        # the engine's status does not carry the goal: the run's own H1 does
+        first = (report.get("markdown") or "").lstrip().splitlines()
+        if first and first[0].startswith("# Run:"):
+            goal = _cap(first[0][len("# Run:"):].strip(), STATE_FIELD_CHARS)
     if goal:
         parts.append(f"Goal: {goal}")
-    if status.get("phase"):
-        parts.append(f"Phase {_cap(status['phase'], 24)}")
     nxt = _cap(status.get("next"), STATE_FIELD_CHARS)
     if nxt:
         parts.append(f"Next: {nxt}")
     parts.append(
-        f"{status.get('claims', 0)} claims · {status.get('verified', 0)} verified · {status.get('open', 0)} open"
+        "{} claims · {} gates · {} evidence".format(
+            len(status.get("claims") or {}),
+            len(status.get("gates") or {}),
+            (status.get("evidence") or {}).get("total", 0)
+            if isinstance(status.get("evidence"), dict)
+            else len(status.get("evidence") or []) if isinstance(status.get("evidence"), list)
+            else status.get("evidence") or 0,
+        )
     )
+    if not (status.get("status") == "active" or status.get("active") is True):
+        parts.append("no activado")
     return (
         "Worktree state — "
         + " · ".join(parts)
-        + "  →  re-read with riel_seam, write with riel_note."
+        + "  →  re-read with riel_run status, write with riel_note."
     )
 
 
@@ -129,7 +159,7 @@ def render(session_info: Any = None) -> str:
     if not _load.settings().read_bool("context", default=True):
         return ""
 
-    info = session_info if isinstance(session_info, dict) else {}
+    info = session_info if isinstance(session_info, Mapping) else {}
     core = [HEAD, index_line(), "", _door_line()]
     used = sum(len(line) + 1 for line in core)
     if used > SECTION_MAX_CHARS:
@@ -137,7 +167,10 @@ def render(session_info: Any = None) -> str:
 
     lines = list(core)
     # The state is the volatile half: it only joins when it fits WHOLE.
-    state = state_line(_load.session_cwd(preferred=info.get("cwd"), recorded=False) or "")
+    state_worktree = _load.session_cwd(preferred=info.get("cwd"), recorded=False)
+    if "cwd" in info:
+        state_worktree = str(info.get("cwd") or "").strip()
+    state = state_line(state_worktree or "")
     if state and used + len(state) + 2 <= SECTION_MAX_CHARS:
         lines = [HEAD, index_line(), "", state, "", _door_line()]
         used += len(state) + 2

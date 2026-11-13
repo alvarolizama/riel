@@ -1,43 +1,44 @@
-#!/usr/bin/env python3
-"""The engine behind Riel's tools — one stdlib file, no user surface.
+"""The Riel v2 engine — one stdlib file behind the public verbs.
 
-Every subcommand below is reached through a TOOL (`riel_note`, `riel_plan`,
-`riel_seam`, …); nothing here is typed into a shell, and no flag travels as
-data. The tools pass named parameters, this file owns the formats and decides
-nothing semantic.
-Usage:
-    riel [--worktree DIR] [--ledger PATH] <verb> …
-    note    [--goal G] [--next N] [--core "name — fact"]
-                    [--core-slot N] [--claim C --verify-with CMD]
-                    [--check WHAT --by CMD --covering SCOPE [--confidence N]]
-                    [--open Q --settled-by TEST]
-                    [--close N --check WHAT --by CMD [--covering SCOPE]]
-                    [--from-contract [PATH]]   # seed from .riel/contract.md
-    seam    [--mode read|resume|json]         # ledger + due invariants / + restore order / JSON
-    anchor  [P#] [--contract PATH] [--shaping PATH]  # claim + su región
-    todo                                      # el espejo del PLAN (JSON)
-    status                                    # == seam --mode json
-    context [--contract PATH] [-o OUT]        # keywords de contexto (JSON)
-    clean   [--all] [--purge]                 # limpia .riel/ con backup plano
-    ship    FILE...
-    check   FILE [--mermaid]                  # ship + digest (+ mmdc), una sola llamada
-    digest  FILE [-o OUT]
-    mermaid FILE...                           # parsea cada bloque con mmdc
-    shaping validate [PATH]                   # valida .riel/shaping.md (Spec 7)
-    shaping new [-o PATH] [--force] [--param k=v ...]
-    contract new [--type T] [--param k=v ...] [--list]
-    contract validate FILE
-    contract digest FILE [-o OUT]
-    contract slice  FILE [--phase F#] [-o OUT]
-    fetch   URL -o FILE [--sha256 H] [--header 'Name: v'] [--allow-http] [--timeout S] [--max-bytes N]
+Public surface (nothing else exists; there is NO converter from riel v1):
 
-`--worktree DIR` chdirs the engine into DIR before any verb runs, so `.riel/`,
-every template lookup and every relative output path resolve against the
-WORKTREE — never against the directory the caller happened to run from.
+    riel [--worktree DIR] shape [PATH] | shape new [--param k=v]
+    riel [--worktree DIR] shape fetch URL -o F --sha256 H
+    riel [--worktree DIR] run new [--param k=v] [--strict]
+    riel [--worktree DIR] run validate [FILE]
+    riel [--worktree DIR] run activate
+    riel [--worktree DIR] run rebase
+    riel [--worktree DIR] run status
+    riel [--worktree DIR] run slice PHASE
+    riel [--worktree DIR] run fetch URL -o F --sha256 H [--timeout S] [--max-bytes N]
+    riel [--worktree DIR] note [--gate G# ...] [--claim P# ...] --command CMD
+                        --covering WHAT [--confidence N]
+                        [--core "name -- fact"] [--core-slot N]
+                        [--open Q --settled-by TEST] [--close N --evidence N]
+    riel [--worktree DIR] todo
+    riel [--worktree DIR] clean [--all] [--purge]
+    riel [--worktree DIR] check FILE [--mermaid]
+
+State is ONE file, `.riel/run.md`, format `riel-run/v1`, plus a separate
+frozen `.riel/shaping.md`. The plan (the title plus eight sections, ending at
+`## DO NOT`) is authored by hand — `run new` only renders the template to
+stdout; an editor or write_file is the editing path. `run activate` freezes
+it: it computes plan_sha256 over the plan-before-Metadata (including the
+frozen Basis copied from the referenced shaping findings) and shaping_sha256
+over the shaping bytes, then appends Metadata + Execution state + Core + Open
++ Evidence. `note` is the ONLY writer of that state. If the plan or the
+shaping changes underneath, note refuses as stale until `run rebase` reserves
+the old evidence (retained, not counted) under a new revision.
+
+Every output goes to explicit sinks: `run_verb(argv, worktree, out, err)`
+never touches process-global stdout/stderr, and every error is clean text —
+never a traceback.
 """
 import argparse
+import base64
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import re
@@ -50,143 +51,51 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-VERSION = "1.7.0"
-# A by-path load may hand us a RELATIVE `__file__`; a later chdir (the CLI's
-# --worktree, or the caller's) would then break every `dirname(__file__)`.
-# Bind it absolute ONCE, at import time.
-__file__ = os.path.abspath(__file__)
-LEDGER_DIR = ".riel"
-LEDGER_PATH = os.path.join(LEDGER_DIR, "ledger.md")
-CONTRACT_PATH = os.path.join(LEDGER_DIR, "contract.md")
-SHAPING_PATH = os.path.join(LEDGER_DIR, "shaping.md")
-VERIFY_CMD = os.environ.get("RIEL_MMDC", "mmdc")
-# A wedged mermaid-cli must not wedge the caller: every mmdc call is bounded.
-MMDC_TIMEOUT = float(os.environ.get("RIEL_MMDC_TIMEOUT", "20"))
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - non-POSIX fallback
+    fcntl = None
 
+VERSION = "2.0.0"
+RUN_FORMAT = "riel-run/v1"
+
+RIEL_DIR = ".riel"
+RUN_MD = "run.md"
+SHAPING_MD = "shaping.md"
+LOCK_NAME = ".run.lock"
+LEGACY_STATE_FILES = ("contract.md", "ledger.md")
+MARKER_LINE = "<!-- {} -->".format(RUN_FORMAT)
+
+# The plan: the level-1 title plus these eight level-2 sections, in order.
+# Activation appends five more (Metadata, Execution state, Core, Open,
+# Evidence).
+PLAN_TITLES = (
+    "Objective", "Context", "Constraints", "Claims", "Graph",
+    "Gates", "Deliverable", "DO NOT",
+)
+CLOSED_VERBS = ("READ", "EDIT", "CREATE", "RUN", "VERIFY", "ASK")
 DENSE_RE = re.compile(r"[✓?]\d+|↔|⇒|⊕|λ|Σ")
+VERIFY_CMD = os.environ.get("RIEL_MMDC", "mmdc")
+MMDC_TIMEOUT = float(os.environ.get("RIEL_MMDC_TIMEOUT", "20"))
+NOTE_TIMEOUT = float(os.environ.get("RIEL_NOTE_TIMEOUT", "120"))
+NOTE_SNIPPET_CHARS = 240
+MAX_BACKUPS = 3
+CONFIDENCE_PASS = 12
 
 
-# ---------------------------------------------------------------- ledger ----
+class EngineError(Exception):
+    """A clean, user-facing failure. `.code` is the process exit code."""
 
-DEFAULT_TEMPLATE = """# Riel ledger
-
-## Goal
-{goal}
-
-{source_section}{phase_section}## Claims
-{claims}
-
-## Core
-{core}
-
-## Verified
-{verified}
-
-## Open
-{open}
-
-## Next
-{next}
-"""
+    def __init__(self, message, code=2):
+        super().__init__(message)
+        self.code = code
 
 
-def read_ledger(path):
-    """Parse .riel/ledger.md into a dict of sections. Empty strings -> []."""
-    out = {
-        "goal": "", "source": "", "phase": "", "claims": [], "core": [],
-        "verified": [], "open": [], "next": "",
-    }
-    if not os.path.exists(path):
-        return out
-    try:
-        with open(path, encoding="utf-8") as fh:
-            text = fh.read()
-    except OSError:
-        return out
-    cur = None
-    headers = {
-        "## Goal": "goal", "## Source": "source", "## Phase": "phase",
-        "## Claims": "claims", "## Core": "core", "## Verified": "verified",
-        "## Open": "open", "## Next": "next",
-    }
-    for line in text.splitlines():
-        if line.strip() in headers:
-            cur = headers[line.strip()]
-        elif line.startswith("#"):
-            cur = None
-        elif cur in ("goal", "source", "phase", "next"):
-            if line.strip():
-                if out[cur]:
-                    out[cur] += "\n"
-                out[cur] += line
-        elif cur in ("claims", "core", "verified", "open"):
-            if line.strip().startswith("- "):
-                out[cur].append(line.strip()[2:])
-    # "<empty>" is a rendering placeholder, not data (write_ledger re-adds it)
-    for key in ("goal", "next"):
-        if out[key] == "<empty>":
-            out[key] = ""
-    return out
+# ------------------------------------------------------------- markdown ----
 
-
-def _backup_before_write(path):
-    """Best-effort backup of an existing file before the engine overwrites it.
-
-    Same flat convention as `clean` — `name-<ts>.bak.md` beside the original,
-    never a subdirectory — so one recovery story covers both. A ledger is the
-    only state that cannot be re-derived: a concurrent writer clobbering it
-    must always leave the previous version reachable. Failure is SILENT: a
-    backup that blocks the write is worse than no backup (same rule as the
-    gate).
-    """
-    try:
-        if not os.path.isfile(path):
-            return
-        directory = os.path.dirname(path) or "."
-        base = os.path.basename(path)
-        if base.endswith(".md"):
-            base = base[:-len(".md")]
-        stamp = time.strftime("%Y%m%d-%H%M%S")
-        backup = os.path.join(directory, "{}-{}.bak.md".format(base, stamp))
-        n = 1
-        while os.path.exists(backup):
-            backup = os.path.join(directory, "{}-{}-{}.bak.md".format(base, stamp, n))
-            n += 1
-        shutil.copy2(path, backup)
-    except OSError:
-        pass
-
-
-def write_ledger(path, st):
-    source_section = (
-        "## Source\n{}\n\n".format(st["source"]) if st["source"] else ""
-    )
-    phase_section = (
-        "## Phase\n{}\n\n".format(st["phase"]) if st["phase"] else ""
-    )
-    body = DEFAULT_TEMPLATE.format(
-        goal=st["goal"] or "<empty>",
-        source_section=source_section,
-        phase_section=phase_section,
-        claims="\n".join("- " + c for c in st["claims"]) or "<none>",
-        core="\n".join("- " + c for c in st["core"]) or "<none>",
-        verified="\n".join("- " + c for c in st["verified"]) or "<none>",
-        open="\n".join("- " + q for q in st["open"]) or "<none>",
-        next=st["next"] or "<empty>",
-    )
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as fh:
-        fh.write(body)
-
-
-def entry_number(prefix, seq):
-    escaped = re.escape(prefix)
-    nums = [
-        int(m.group(1))
-        for entry in seq
-        for m in re.finditer(r"{}(\d+)".format(escaped), entry)
-    ]
-    return max(nums, default=0) + 1
+def _strip_comments(text):
+    """Remove `<!-- ... -->` blocks (multi-line included)."""
+    return re.sub(r"<!--.*?-->", "", text, flags=re.S)
 
 
 def _section(text, name):
@@ -198,17 +107,8 @@ def _section(text, name):
     return m.group(1).strip() if m else ""
 
 
-def _first_paragraph(body):
-    """First non-empty paragraph of a section, collapsed to one line."""
-    for para in re.split(r"\n\s*\n", body):
-        para = para.strip()
-        if para:
-            return " ".join(l.strip() for l in para.splitlines() if l.strip())
-    return ""
-
-
 def _subsection(text, section, sub):
-    """Body of '### <sub>' inside '## <section>' (up to the next ###/## heading)."""
+    """Body of '### <sub>' inside '## <section>'."""
     body = _section(text, section)
     m = re.search(
         r"^###\s+" + re.escape(sub) + r"[^\n]*\n(.*?)(?=^###\s|^##\s|\Z)",
@@ -217,1146 +117,59 @@ def _subsection(text, section, sub):
     return m.group(1).strip() if m else ""
 
 
-def _sentence_count(body):
-    """Sentences in a section body: comments stripped, lines joined.
-
-    Best-effort — a wrapped single sentence counts as one (fixtures wrap),
-    several paragraphs count as multi. Used for the Objective one-sentence
-    WARN, never as a hard gate.
-    """
-    text = re.sub(r"<!--.*?-->", "", body, flags=re.S)
-    paras = [p for p in (re.sub(r"\s+", " ", chunk).strip()
-                         for chunk in re.split(r"\n\s*\n", text)) if p]
-    if not paras:
-        return 0
-    if len(paras) > 1:
-        return len(paras) + 1  # more than one paragraph: already multi
-    parts = [s for s in re.split(r"(?<=[.!?])\s+", paras[0]) if s.strip()]
-    return max(len(parts), 1)
-
-
-def context_keywords(text):
-    """Context-fetch keywords from '### Context keywords' inside '## Context'.
-
-    One bullet per term, with an optional source hint after an arrow
-    (`- login flow → dran`). Unfilled `{{placeholders}}` and comments are
-    skipped, so an untouched template yields no keywords instead of junk.
-    """
-    body = _subsection(text, "Context", "Context keywords")
-    found = []
-    for raw in body.splitlines():
-        line = raw.strip()
-        if not line or line.startswith("<!--"):
-            continue
-        m = re.match(r"^[-*]\s+(.+)$", line)
-        if not m:
-            continue
-        term, _, source = m.group(1).partition("→")
-        term = term.strip().strip("`").strip()
-        if not term or term.startswith("{{"):
-            continue
-        found.append({"term": term, "source": source.strip().strip("`").lower()})
-    return found
-
-
-# ------------------------------------------------- anchors / shaping ----
-
-CLAUSE_RE = re.compile(r"\s+—\s+")
-CLAIM_LINE_RE = re.compile(r"^-+\s*(P\d+)\s*:?\s*(.*)$")
-SECTION_ANCHOR_RE = re.compile(r"^§\s*([^#]+?)\s*(?:#(\d+))?$")
-SHAPING_ANCHOR_RE = re.compile(r"^shaping:F(\d+)$", re.I)
-NODE_ANCHOR_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-
-SHAPING_SECTIONS = [
-    "Question", "Findings", "Facts", "Alternatives bounced", "Open", "Verdict",
-]
-
-
-def claim_anchors(text):
-    """[{id, claim, verify_with, anchor}] from '## Pre-registered claims'.
-
-    One claim per LINE (the rule the seed already follows), parsed by em-dash
-    CLAUSES: the anchor is the line's LAST clause (`— anchor: …`), so a claim
-    whose prose merely MENTIONS the syntax (``— anchor:` ``) is not mistaken
-    for one. Because the anchor rides the claim's own line, `contract slice`
-    copies it verbatim into a child packet — provenance without new plumbing.
-    """
-    out = []
-    for raw in _section(text, "Pre-registered claims").splitlines():
-        line = raw.strip()
-        m = CLAIM_LINE_RE.match(line)
-        if not m:
-            continue
-        cid, rest = m.group(1), m.group(2)
-        clauses = [c.strip() for c in CLAUSE_RE.split(rest) if c.strip()]
-        anchor, verify, prose = "", "", []
-        for i, clause in enumerate(clauses):
-            low = clause.lower()
-            if low.startswith("anchor:") and i == len(clauses) - 1:
-                anchor = clause[len("anchor:"):].strip().strip("`")
-            elif low.startswith("verify with:"):
-                verify = clause[len("verify with:"):].strip().strip("`")
-            else:
-                prose.append(clause)
-        out.append({"id": cid, "claim": " — ".join(prose).strip(),
-                    "verify_with": verify, "anchor": anchor})
-    return out
-
-
 def _bullets(body):
-    """List items of a section body, in order (bullets or numbered)."""
+    """List items of a body, in order; `-`, `*` and `1.` all count.
+
+    HTML comments are stripped first so a commented-out example never
+    becomes data (the audit fix for Findings and bullets).
+    """
     items = []
-    for raw in body.splitlines():
+    for raw in _strip_comments(body).splitlines():
         line = raw.strip()
-        if not line or line.startswith("<!--"):
-            continue
         m = re.match(r"^(?:[-*]|\d+\.)\s+(.+)$", line)
         if m:
             items.append(m.group(1).strip())
     return items
 
 
-def shaping_findings(path):
-    """{n: text} for every F# line of a shaping file ({} when unreadable)."""
-    if not path or not os.path.isfile(path):
-        return {}
-    with open(path, encoding="utf-8") as fh:
-        text = fh.read()
-    found = {}
-    for raw in _section(text, "Findings").splitlines():
-        m = re.match(r"^-+\s*F(\d+)\b[:\s]*(.*)$", raw.strip())
-        if m:
-            found[int(m.group(1))] = m.group(2).strip()
+def _first_line(text):
+    """First non-empty, non-comment line of a section body."""
+    for raw in _strip_comments(text).splitlines():
+        line = raw.strip()
+        if line:
+            return line
+    return ""
+
+
+def _clauses(text):
+    """Split 'a — b: c — d' on em-dashes into clause strings."""
+    return [c.strip() for c in re.split(r"\s+—\s+", text) if c.strip()]
+
+
+def context_keywords(text):
+    """[{term, source}] from '### Context keywords' under '## Context'."""
+    found = []
+    for item in _bullets(_subsection(text, "Context", "Context keywords")):
+        term, _, source = item.partition("→")
+        term = term.strip().strip("`").strip()
+        if term and not term.startswith("{{"):
+            found.append({"term": term,
+                          "source": source.strip().strip("`").strip()})
     return found
 
 
-def resolve_anchor(anchor, text, graph_nodes=None, shaping_path=None):
-    """Resolve one claim anchor against a contract (and its graph).
-
-    Returns (kind, detail): kind in {'section', 'node', 'shaping', 'unknown'};
-    detail is the excerpt when the anchor resolved, None when it did not.
-    Forms: `§<Section>[#<n>]`, `<NodeId>`, `shaping:F<n>`.
-    """
-    if not anchor:
-        return "none", None
-    m = SECTION_ANCHOR_RE.match(anchor)
-    if m:
-        name, idx = m.group(1).strip(), m.group(2)
-        body = _section(text, name)
-        if not body:
-            return "section", None
-        if idx is None:
-            return "section", body
-        items = _bullets(body)
-        n = int(idx)
-        if 1 <= n <= len(items):
-            return "section", items[n - 1]
-        return "section", None
-    m = SHAPING_ANCHOR_RE.match(anchor)
-    if m:
-        return "shaping", shaping_findings(shaping_path).get(int(m.group(1)))
-    if NODE_ANCHOR_RE.match(anchor):
-        if graph_nodes is None or anchor not in graph_nodes:
-            return "node", None
-        return "node", graph_nodes[anchor][1]
-    return "unknown", None
-
-
-def _excerpt(body, limit=4):
-    """The lines of a resolved region, trimmed for a seam's glance."""
-    lines = [l.strip() for l in body.splitlines()
-             if l.strip() and not l.strip().startswith("<!--")]
-    out = ["| " + l for l in lines[:limit]]
-    if len(lines) > limit:
-        out.append("| …")
-    return out
-
-
-def seed_from_contract(path):
-    """Read a contract.md -> (fields, warnings).
-
-    Best-effort: Goal <- Objective, Claims <- P#, Phase <- first F#/W#
-    node, Next <- the graph's entry node (no incoming edge). Returns
-    (None, [...]) when the file is missing.
-    """
-    fields = {"goal": "", "phase": "", "claims": [], "next": ""}
-    warnings = []
-    if not os.path.exists(path):
-        return None, ["no contract found at {}".format(path)]
-    with open(path, encoding="utf-8") as fh:
-        text = fh.read()
-
-    goal = _first_paragraph(_section(text, "Objective"))
-    if goal:
-        fields["goal"] = goal
-    else:
-        warnings.append("no ## Objective found")
-
-    for line in _section(text, "Pre-registered claims").splitlines():
-        s = line.strip()
-        if re.match(r"^-?\s*P\d+", s):
-            fields["claims"].append(re.sub(r"^-\s*", "", s))
-    if not fields["claims"]:
-        warnings.append("no P# claims found")
-
-    nodes, edges, _register = graph_any(text)
-    if nodes:
-        backs = set(graph_back_edges(edges))
-        incoming = {v for u, l, v in edges if (u, l, v) not in backs}
-        for nid, (_shape, label) in nodes.items():
-            if nid not in incoming:
-                fields["next"] = label
-                break
-        for nid, (_shape, label) in nodes.items():
-            if re.match(r"^[FW]\d+$", nid):
-                fields["phase"] = label
-                break
-        if not fields["next"]:
-            warnings.append("graph has no entry node")
-    else:
-        warnings.append("no ## Execution graph (mermaid) found")
-    return fields, warnings
-
-
-def cmd_note(args):
-    st = read_ledger(args.ledger)
-
-    if args.from_contract is not None:
-        fields, warns = seed_from_contract(args.from_contract)
-        if fields is None:
-            print(warns[0], file=sys.stderr)
-            return 2
-        for w in warns:
-            print("seed: " + w, file=sys.stderr)
-        for key in ("goal", "phase", "next"):
-            if fields[key] and not st[key]:
-                st[key] = fields[key]
-        for c in fields["claims"]:
-            if c not in st["claims"]:
-                st["claims"].append(c)
-
-    fresh = not st["goal"] and not st["verified"] and not st["next"]
-
-    if args.goal is not None:
-        st["goal"] = args.goal
-    if args.next is not None:
-        st["next"] = args.next
-    if args.source is not None:
-        st["source"] = args.source
-    if args.phase is not None:
-        st["phase"] = args.phase
-
-    if args.claim is not None:
-        verifier = args.verify_with or "<unspecified>"
-        pid = "P{}".format(entry_number("P", st["claims"]))
-        st["claims"].append("{}: {} — verify with: {}".format(pid, args.claim, verifier))
-
-    if args.core is not None:
-        name, _, fact = args.core.partition(" — ")
-        if not fact:
-            print("core entry must look like 'name — defining fact'", file=sys.stderr)
-            return 2
-        slot = args.core_slot
-        if slot is not None:
-            if not 0 <= slot < len(st["core"]):
-                print("no such core slot: {}".format(slot), file=sys.stderr)
-                return 2
-            st["core"][slot] = args.core
-        else:
-            if len(st["core"]) >= 2:
-                print(
-                    "Core is full (2/2). Use --core-slot to swap one.",
-                    file=sys.stderr,
-                )
-                return 2
-            st["core"].append(args.core)
-
-    if args.check is not None:
-        if not args.by:
-            print("--check requires --by (the verifier)", file=sys.stderr)
-            return 2
-        nid = "✓{:02d}".format(entry_number("✓", st["verified"]))
-        covering = args.covering or "<unspecified>"
-        entry = "{} {} — verified by: {}, covering {}".format(
-            nid, args.check, args.by, covering
-        )
-        if args.confidence is not None:
-            entry += ", confidence {}/20".format(args.confidence)
-        st["verified"].append(entry)
-
-    if args.open is not None:
-        if not args.settled_by:
-            print("--open requires --settled-by", file=sys.stderr)
-            return 2
-        qid = "?{:02d}".format(entry_number("?", st["open"]))
-        st["open"].append(
-            "{} {} — settled by: {}".format(qid, args.open, args.settled_by)
-        )
-
-    if args.close is not None:
-        idx = None
-        needle = "?{:02d}".format(args.close)
-        for i, q in enumerate(st["open"]):
-            if q.startswith(needle):
-                idx = i
-                break
-        if idx is None:
-            print("no such open question: {}".format(needle), file=sys.stderr)
-            return 2
-        if args.check is None:
-            print(
-                "--close requires --check (the checkpoint that settled "
-                "{}); a question is closed against a checkpoint, never "
-                "dropped silently".format(needle),
-                file=sys.stderr,
-            )
-            return 2
-        st["open"].pop(idx)
-
-    _backup_before_write(args.ledger)
-    write_ledger(args.ledger, st)
-    print_ledger(st)
-    if fresh and args.goal is None and args.next is None:
-        # user opened with note but supplied nothing — remind how to open
-        print(
-            "\n(ledger was empty; use --goal G --next N to open it)",
-            file=sys.stderr,
-        )
-    return 0
-
-
-def print_ledger(st):
-    source_line = "Source: {}\n".format(st["source"]) if st["source"] else ""
-    phase_line = "Phase: {}\n".format(st["phase"]) if st["phase"] else ""
-    print(
-        "Mode: loop\n" + source_line + phase_line +
-        "Goal: {}\n".format(st["goal"] or "<empty>") +
-        "Claims ({}):\n".format(len(st["claims"])) +
-        "\n".join("  - " + c for c in st["claims"]) + ("\n" if st["claims"] else "") +
-        "Core ({}):\n".format(len(st["core"])) +
-        "\n".join("  - " + c for c in st["core"]) + ("\n" if st["core"] else "") +
-        "Verified ({}):\n".format(len(st["verified"])) +
-        "\n".join("  - " + c for c in st["verified"]) + ("\n" if st["verified"] else "") +
-        "Open ({}):\n".format(len(st["open"])) +
-        "\n".join("  - " + q for q in st["open"]) + ("\n" if st["open"] else "") +
-        "Next: {}".format(st["next"] or "<empty>")
-    )
-
-
-LEDGER_MISSING_HINT = "no ledger found at {}; call riel_note(goal=…, next=…) first"
-
-
-def _require_ledger(st, path):
-    """False — and the one message — when the worktree has no ledger state yet."""
-    if st["goal"] or st["verified"] or st["next"]:
-        return True
-    print(LEDGER_MISSING_HINT.format(path), file=sys.stderr)
-    return False
-
-
-def _due_reminders(st):
-    """The invariants the ledger violates RIGHT NOW — computed, never a static list.
-
-    `resume` used to dump ten hardcoded reminders on every call, the same ten on
-    a clean ledger and on a broken one; the prose lives in the ledger guide, and
-    the engine's job is to say which ones are due.
-    """
-    due = []
-    if not st["verified"]:
-        due.append("No ✓NN yet — record the gate result the moment it passes")
-    if st["claims"] and not st["verified"]:
-        due.append("{} claim(s) and no checkpoint — a claim is unverified until a ✓ cites it"
-                   .format(len(st["claims"])))
-    if len(st["core"]) > 2:
-        due.append("Core has {} live items; re-park to at most 2".format(len(st["core"])))
-    if st["next"] == "":
-        due.append("Next is empty — the ledger stops being state")
-    if st["open"] and not st["verified"]:
-        due.append("{} open question(s) and nothing settled — Open must shrink, not grow"
-                   .format(len(st["open"])))
-    return due
-
-
-def cmd_seam(args):
-    """Re-read the ledger: `--mode read` (prose + due), `resume` (+ restore order), `json`."""
-    mode = getattr(args, "mode", "read")
-    st = read_ledger(args.ledger)
-    if not _require_ledger(st, args.ledger):
-        return 1
-    if mode == "json":
-        print(json.dumps(ledger_to_status(st), indent=2, ensure_ascii=False))
-        return 0
-    print_ledger(st)
-    for line in _due_reminders(st):
-        print("\n[!] " + line)
-    if mode == "resume":
-        print(
-            "\n[resume] Restore order — (1) the ledger above, every ✓NN, not just "
-            "the last; (2) the claims that carry an anchor, re-read beside their "
-            "support with riel_seam(anchors=true); (3) confirm `loop` is still the "
-            "right mode; (4) set Next to the first action back."
-        )
-    anchored = []
-    if os.path.isfile(args._contract):
-        with open(args._contract, encoding="utf-8") as fh:
-            anchored = [c for c in claim_anchors(fh.read()) if c["anchor"]]
-    if anchored:
-        print("\n[anchor] {} of the claims carry an anchor — `riel_seam(anchors=true)` "
-              "re-reads each one beside its region.".format(len(anchored)))
-    return 0
-
-
-# ----------------------------------------------------------------- todo ----
-
-def outerize(text):
-    """Dense-register entry -> outer-register prefix (✓01 -> DONE 01)."""
-    return re.sub(
-        r"([✓?])(\d+)",
-        lambda m: ("DONE " if m.group(1) == "✓" else "OPEN ") + m.group(2),
-        text,
-    )
-
-
-def _phase_order(nodes, edges):
-    """Phase ids (F#/W#) in authored order — the plan's order, not a topo sort."""
-    return [nid for nid in nodes if re.match(r"^[FW]\d+$", nid)]
-
-
-def _phase_steps(nodes, edges, phase_id):
-    """Step node ids of a phase, in authored order.
-
-    A step is a member of the phase's subgraph that is not the phase itself,
-    not a gate (`G#`) or another phase, and not a shape milestone
-    (START/END/DONE) — those are not work.
-    """
-    sub = _phase_subgraph(nodes, edges, phase_id)
-    steps = []
-    for member in nodes:                      # authored order, not a set
-        if member not in sub or member == phase_id:
-            continue
-        if re.match(r"^[FWG]\d+$", member):
-            continue
-        if member.upper() in ("END", "START", "DONE"):
-            continue
-        if not (nodes.get(member, ("", ""))[1] or "").strip():
-            continue
-        steps.append(member)
-    return steps
-
-
-def _label_matches(label, needle):
-    label = (label or "").strip()
-    return bool(label) and (label in needle or needle in label)
-
-
-def _phase_of_next(nodes, edges, next_text):
-    """Best-effort: which phase does the ledger's Next step belong to?"""
-    needle = (next_text or "").strip()
-    if not needle:
-        return None
-    for nid in _phase_order(nodes, edges):
-        if _label_matches(nodes.get(nid, ("", ""))[1], needle):
-            return nid
-        for member in _phase_steps(nodes, edges, nid):
-            if _label_matches(nodes.get(member, ("", ""))[1], needle):
-                return nid
-    return None
-
-
-def _contract_goal(text):
-    """The plan's goal: the contract's `## Objective`, first paragraph."""
-    return _first_paragraph(_section(text, "Objective"))
-
-
-def contract_to_todo_items(text, st):
-    """Phase and step items from the contract's DAG (Spec 6).
-
-    The todo IS the plan: phases are rows, steps are nested subtasks
-    (`parent` = the phase). The ledger only decides statuses — a phase whose
-    gate has a ✓ is completed; the active phase (the one owning the Next)
-    carries the current step as `in_progress`, its earlier steps completed and
-    the rest pending. No ledger fact (Next, claim, open, ✓) becomes a row;
-    those are served by `seam --mode json`.
-    """
-    items = []
-    nodes, edges, _register = graph_any(text)
-    if not nodes:
-        return items
-
-    phase_ids = _phase_order(nodes, edges)
-    active = _phase_of_next(nodes, edges, st.get("next") or "")
-    if not active and st.get("phase"):
-        # fall back: match the ledger's Phase text against node labels
-        for nid in phase_ids:
-            if _label_matches(nodes.get(nid, ("", ""))[1], st["phase"].strip()):
-                active = nid
-                break
-    verified_count = len(st.get("verified") or [])
-    if not active and (st.get("next") or "").strip() and verified_count < len(phase_ids):
-        # a Next that matches no label: the plan's cursor is the first phase
-        # still without its gate ✓ — best-effort, so the mirror keeps exactly
-        # one in_progress instead of going malformed
-        active = phase_ids[verified_count]
-
-    # the current step: the step the Next points at (label match), else the
-    # first step of the active phase
-    current_step = None
-    if active:
-        steps = _phase_steps(nodes, edges, active)
-        needle = (st.get("next") or "").strip()
-        for member in steps:
-            if _label_matches(nodes.get(member, ("", ""))[1], needle):
-                current_step = member
-                break
-        if current_step is None and steps:
-            current_step = steps[0]
-
-    for idx, nid in enumerate(phase_ids):
-        label = nodes[nid][1]
-        steps = _phase_steps(nodes, edges, nid)
-        completed = (idx + 1) <= verified_count and active != nid
-        current_pos = (
-            steps.index(current_step)
-            if (active == nid and current_step in steps) else -1
-        )
-        # a phase with no steps cannot carry in_progress on a step, so the row
-        # itself does (the single-in_progress rule still holds)
-        phase_status = "completed" if completed else "pending"
-        if active == nid and not steps:
-            phase_status = "in_progress"
-        items.append({
-            "id": "phase-{}".format(nid),
-            "content": "PHASE {}: {}".format(nid, label),
-            "status": phase_status,
-            "parent": "goal",
-        })
-        for pos, member in enumerate(steps):
-            if completed:
-                step_status = "completed"
-            elif active == nid:
-                if pos == current_pos:
-                    step_status = "in_progress"
-                elif 0 <= pos < current_pos:
-                    step_status = "completed"
-                else:
-                    step_status = "pending"
-            else:
-                step_status = "pending"
-            items.append({
-                "id": "step-{}-{}".format(nid, member),
-                "content": nodes[member][1],
-                "status": step_status,
-                "parent": "phase-{}".format(nid),
-            })
-    return items
-
-
-def ledger_to_todo(st, contract_text=None):
-    """Derive the session-todo mirror from the plan (Spec 6).
-
-    The todo is the PLAN: the goal (the contract's Objective) as the root, the
-    contract's phases as rows and each phase's steps as nested subtasks. The
-    ledger only decides statuses (`contract_to_todo_items`). The ledger's own
-    facts — Next, claims, opens, ✓ — are NOT rows here; `seam --mode json`
-    serves them to the chip and the gate. Without a contract the todo degrades
-    to goal + the ledger's single Phase row.
-    """
-    items = []
-
-    def add(iid, content, status, parent=None):
-        item = {"id": iid, "content": content, "status": status}
-        if parent:
-            item["parent"] = parent
-        items.append(item)
-
-    goal = _contract_goal(contract_text) if contract_text else ""
-    if not goal:
-        goal = st["goal"] or ""
-    add("goal", "GOAL: {}".format(goal or "<empty>"), "pending")
-
-    if contract_text:
-        items.extend(contract_to_todo_items(contract_text, st))
-        if (st.get("next") or "").strip() and not any(
-                i["status"] == "in_progress" for i in items):
-            # every phase is gated but the ledger still has a Next: the
-            # done-check is what remains — the goal carries in_progress
-            items[0]["status"] = "in_progress"
-    elif st["phase"]:
-        # no contract: the ledger's Phase row is the plan's only row
-        add("phase", "PHASE: {}".format(st["phase"]), "in_progress", "goal")
-    return items
-
-
-def ledger_to_status(st):
-    """The ledger's facts as the item list the chip and the gate fold (Spec 6).
-
-    This is the ledger mirror the plugin consumes — goal, phase, next, open
-    questions, claims and verified checkpoints — kept separate from the plan
-    (`riel_todo`). Same item shape, so the consumers keep one fold.
-    """
-    items = []
-
-    def add(iid, content, status, parent=None):
-        item = {"id": iid, "content": content, "status": status}
-        if parent:
-            item["parent"] = parent
-        items.append(item)
-
-    add("goal", "GOAL: {}".format(st["goal"] or "<empty>"), "pending")
-    if st["phase"]:
-        add("phase", "PHASE: {}".format(st["phase"]), "pending", "goal")
-    if st["next"]:
-        add("next", "NEXT: {}".format(st["next"]), "in_progress", "goal")
-    for n, q in enumerate(st["open"], 1):
-        add("open-{}".format(n), outerize(q), "pending", "goal")
-    for n, c in enumerate(st["claims"], 1):
-        add("claim-{}".format(n), "CLAIM: {}".format(c), "pending", "goal")
-    for n, v in enumerate(st["verified"], 1):
-        add("done-{}".format(n), outerize(v), "completed", "goal")
-    return items
-
-
-def cmd_todo(args):
-    st = read_ledger(args.ledger)
-    if not st["goal"] and not st["verified"] and not st["next"]:
-        print("no ledger found at {}; call riel_note(goal=…, next=…) first".format(
-            args.ledger), file=sys.stderr)
-        return 1
-    # Spec 6: the todo is the plan — the contract's phases and steps
-    contract_text = None
-    contract_path = os.path.join(os.path.dirname(args.ledger) or ".", "contract.md")
-    if os.path.isfile(contract_path):
-        try:
-            with open(contract_path, encoding="utf-8") as fh:
-                contract_text = fh.read()
-        except OSError:
-            contract_text = None
-    items = ledger_to_todo(st, contract_text=contract_text)
-    print(json.dumps(items, indent=2, ensure_ascii=False))
-    if not any(i["status"] == "in_progress" for i in items):
-        print(
-            "[!] no in_progress item in the mirror — the Next points at no "
-            "step; fix the ledger, not the todo.",
-            file=sys.stderr,
-        )
-    return 0
-
-
-def cmd_status(args):
-    """The ledger's own facts as JSON — the mirror the chip and the gate fold.
-
-    The same output `seam --mode json` answers: one implementation, so the tool
-    and the gate can never disagree about what the ledger says.
-    """
-    return cmd_seam(argparse.Namespace(ledger=args.ledger, mode="json"))
-
-
-def cmd_context(args):
-    """Emit the contract's context-fetch keywords as JSON.
-
-    The keywords are the contract's index into memory (agent memory, DRAN): the
-    agent or the Hermes plugin reads this instead of re-parsing the contract.
-    """
-    path = args.contract
-    if not os.path.exists(path):
-        print("no contract at {}; write the contract first".format(path),
-              file=sys.stderr)
-        return 1
-    with open(path, encoding="utf-8") as fh:
-        text = fh.read()
-    payload = {"contract": path, "keywords": context_keywords(text)}
-    out = json.dumps(payload, indent=2, ensure_ascii=False)
-    if args.output:
-        with open(args.output, "w", encoding="utf-8") as fh:
-            fh.write(out + "\n")
-    print(out)
-    return 0
-
-
-def cmd_clean(args):
-    """Clear the worktree's .riel/ state before starting a new task.
-
-    Backs up each file as a flat, timestamped sibling INSIDE .riel/ (never a
-    subdirectory), then removes the originals. `--all` also cleans
-    contract.md; `--purge` removes without backing up. Idempotent: with
-    nothing to clean it exits 0 with a message. The agent asks the user
-    first (backup / purge / keep the existing ledger) — clean never decides.
-    """
-    targets = [args._ledger]
-    if args.all:
-        targets.extend([args._contract, args._shaping])
-
-    present = [p for p in targets if os.path.isfile(p)]
-    if not present:
-        print("nothing to clean in {} (no {})".format(
-            args._riel_dir, ", ".join(targets)))
-        return 0
-
-    stamp = time.strftime("%Y%m%d-%H%M%S")
-    for path in present:
-        if not args.purge:
-            base = os.path.basename(path)[:-len(".md")]
-            backup = os.path.join(
-                args._riel_dir, "{}-{}.bak.md".format(base, stamp))
-            # a second clean within the same second must not clobber
-            n = 1
-            while os.path.exists(backup):
-                backup = os.path.join(
-                    args._riel_dir, "{}-{}-{}.bak.md".format(base, stamp, n))
-                n += 1
-            shutil.copy2(path, backup)
-            os.remove(path)
-            print("backed up {} -> {}".format(path, backup))
-        else:
-            os.remove(path)
-            print("purged {}".format(path))
-    return 0
-
-
-def cmd_shaping_validate(args):
-    """Validate a .riel/shaping.md against Spec 7.
-
-    Errors: a missing section, an empty Question, a Findings section with no F#
-    line. WARNs (never fatal): a finding without source or confidence, an
-    alternative without a verdict, an open question without its settling test,
-    a Verdict with no Objective line, and a contract claim anchored to a
-    finding this shaping does not have.
-    """
-    path = args.file or args._shaping
-    try:
-        with open(path, encoding="utf-8") as fh:
-            text = fh.read()
-    except OSError:
-        print("no shaping found at {}".format(path), file=sys.stderr)
-        return 1
-
-    issues, warnings = [], []
-    titles = [t.strip() for _lvl, t in re.findall(r"^(#{1,2})\s+(.+)$", text, re.M)]
-    for name in SHAPING_SECTIONS:
-        if not any(t.startswith(name) for t in titles):
-            issues.append("missing section: {!r}".format(name))
-    positions = []
-    for name in SHAPING_SECTIONS:
-        for i, t in enumerate(titles):
-            if t.startswith(name):
-                positions.append(i)
-                break
-    if positions != sorted(positions):
-        issues.append("sections out of order; expected: "
-                      + " -> ".join(SHAPING_SECTIONS))
-
-    if not _first_paragraph(_section(text, "Question")):
-        issues.append("## Question is empty — no decision to close")
-
-    findings = shaping_findings(path)
-    if not findings:
-        issues.append("## Findings has no F# line — a shaping without a "
-                      "finding is a guess, not research")
-    for n in sorted(findings):
-        body = findings[n]
-        if "source:" not in body:
-            warnings.append("F{} has no 'source:' — an unsourced finding is a "
-                            "hypothesis".format(n))
-        if "confidence" not in body:
-            warnings.append("F{} has no confidence (high|med|low)".format(n))
-
-    for i, item in enumerate(_bullets(_section(text, "Alternatives bounced")), 1):
-        if "verdict:" not in item:
-            warnings.append("A{} has no 'verdict:' (kept|discarded)".format(i))
-    for i, item in enumerate(_bullets(_section(text, "Open")), 1):
-        if "settled by:" not in item:
-            warnings.append("Q{} has no 'settled by:' — name the cheapest test "
-                            "that would settle it".format(i))
-
-    verdict = _section(text, "Verdict")
-    if not _first_paragraph(verdict):
-        issues.append("## Verdict is empty — the contract has nothing to seed from")
-    elif "We need" not in verdict and "Necesitamos" not in verdict:
-        warnings.append("## Verdict has no Objective line ('We need …')")
-
-    contract = args.contract or CONTRACT_PATH
-    if os.path.isfile(contract):
-        with open(contract, encoding="utf-8") as fh:
-            ctext = fh.read()
-        for claim in claim_anchors(ctext):
-            m = SHAPING_ANCHOR_RE.match(claim["anchor"] or "")
-            if m and int(m.group(1)) not in findings:
-                warnings.append(
-                    "{} anchors shaping:F{} — this shaping has no such finding"
-                    .format(claim["id"], m.group(1)))
-
-    for warning in warnings:
-        print("WARN: {}".format(warning), file=sys.stderr)
-    if issues:
-        print("INVALID shaping {}:".format(path))
-        for issue in issues:
-            print("  - " + issue)
-        return 1
-    print("valid: {}".format(path))
-    return 0
-
-
-def cmd_shaping_new(args):
-    """Instantiate the shaping skeleton — never over an existing shaping."""
-    typename = args.type or "shaping"
-    template_path = find_template(typename, args.template_dir)
-    if not template_path:
-        print("no template for type {!r}; searched: {}".format(
-            typename, ", ".join(args.template_dir or template_dirs())),
-            file=sys.stderr)
-        return 2
-    with open(template_path, encoding="utf-8") as fh:
-        text = fh.read()
-    params = dict(p.split("=", 1) for p in args.param)
-    try:
-        result = render_template(text, params, strict=args.strict)
-    except KeyError as exc:
-        print(exc.args[0] if exc.args else str(exc), file=sys.stderr)
-        return 2
-    if args.output == "-":
-        print(result)
-        return 0
-    out = args.output or args._shaping
-    if os.path.exists(out) and not args.force:
-        print("{} already exists — a shaping is research, not a template drop; "
-              "pass --force to overwrite".format(out), file=sys.stderr)
-        return 3
-    parent = os.path.dirname(out)
-    if parent:
-        os.makedirs(parent, exist_ok=True)
-    _backup_before_write(out)
-    with open(out, "w", encoding="utf-8") as fh:
-        fh.write(result if result.endswith("\n") else result + "\n")
-    print("wrote {}".format(out))
-    leftover = _PARAM_RE.findall(result)
-    if leftover:
-        print("note: {} placeholder(s) left — fill with patch/edit: {}".format(
-            len(set(leftover)), ", ".join(sorted(set(leftover))[:5])))
-    return 0
-
-
-def cmd_anchor(args):
-    """Print each claim beside the contract region that supports it.
-
-    The seam's own re-read surface: `— anchor:` names a section, a graph node
-    or a shaping finding, and this resolves it, so a claim's support can be
-    re-read without re-reading the whole contract.
-    """
-    contract = args.contract
-    if not os.path.isfile(contract):
-        print("no contract found at {} — nothing to anchor".format(contract),
-              file=sys.stderr)
-        return 1
-    with open(contract, encoding="utf-8") as fh:
-        text = fh.read()
-    claims = claim_anchors(text)
-    if not claims:
-        print("no P# claims in {}".format(contract), file=sys.stderr)
-        return 2
-    if args.claim:
-        wanted = args.claim.strip().upper().lstrip("P")
-        claims = [c for c in claims
-                  if c["id"].upper().lstrip("P") == wanted]
-        if not claims:
-            print("no claim {!r} in {}".format(args.claim, contract),
-                  file=sys.stderr)
-            return 2
-
-    block = _graph_block(text)
-    nodes = mermaid_graph(block)[0] if block else {}
-    shaping = args.shaping
-    if not os.path.isfile(shaping):
-        shaping = os.path.join(os.path.dirname(os.path.abspath(contract)),
-                               os.path.basename(SHAPING_PATH))
-
-    print("ANCHORED CLAIMS — each claim re-read beside the region that "
-          "supports it")
-    print("contract: {}   shaping: {}".format(
-        contract, shaping if os.path.isfile(shaping) else "none"))
-    for claim in claims:
-        print("")
-        print("{}: {}".format(claim["id"], claim["claim"]))
-        if claim["verify_with"]:
-            print("    verify with: {}".format(claim["verify_with"]))
-        if not claim["anchor"]:
-            print("    anchor: <none> — no region to re-read at a seam")
-            continue
-        kind, detail = resolve_anchor(claim["anchor"], text, nodes, shaping)
-        print("    anchor: {} ({})".format(claim["anchor"], kind))
-        if detail:
-            for line in _excerpt(detail):
-                print("      " + line)
-        else:
-            print("      [!] does not resolve — the support this claim names "
-                  "is not here")
-    return 0
-
-
-def _ship_report(path):
-    """`(passed, text)` for one file's dense-marker check — no printing."""
-    try:
-        with open(path, encoding="utf-8") as fh:
-            text = fh.read()
-    except OSError as exc:
-        return False, "ship: cannot read {}: {}".format(path, exc)
-    problems = [(lineno, line) for lineno, line in enumerate(text.splitlines(), 1)
-                if DENSE_RE.search(line)]
-    if not problems:
-        return True, "{}: clean".format(path)
-    out = ["{}: dense markers found in outer register:".format(path)]
-    out += ["  L{}: {}".format(lineno, line[:120]) for lineno, line in problems[:20]]
-    return False, "\n".join(out)
-
-
-def cmd_ship(args):
-    rc = 0
-    for path in args.files:
-        passed, text = _ship_report(path)
-        # An unreadable file is an ERROR (stderr); a found marker is the REPORT.
-        print(text, file=sys.stderr if text.startswith("ship:") else sys.stdout)
-        if not passed:
-            rc = 1
-    return rc
-
-
-# -------------------------------------------------------------- contract ----
-
-PKG_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-
-def template_dirs():
-    """Template search order (first match wins — most specific first), per CALL.
-
-      1. user-level override (~/.hermes/riel/templates)
-      2. project-level, versioned with the code
-      3. built-in, shipped inside the package next to the engine
-
-    Resolved per call, not at import: as a module-level list it froze
-    `os.getcwd()` when the module loaded, so a caller that changed directory —
-    or passed `--worktree` — searched the wrong project's `.riel/templates`.
-    """
-    return [
-        os.path.expanduser("~/.hermes/riel/templates"),
-        os.path.join(os.getcwd(), ".riel", "templates"),
-        os.path.join(PKG_ROOT, "templates"),
-    ]
-
-
-def find_template(typename, extra=None):
-    dirs = list(extra or []) + template_dirs()
-    for d in dirs:
-        candidate = os.path.join(d, typename + ".md")
-        if os.path.exists(candidate):
-            return candidate
-    return None
-
-
-_PARAM_RE = re.compile(r"\{\{([a-zA-Z_][a-zA-Z0-9_]*)\}\}")
-
-
-def render_template(text, params, strict=False):
-    def repl(match):
-        name = match.group(1)
-        if name not in params:
-            if strict:
-                raise KeyError("missing --param {}=".format(name))
-            return match.group(0)  # leave placeholder for manual fill
-        return params[name]
-
-    return _PARAM_RE.sub(repl, text)
-
-
-def cmd_contract_new(args):
-    if args.list:
-        for d in template_dirs():
-            if os.path.isdir(d):
-                for name in sorted(os.listdir(d)):
-                    if name.endswith(".md"):
-                        print(name[:-3])
-        return 0
-    if args.type == "packet":
-        template_path = find_template("packet", args.template_dir)
-    else:
-        template_path = find_template(args.type, args.template_dir)
-    if not template_path:
-        print(
-            "no template for type {!r}; searched: {}".format(
-                args.type, ", ".join(args.template_dir or template_dirs())
-            ),
-            file=sys.stderr,
-        )
-        return 2
-    with open(template_path, encoding="utf-8") as fh:
-        text = fh.read()
-    params = dict(p.split("=", 1) for p in args.param)
-    try:
-        result = render_template(text, params, strict=args.strict)
-    except KeyError as exc:
-        print(exc.args[0] if exc.args else str(exc), file=sys.stderr)
-        return 2
-    leftover = _PARAM_RE.findall(result)
-    if leftover:
-        print(
-            "note: {} placeholder(s) left — fill with patch/edit: {}".format(
-                len(set(leftover)), ", ".join(sorted(set(leftover))[:5])
-            ),
-            file=sys.stderr,
-        )
-    if args.output:
-        parent = os.path.dirname(os.path.abspath(args.output))
-        os.makedirs(parent, exist_ok=True)
-        _backup_before_write(args.output)
-        with open(args.output, "w", encoding="utf-8") as fh:
-            fh.write(result)
-        print(result)
-    else:
-        print(result, end="")
-    return 0
-
-
-_CLOSED_VERBS = ("READ", "EDIT", "CREATE", "RUN", "VERIFY", "ASK")
-_TOOL_NAMES = ("read_file", "write_file", "patch", "terminal", "clarify",
-               "search_files")
-
-
-def mermaid_blocks(text):
-    """Every ```mermaid block in *text*, in authored order."""
-    return re.findall(r"```mermaid\n(.*?)```", text, re.S)
-
-
-def mmdc_issues(blocks, timeout=None):
-    """Parse each block with mmdc → a list of issue strings (empty when clean).
-
-    Silence when mmdc is not installed: the parser-level check is a bonus, never
-    a hard dependency. The call is BOUNDED — a wedged mermaid-cli must not wedge
-    the tool that asked for it.
-    """
-    if not blocks or not shutil.which(VERIFY_CMD):
-        return []
-    cap = MMDC_TIMEOUT if timeout is None else timeout
-    issues = []
-    out_dir = tempfile.mkdtemp(prefix="riel-mmdc-")
-    try:
-        for idx, block in enumerate(blocks):
-            src = os.path.join(out_dir, "block{}.mmd".format(idx))
-            out = os.path.join(out_dir, "block{}.svg".format(idx))
-            with open(src, "w", encoding="utf-8") as fh:
-                fh.write(block)
-            try:
-                res = subprocess.run(
-                    [VERIFY_CMD, "-i", src, "-o", out, "--quiet"],
-                    capture_output=True, timeout=cap)
-            except subprocess.TimeoutExpired:
-                issues.append("mermaid block {} timed out after {}s".format(idx, cap))
-                continue
-            if res.returncode != 0:
-                issues.append("mermaid block {} fails mmdc:\n{}".format(
-                    idx, res.stderr.decode("utf-8", "replace")[:400]))
-    finally:
-        shutil.rmtree(out_dir, ignore_errors=True)
-    return issues
-
-
-def _first_mermaid(text):
-    """Return the body of the first ```mermaid block, or None."""
-    tag = "```mermaid"
-    i = text.find(tag)
-    if i == -1:
-        return None
-    i += len(tag)
-    j = text.find("```", i)
-    if j == -1:
-        return None
-    return text[i:j].strip()
-
-
-def _graph_block(text):
-    """The mermaid under '## Execution graph'; else the first block."""
-    block = _first_mermaid(_section(text, "Execution graph"))
-    return block if block is not None else _first_mermaid(text)
-
-
-LIST_PHASE_RE = re.compile(r"^- (F\d+|W\d+)\s*:\s*(.+)$", re.M)
-LIST_STEP_RE = re.compile(r"^\s+- (.+)$")
-
-
-def list_graph(body):
-    """Best-effort parse of a PLAIN phase list → (nodes, edges).
-
-    The list register of `## Execution graph` — mermaid without the diagram:
-
-        - F1: phase label
-          - READ path — what for
-          - RUN make test
-        - F2: next phase label
-
-    Phases carry F#/W# ids; steps are nested bullets with ids S1..Sn
-    (global, authored order). Edges are linear: phase → its steps → the next
-    phase — the funnel is structural (a phase is only reached once the
-    previous one verified), which is what the list cannot express as
-    branches. Returns the SAME (nodes, edges) shape as `mermaid_graph`, so
-    todo/digest/slice need no second code path.
-    """
-    nodes: dict = {}
-    edges: list = []
-    current_phase = None
-    last_step = None
-    step_no = 0
-    for raw in body.splitlines():
-        phase = LIST_PHASE_RE.match(raw.strip()) if not raw.startswith(" ") else None
-        if phase:
-            current_phase = phase.group(1)
-            nodes[current_phase] = ("[", phase.group(2).strip())
-            last_step = None
-            continue
-        step = LIST_STEP_RE.match(raw.rstrip())
-        if not step or current_phase is None:
-            continue
-        step_no += 1
-        sid = "S{}".format(step_no)
-        nodes[sid] = ("[", step.group(1).strip())
-        edges.append((current_phase, "", sid))
-        if last_step is not None:
-            edges.append((last_step, "", sid))
-        last_step = sid
-        continue
-    # chain: last step of a phase → next phase (the implicit gate)
-    phase_ids = [nid for nid in nodes if re.match(r"^[FW]\d+$", nid)]
-    for a, b in zip(phase_ids, phase_ids[1:]):
-        steps = [v for u, _l, v in edges if u == a]
-        if steps:
-            edges.append((steps[-1], "", b))
-        else:
-            edges.append((a, "", b))
-    return nodes, edges
-
-
-def graph_any(text):
-    """The plan's graph in EITHER register → (nodes, edges, register).
-
-    mermaid wins when a ```mermaid block exists under `## Execution graph`;
-    otherwise the plain phase list is parsed. register is "" when neither
-    holds a graph.
-    """
-    block = _graph_block(text)
-    if block is not None:
-        nodes, edges = mermaid_graph(block)
-        if nodes:
-            return nodes, edges, "mermaid"
-    nodes, edges = list_graph(_section(text, "Execution graph"))
-    if nodes:
-        return nodes, edges, "list"
-    return {}, [], ""
+# --------------------------------------------------------------- graph ----
+# The plan's graph lives ONLY in `## Graph` (the audit fix: no fallback to
+# the first mermaid block anywhere in a run file). Two registers parse into
+# the same shape: nodes {id: (opener, label)}, edges [(src, label, dst)].
+
+NODE_ANCHOR_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+PHASE_ID_RE = re.compile(r"^[FW]\d+$")
+GATE_REF_RE = re.compile(r"^G\d+$")
 
 
 def mermaid_graph(block):
-    """Best-effort parse of a mermaid flowchart block → (nodes, edges).
-
-    nodes: {id: (shape_opener, label)}; edges: [(src, edge_label, dst)] in
-    authored order. Quote-aware, so `{{placeholders}}` inside labels do not
-    break bracketing. Not a full mermaid parser — just enough to expand a
-    Riel execution graph into explicit text.
-    """
+    """Parse a mermaid flowchart block → (nodes, edges); quote-aware."""
     nodes, i, n = {}, 0, len(block)
     opener = {"[": "]", "(": ")", "{": "}"}
     while i < n:
@@ -1390,8 +203,7 @@ def mermaid_graph(block):
                         break
                     buf.append(c2)
                     m += 1
-                label = ("".join(buf).strip().strip("[]").strip()
-                         .replace(chr(92) + "n", " "))
+                label = "".join(buf).strip()
                 nodes.setdefault(ident, (block[k], label))
                 i = m + 1
                 continue
@@ -1409,115 +221,126 @@ def mermaid_graph(block):
             r"\s*--+>?\s*(?:\|([^|]*)\|\s*)?([A-Za-z_][A-Za-z0-9_]*)",
             s,
         ):
-            lbl = ((m.group(2) or "").strip().strip('"').strip()
-                   .replace(chr(92) + "n", " "))
+            lbl = (m.group(2) or "").strip().strip('"').strip()
             edges.append((m.group(1), lbl, m.group(3)))
     return nodes, edges
 
 
+_LIST_ITEM_RE = re.compile(r"^(?:[-*]|\d+\.)\s+(.+)$")
+
+
+def list_graph(body):
+    """Parse the plain phase-list register → (nodes, edges).
+
+        - F1: phase label
+          - READ what for
+          - RUN make test
+        - F2: next phase
+
+    A phase carries exactly ONE outgoing edge — to its FIRST step (the audit
+    fix: the old parser fanned the phase out to every step). Steps chain
+    linearly; the last step of a phase edges to the next phase. `-`, `*`
+    and `1.` are all accepted as bullets; comments are stripped first.
+    """
+    nodes, edges = {}, []
+    current = None
+    last_step = None
+    step_no = 0
+    for raw in _strip_comments(body).splitlines():
+        stripped = raw.strip()
+        item = _LIST_ITEM_RE.match(stripped)
+        if not item:
+            continue
+        if not raw.startswith((" ", "\t")):
+            m = re.match(r"^(F\d+|W\d+)\s*[:：]\s*(.+)$", item.group(1))
+            if not m:
+                continue
+            current = m.group(1)
+            nodes[current] = ("[", m.group(2).strip())
+            last_step = None
+            continue
+        if current is None:
+            continue
+        step_no += 1
+        sid = "S{}".format(step_no)
+        nodes[sid] = ("[", item.group(1).strip())
+        if last_step is None:
+            edges.append((current, "", sid))     # phase → its first step
+        else:
+            edges.append((last_step, "", sid))   # ...or the step chain
+        last_step = sid
+    phase_ids = [nid for nid in nodes if PHASE_ID_RE.match(nid)]
+    for a, b in zip(phase_ids, phase_ids[1:]):
+        outs = [v for u, _l, v in edges if u == a]
+        edges.append(((outs[-1] if outs else a), "", b))
+    return nodes, edges
+
+
+def graph_any(text, strict_section=False):
+    """The file's graph → (nodes, edges, register); ({}, [], '') when absent.
+
+    strict_section (run files): ONLY `## Graph` counts. Otherwise (external
+    files under `check`) a first-mermaid fallback keeps riel_check's reach.
+    """
+    body = _section(text, "Graph")
+    block = _first_mermaid(body)
+    if block is not None:
+        nodes, edges = mermaid_graph(block)
+        if nodes:
+            return nodes, edges, "mermaid"
+    if not strict_section:
+        block = _first_mermaid(text)
+        if block is not None:
+            nodes, edges = mermaid_graph(block)
+            if nodes:
+                return nodes, edges, "mermaid"
+    nodes, edges = list_graph(body)
+    if nodes:
+        return nodes, edges, "list"
+    return {}, [], ""
+
+
+def _first_mermaid(text):
+    i = text.find("```mermaid")
+    if i == -1:
+        return None
+    i += len("```mermaid")
+    j = text.find("```", i)
+    return text[i:j].strip() if j != -1 else None
+
+
 def graph_back_edges(edges):
-    """Edges that close a cycle (u->v where v is an ancestor of u)."""
+    """Edges closing a cycle — ITERATIVE, so deep graphs never RecursionError."""
     adj = {}
     for u, _l, v in edges:
-        adj.setdefault(u, []).append((_l, v))
-    color, backs, roots = {}, [], []
-    for u, _l, v in edges:
-        if u not in roots:
-            roots.append(u)
-        if v not in roots:
-            roots.append(v)
-
-    def dfs(u):
-        color[u] = 1
-        for lbl, v in adj.get(u, ()):
-            c = color.get(v, 0)
-            if c == 1:
-                backs.append((u, lbl, v))
-            elif c == 0:
-                dfs(v)
-        color[u] = 2
-
-    for r in roots:
-        if color.get(r, 0) == 0:
-            dfs(r)
-    return backs
-
-
-def _digest_report(path):
-    """`(passed, text)` for one file's graph digest — no printing, no writing."""
-    try:
-        with open(path, encoding="utf-8") as fh:
-            text = fh.read()
-    except OSError as exc:
-        return False, "digest: cannot read {}: {}".format(path, exc)
-    nodes, edges, _register = graph_any(text)
-    if not nodes:
-        return False, "no execution graph found in {}".format(path)
-    out = []
-    out.append("Graph digest — explicit structure (the diagram stays for humans)")
-    out.append("")
-    out.append("Elements ({}):".format(len(nodes)))
-    for nid, (_shape, label) in nodes.items():
-        out.append("  {} — {}".format(nid, label))
-    out.append("")
-    out.append("Edges, authored order ({}):".format(len(edges)))
-    for u, lbl, v in edges:
-        out.append("  {} {} {}".format(
-            u, "=[{}]=>".format(lbl) if lbl else "->", v))
-    outgoing = {}
-    for u, lbl, v in edges:
-        outgoing.setdefault(u, []).append((lbl, v))
-    branches = {u: a for u, a in outgoing.items() if len({v for _l, v in a}) > 1}
-    if branches:
-        out.append("")
-        out.append("Branches (decision → labeled alternatives):")
-        for u, alts in branches.items():
-            out.append("  {} → {}".format(
-                u, " | ".join("{}: {}".format(l or "?", v) for l, v in alts)))
-    incoming = {v for _u, _l, v in edges}
-    source = {u for u, _l, _v in edges}
-    entries = [nid for nid in nodes if nid not in incoming] or ["(none)"]
-    terminals = [nid for nid in nodes if nid not in source] or ["(none)"]
-    out.append("")
-    out.append("Entry (no incoming): " + ", ".join(entries))
-    out.append("Terminals (no outgoing): " + ", ".join(terminals))
-    backs = graph_back_edges(edges)
-    if backs:
-        counter = re.search("< *[0-9]|>= *[0-9]", text)
-        guarded = ("  guards: yes" if counter
-                   else "  guards: NONE — add a bounded '< 3 / >= 3'")
-        out.append("Loops (back-edges): " + ", ".join(
-            "{}->{}".format(u, v) for u, _l, v in backs) + guarded)
-    out.append("")
-    out.append("Meaning & limits: a graph proves order, branches and loops only. "
-               "It does not prove a command ran, a gate passed, or the "
-               "deliverable exists — that lives in the gates and the ledger.")
-    result = "\n".join(out)
-    return True, result
-
-
-def cmd_contract_digest(args):
-    passed, text = _digest_report(args.file)
-    print(text, file=sys.stdout if passed else sys.stderr)
-    if passed and args.output:
-        parent = os.path.dirname(os.path.abspath(args.output))
-        os.makedirs(parent, exist_ok=True)
-        _backup_before_write(args.output)
-        with open(args.output, "w", encoding="utf-8") as fh:
-            fh.write(text + "\n")
-    return 0 if passed else 1
-
-
-def _first_phase_id(nodes):
-    for nid in nodes:
-        if re.match(r"^[FW]\d+$", nid):
-            return nid
-    return None
+        adj.setdefault(u, []).append(v)
+    color, backs = {}, []
+    for root in sorted({u for u, _l, _v in edges} | {v for _u, _l, v in edges}):
+        if color.get(root):
+            continue
+        color[root] = 1
+        stack = [(root, iter(adj.get(root, ())))]
+        while stack:
+            node, it = stack[-1]
+            advanced = False
+            for nxt in it:
+                c = color.get(nxt, 0)
+                if c == 1:
+                    backs.append((node, "", nxt))
+                elif c == 0:
+                    color[nxt] = 1
+                    stack.append((nxt, iter(adj.get(nxt, ()))))
+                    advanced = True
+                    break
+            if not advanced:
+                color[node] = 2
+                stack.pop()
+    return list(dict.fromkeys(backs))
 
 
 def _phase_subgraph(nodes, edges, start):
-    """Node ids reachable from `start` without crossing into another phase."""
-    phase_ids = {nid for nid in nodes if re.match(r"^[FW]\d+$", nid)}
+    """Node ids reachable from `start` without entering another phase."""
+    phase_ids = {nid for nid in nodes if PHASE_ID_RE.match(nid)}
     adj = {}
     for u, _l, v in edges:
         adj.setdefault(u, []).append(v)
@@ -1535,413 +358,1544 @@ def _phase_subgraph(nodes, edges, start):
     return keep
 
 
-def cmd_contract_slice(args):
-    """Slice one phase of a contract into a mini packet (assisted).
-
-    Mechanical: the phase subgraph (nodes reachable from the phase without
-    crossing into another phase). Context / Gates / Deliverable are left as
-    FILL for the parent to complete — the packet format is not per-phase.
-    """
-    with open(args.file, encoding="utf-8") as fh:
-        text = fh.read()
-    nodes, edges, _register = graph_any(text)
-    if not nodes:
-        print("no execution graph found in {}".format(args.file),
-              file=sys.stderr)
-        return 1
-
-    start = args.phase or _first_phase_id(nodes)
-    if not start or start not in nodes:
-        print("no phase node {!r} in {}".format(args.phase, args.file),
-              file=sys.stderr)
-        return 2
-
-    keep = _phase_subgraph(nodes, edges, start)
-    closers = {"[": "]", "(": ")", "{": "}"}
-    task_line = ""
-    for ln in text.splitlines():
-        if ln.startswith("# Task:"):
-            task_line = ln[len("# Task:"):].strip()
-            break
-
-    body = [
-        "# Task: {} — {}".format(task_line or "(task)", nodes[start][1]),
-        "",
-        "## Objective",
-        _section(text, "Objective") or "<FILL>",
-        "",
-        "## Context",
-    ]
-    keywords = context_keywords(text)
-    why = _subsection(text, "Context", "Why")
-    if why:
-        body += [
-            "",
-            "### Why",
-            "<!-- Heredado del contrato: el racional de la tarea — por qué este\n"
-            "     objetivo y no otro. No lo reinterpretes ante un conflicto:\n"
-            "     escálalo (ASK[goal-changing]). -->",
-            why,
-        ]
-    if keywords:
-        body += [
-            "",
-            "### Context keywords",
-            "<!-- Heredadas del contrato: úsalas para traer contexto de "
-            "memoria/DRAN antes de ejecutar la fase. -->",
-        ]
-        for kw in keywords:
-            body.append("- {}{}".format(
-                kw["term"], " → {}".format(kw["source"]) if kw["source"] else ""))
-        body.append("")
-        body.append("<!-- FILL: el resto del contexto que esta fase necesita -->")
-    else:
-        body.append("<!-- FILL: only what this phase needs -->")
-    body += [
-        "",
-        "## Constraints",
-        _section(text, "Constraints") or "<FILL>",
-        "",
-        "## Pre-registered claims",
-        _section(text, "Pre-registered claims") or "<FILL>",
-        "",
-        "## Execution graph",
-        "",
-        "```mermaid",
-        "flowchart TD",
-    ]
-    for nid, (opener, label) in nodes.items():
-        if nid in keep:
-            body.append('  {}{}"{}"{}'.format(
-                nid, opener, label, closers[opener]))
-    for u, lbl, v in edges:
-        if u in keep and v in keep:
-            body.append("  {} -->|{}| {}".format(u, lbl, v) if lbl
-                        else "  {} --> {}".format(u, v))
-    body += [
-        "```",
-        "",
-        "## Verification gates",
-        "<!-- FILL: command / expected / on failure for this phase -->",
-        "",
-        "## Deliverable",
-        "<!-- FILL -->",
-        "",
-        "## DO NOT",
-        _section(text, "DO NOT") or "<FILL>",
-    ]
-    result = "\n".join(body)
-    print(result)
-    if args.output:
-        parent = os.path.dirname(os.path.abspath(args.output))
-        os.makedirs(parent, exist_ok=True)
-        _backup_before_write(args.output)
-        with open(args.output, "w", encoding="utf-8") as fh:
-            fh.write(result + "\n")
-    return 0
+def _phase_order(nodes):
+    """Phase ids in authored order."""
+    return [nid for nid in nodes if PHASE_ID_RE.match(nid)]
 
 
-def cmd_contract_validate(args):
-    with open(args.file, encoding="utf-8") as fh:
-        text = fh.read()
+def _phase_steps(nodes, edges, phase_id):
+    """Work-step ids of a phase, authored order (not phases/gates/milestones)."""
+    sub = _phase_subgraph(nodes, edges, phase_id)
+    steps = []
+    for member in nodes:
+        if member not in sub or member == phase_id:
+            continue
+        if PHASE_ID_RE.match(member) or GATE_REF_RE.match(member):
+            continue
+        if member.upper() in ("START", "END", "DONE"):
+            continue
+        if (nodes.get(member, ("", ""))[1] or "").strip():
+            steps.append(member)
+    return steps
+
+
+def mmdc_issues(blocks, timeout=None):
+    """Parse each block with mmdc; [] when clean or mmdc is absent."""
+    if not blocks or not shutil.which(VERIFY_CMD):
+        return []
+    cap = MMDC_TIMEOUT if timeout is None else timeout
     issues = []
-    warnings = []
+    out_dir = tempfile.mkdtemp(prefix="riel-mmdc-")
+    try:
+        for idx, block in enumerate(blocks):
+            src = os.path.join(out_dir, "block{}.mmd".format(idx))
+            out = os.path.join(out_dir, "block{}.svg".format(idx))
+            with open(src, "w", encoding="utf-8") as fh:
+                fh.write(block)
+            try:
+                res = subprocess.run(
+                    [VERIFY_CMD, "-i", src, "-o", out, "--quiet"],
+                    capture_output=True, timeout=cap)
+            except subprocess.TimeoutExpired:
+                issues.append(
+                    "mermaid block {} timed out after {}s".format(idx, cap))
+                continue
+            if res.returncode != 0:
+                issues.append("mermaid block {} fails mmdc: {}".format(
+                    idx, res.stderr.decode("utf-8", "replace")[:200]))
+    finally:
+        shutil.rmtree(out_dir, ignore_errors=True)
+    return issues
 
-    # Structure: nine sections in order
-    headings = re.findall(r"^(#{1,2})\s+(.+)$", text, re.MULTILINE)
-    wanted_order = [
-        "Task:", "Objective", "Context", "Constraints",
-        "Pre-registered claims", "Execution graph",
-        "Verification gates", "Deliverable", "DO NOT",
-    ]
-    # headings gives (level, title) — the level-1 heading is "# Task",
-    # everything else is "## ..."
-    titles = [t.strip() for _, t in headings]
+
+# ------------------------------------------------------ run.md parsing ----
+
+EVIDENCE_RE = re.compile(
+    r"^E(?P<n>\d+)\s+gate:(?P<gate>G\d+(?:,G\d+)*)\s+claims:(?P<claims>[\w,]*)\s+"
+    r"revision:(?P<rev>\S+)\s+command_b64:(?P<cmd>[A-Za-z0-9+/=]+)\s+exit_code:(?P<exit>\d+)\s+"
+    r"covering:(?P<covering>.*?)(?:\s+confidence:(?P<conf>\d+))?\s*$"
+)
+FROZEN_RE = re.compile(r"^shaping:F(\d+)$", re.I)
+SECTION_ANCHOR_RE = re.compile(r"^§\s*([^#]+?)\s*(?:#(\d+))?$")
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _split_plan(text):
+    """(plan_text, state_text): the plan is everything before `## Metadata`.
+
+    The plan is CANONICALIZED here (exactly one trailing newline) because the
+    hash is computed over these bytes: the blank line the renderer adds before
+    `## Metadata` must never count as a plan change.
+    """
+    m = re.search(r"^## Metadata\s*$", text, re.M)
+    if m is None:
+        return text.rstrip("\n") + "\n", ""
+    return text[:m.start()].rstrip("\n") + "\n", text[m.start():]
+
+
+def plan_sha256(plan_text):
+    return hashlib.sha256(plan_text.encode("utf-8")).hexdigest()
+
+
+def marker_present(text):
+    """The format marker must be its own line before the first `## ` heading."""
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith("## "):
+            return False
+        if s == MARKER_LINE:
+            return True
+    return False
+
+
+def _parse_metadata(text):
+    meta = {}
+    for item in _bullets(_section(text, "Metadata")):
+        key, sep, value = item.partition(":")
+        if sep:
+            meta[key.strip()] = value.strip()
+    return meta
+
+
+def _parse_claims(text):
+    """[{id, text, anchor}] from `## Claims` (anchor = last em-dash clause)."""
+    out = []
+    for item in _bullets(_section(text, "Claims")):
+        clauses = _clauses(item)
+        anchor, prose = "", []
+        for i, clause in enumerate(clauses):
+            if clause.lower().startswith("anchor:") and i == len(clauses) - 1:
+                anchor = clause[len("anchor:"):].strip().strip("`")
+            else:
+                prose.append(clause)
+        m = re.match(r"^(P\d+)\s*[:：]\s*(.*)$", " — ".join(prose))
+        if m:
+            out.append({"id": m.group(1), "text": m.group(2).strip(),
+                        "anchor": anchor})
+    return out
+
+
+def _parse_gates(text):
+    """[{id, label, phase}] from `## Gates` (`— phase: F#` optional)."""
+    out = []
+    for item in _bullets(_section(text, "Gates")):
+        clauses = _clauses(item)
+        phase, prose = "", []
+        for i, clause in enumerate(clauses):
+            m = re.match(r"^phase:\s*(\S+)$", clause)
+            if m and i == len(clauses) - 1:
+                phase = m.group(1)
+            else:
+                prose.append(clause)
+        m = re.match(r"^(G\d+)\s*[:：]\s*(.*)$", " — ".join(prose))
+        if m:
+            out.append({"id": m.group(1), "label": m.group(2).strip(),
+                        "phase": phase})
+    return out
+
+
+def _decode_command(value):
+    try:
+        return base64.b64decode(value, validate=True).decode("utf-8")
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise EngineError("invalid encoded evidence command: {}".format(exc))
+
+
+def _parse_evidence(text):
+    """Evidence records from `## Evidence` (see _render_state_sections)."""
+    out = []
+    body = _section(_strip_comments(text), "Evidence")
+    cur = None
+    for raw in body.splitlines():
+        line = raw.rstrip()
+        if not line.strip():
+            continue
+        item = _LIST_ITEM_RE.match(line.strip())
+        if item and not line.startswith((" ", "\t")):
+            m = EVIDENCE_RE.match(item.group(1))
+            if m:
+                cur = {
+                    "id": "E{}".format(m.group("n")),
+                    "gates": [g for g in m.group("gate").split(",") if g],
+                    "claims": [c for c in m.group("claims").split(",")
+                               if c and c != "none"],
+                    "revision": m.group("rev"),
+                    "command": _decode_command(m.group("cmd")),
+                    "exit_code": int(m.group("exit")),
+                    "covering": m.group("covering").strip(),
+                    "confidence": (int(m.group("conf"))
+                                   if m.group("conf") else None),
+                    "out": "",
+                }
+                out.append(cur)
+            else:
+                cur = None
+        elif cur is not None and line.startswith((" ", "\t")):
+            cont = re.match(r"^\s*(?:out|snippet)\s*:\s*(.*)$", line)
+            if cont:
+                cur["out"] = cont.group(1).strip()
+    return out
+
+
+def _parse_core(text):
+    """[(slot, 'name — fact')] from `## Core` — 1-BASED slots."""
+    out = []
+    for i, item in enumerate(_bullets(_section(text, "Core")), 1):
+        m = re.match(r"^(\d+)\.\s+(.*)$", item)
+        if m:
+            out.append((int(m.group(1)), m.group(2).strip()))
+        else:
+            out.append((i, item))
+    return out
+
+
+def _parse_open(text):
+    """[{id, text, settled_by, closed_by}] from `## Open`."""
+    out = []
+    for item in _bullets(_section(text, "Open")):
+        m = re.match(r"^(Q\d+)\s*[:：]\s*(.*)$", item)
+        if not m:
+            continue
+        qid, rest = m.group(1), m.group(2)
+        closed_by = ""
+        mc = re.search(r"—\s*closed by:\s*(\S+)", rest)
+        if mc:
+            closed_by = mc.group(1)
+            rest = rest[:mc.start()].strip()
+        settled = ""
+        ms = re.search(r"—\s*settled[- ]by:\s*(.*)$", rest)
+        if ms:
+            settled = ms.group(1).strip()
+            rest = rest[:ms.start()].strip()
+        out.append({"id": qid, "text": rest.strip(" —").strip(),
+                    "settled_by": settled, "closed_by": closed_by})
+    return out
+
+
+def _parse_basis(text):
+    """[{id, text, source, confidence}] from the frozen `### Basis`."""
+    out = []
+    for item in _bullets(_subsection(text, "Context", "Basis")):
+        m = re.match(r"^(F\d+)\s*[:：]\s*(.*)$", item)
+        if not m:
+            continue
+        fid, rest = m.group(1), m.group(2)
+        source, confidence = "", ""
+        ms = re.search(r"—\s*source:\s*(.*?)(?=\s+—\s*confidence:|$)", rest)
+        if ms:
+            source = ms.group(1).strip()
+            rest = rest[:ms.start()].strip()
+        mc = re.search(r"—\s*confidence:\s*(\S+)", rest)
+        if mc:
+            confidence = mc.group(1).strip()
+            rest = rest[:mc.start()].strip()
+        out.append({"id": fid, "text": rest.strip(" —").strip(),
+                    "source": source, "confidence": confidence})
+    return out
+
+
+# ------------------------------------------------------ shaping parse ----
+
+def shaping_findings(text):
+    """[{id, text, source, confidence}] from `## Findings` (unique F# ids)."""
+    out, seen = [], set()
+    for item in _bullets(_section(text, "Findings")):
+        m = re.match(r"^(F\d+)\s*[:：]\s*(.*)$", item)
+        if not m or m.group(1) in seen:
+            continue
+        seen.add(m.group(1))
+        fid, rest = m.group(1), m.group(2)
+        source, confidence = "", ""
+        ms = re.search(r"—\s*source:\s*(.*?)(?=,\s*confidence\s|$)", rest)
+        if ms:
+            source = ms.group(1).strip().rstrip(",")
+            rest = rest[:ms.start()].strip()
+        mc = re.search(r",?\s*confidence\s*[:：]?\s*(\S+)", rest)
+        if mc:
+            confidence = mc.group(1).strip()
+            rest = rest[:mc.start()].strip().rstrip(",")
+        out.append({"id": fid, "text": rest.strip(" —").strip(),
+                    "source": source, "confidence": confidence})
+    return out
+
+
+def validate_shaping(text):
+    """(issues, warnings) for one versioned shaping source."""
+    issues, warnings = [], []
+    if text.lstrip().startswith("---"):
+        issues.append("frontmatter is not part of riel-shaping/v1; use a marker line")
+    if "<!-- riel-shaping/v1 -->" not in text.split("\n## ", 1)[0]:
+        issues.append("missing <!-- riel-shaping/v1 --> after the title")
+    if not re.match(r"^#\s*Shaping:", text.lstrip()):
+        issues.append("title must be `# Shaping: <name>`")
+    if not _first_line(_section(text, "Question")):
+        issues.append("## Question is empty")
+    findings = shaping_findings(text)
+    raw_ids = re.findall(r"^[-*]\s*(F\d+)\s*[:：]",
+                         _strip_comments(_section(text, "Findings")), re.M)
+    dupes = sorted({i for i in raw_ids if raw_ids.count(i) > 1})
+    if dupes:
+        issues.append("duplicate finding id(s): {}".format(", ".join(dupes)))
+    if not findings:
+        issues.append("## Findings has no F# entries")
+    for f in findings:
+        if not f["source"]:
+            issues.append("{} has no `— source:` — a finding without a "
+                          "source is a hypothesis".format(f["id"]))
+    if not _section(text, "Verdict"):
+        warnings.append("no ## Verdict — the run's Objective has no seed")
+    return issues, warnings
+
+
+# ------------------------------------------------------ file plumbing ----
+
+def _worktree_paths(worktree):
+    riel_dir = os.path.join(worktree, RIEL_DIR)
+    return {
+        "dir": riel_dir,
+        "run": os.path.join(riel_dir, RUN_MD),
+        "shaping": os.path.join(riel_dir, SHAPING_MD),
+        "lock": os.path.join(riel_dir, LOCK_NAME),
+    }
+
+
+def _refuse_legacy(worktree):
+    """riel v1 state files are never read as state — refuse, loudly."""
+    found = [name for name in LEGACY_STATE_FILES
+             if os.path.exists(os.path.join(worktree, RIEL_DIR, name))]
+    if found:
+        raise EngineError(
+            "legacy riel v1 state found in .riel/ ({}) — riel {} reads only "
+            ".riel/run.md (format {}); archive or delete the legacy files "
+            "(there is no converter)".format(
+                ", ".join(".riel/" + f for f in found), VERSION, RUN_FORMAT))
+
+
+def _read_file(path):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return fh.read()
+    except OSError as exc:
+        raise EngineError("cannot read {}: {}".format(path, exc))
+
+
+def _confine(path, worktree):
+    """Reject ANY symlink on the path from worktree down to `path` itself.
+
+    A state path that jumps outside the worktree through a symlink would let
+    a write clobber an unrelated file — every component is checked, and the
+    real parent must resolve back inside the worktree.
+    """
+    base = os.path.abspath(worktree)
+    full = os.path.abspath(path)
+    # Containment is decided on REAL paths: the worktree itself may sit under
+    # a symlinked ancestor (macOS /var -> /private/var), which must not read
+    # as an escape.
+    real_base = os.path.realpath(base)
+    real_full = os.path.realpath(full)
+    rel = os.path.relpath(real_full, real_base)
+    if rel == os.pardir or rel.startswith(os.pardir + os.sep):
+        raise EngineError("path escapes the worktree: {}".format(path))
+    # Defense in depth: when the UNRESOLVED path sits under the unresolved
+    # worktree, walk its components and refuse any symlink — a symlinked
+    # .riel/ or run.md never becomes a write target. (Mixed unresolved/
+    # resolved spellings of the same directory skip the walk; the realpath
+    # containment above is already decisive.)
+    rel_raw = os.path.relpath(full, base)
+    if not (rel_raw == os.pardir or rel_raw.startswith(os.pardir + os.sep)):
+        cur = base
+        for part in rel_raw.split(os.sep):
+            cur = os.path.join(cur, part)
+            if os.path.islink(cur):
+                raise EngineError(
+                    "refusing symlinked state path component: {}".format(cur))
+    real_parent = os.path.dirname(real_full)
+    if real_parent != real_base \
+            and not real_parent.startswith(real_base + os.sep):
+        raise EngineError(
+            "state path resolves outside the worktree: {}".format(path))
+
+
+def _atomic_write(path, text, worktree):
+    """Write `text` to `path` atomically (tmp + fsync + rename), confined."""
+    _confine(path, worktree)
+    parent = os.path.dirname(path) or "."
+    os.makedirs(parent, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=parent, prefix=".riel-tmp-")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _backup(path, keep=MAX_BACKUPS):
+    """Timestamped flat backup beside the file; at most `keep` are kept."""
+    try:
+        if not os.path.isfile(path) or os.path.islink(path):
+            return
+        directory = os.path.dirname(path) or "."
+        base = os.path.basename(path)
+        stem = base[:-3] if base.endswith(".md") else base
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        target = os.path.join(directory, "{}-{}.bak.md".format(stem, stamp))
+        n = 1
+        while os.path.exists(target):
+            target = os.path.join(
+                directory, "{}-{}-{}.bak.md".format(stem, stamp, n))
+            n += 1
+        shutil.copy2(path, target)
+        backups = sorted(
+            os.path.join(directory, f) for f in os.listdir(directory)
+            if re.fullmatch(re.escape(stem) + r"-\d{8}-\d{6}(-\d+)?\.bak\.md",
+                            f))
+        for old in backups[:-keep]:
+            try:
+                os.unlink(old)
+            except OSError:
+                pass
+    except OSError:
+        pass
+
+
+class _Locked:
+    """Cross-process exclusive flock held for a whole write transaction."""
+
+    def __init__(self, lock_path):
+        self.lock_path = lock_path
+        self.fh = None
+
+    def __enter__(self):
+        root = os.path.dirname(os.path.dirname(self.lock_path))
+        _confine(self.lock_path, root)
+        os.makedirs(os.path.dirname(self.lock_path), exist_ok=True)
+        self.fh = open(self.lock_path, "a+")
+        if fcntl is not None:
+            fcntl.flock(self.fh.fileno(), fcntl.LOCK_EX)
+        return self
+
+    def __exit__(self, *exc):
+        if self.fh is not None:
+            if fcntl is not None:
+                fcntl.flock(self.fh.fileno(), fcntl.LOCK_UN)
+            self.fh.close()
+            self.fh = None
+        return False
+
+
+# ---------------------------------------------------- state derivation ----
+
+def evidence_passes(ev):
+    """exit 0 AND (confidence omitted or >= 12) — an explicit low score vetoes."""
+    return ev["exit_code"] == 0 and (
+        ev["confidence"] is None or ev["confidence"] >= CONFIDENCE_PASS)
+
+
+def load_state(worktree, require_active=False, require_exists=True):
+    """Read + parse .riel/run.md → dict; clean EngineError on every refusal."""
+    paths = _worktree_paths(worktree)
+    _refuse_legacy(worktree)
+    if not os.path.exists(paths["run"]):
+        if require_exists:
+            raise EngineError(
+                "no run state at {} — render one with `run new`, edit it, "
+                "then `run activate`".format(paths["run"]))
+        return None
+    _confine(paths["run"], worktree)
+    text = _read_file(paths["run"])
+    if not marker_present(text):
+        raise EngineError(
+            "{} is not a {} file (missing {} after the title)".format(
+                paths["run"], RUN_FORMAT, MARKER_LINE))
+    plan_text, _ = _split_plan(text)
+    meta = _parse_metadata(text)
+    active = bool(meta.get("revision"))
+    if require_active and not active:
+        raise EngineError(
+            "run at {} is a draft — `run activate` first".format(paths["run"]))
+    graph_nodes, graph_edges, register = graph_any(plan_text,
+                                                   strict_section=True)
+    shaping_hash = None
+    if active and meta.get("shaping_sha256") not in (None, "none"):
+        shaping_hash = meta["shaping_sha256"]
+    st = {
+        "path": paths["run"],
+        "text": text,
+        "plan_text": plan_text,
+        "active": active,
+        "meta": meta,
+        "revision": meta.get("revision") if active else None,
+        "plan_hash": meta.get("plan_sha256") if active else None,
+        "shaping_hash": shaping_hash,
+        "claims": _parse_claims(plan_text),
+        "gates": _parse_gates(plan_text),
+        "evidence": _parse_evidence(text),
+        "core": _parse_core(text),
+        "open": _parse_open(text),
+        "basis": _parse_basis(plan_text),
+        "nodes": graph_nodes,
+        "edges": graph_edges,
+        "register": register,
+    }
+    st["counted_evidence"] = [e for e in st["evidence"]
+                              if active and e["revision"] == st["revision"]]
+    st["passed_gates"] = {g for e in st["counted_evidence"]
+                          if evidence_passes(e) for g in e["gates"]}
+    st["covered_claims"] = {c for e in st["counted_evidence"]
+                            if evidence_passes(e) and st["active"]
+                            for c in e["claims"]}
+    st["done"] = (
+        bool(st["claims"])
+        and all(c["id"] in st["covered_claims"] for c in st["claims"])
+        and all(g["id"] in st["passed_gates"] for g in st["gates"])
+    )
+    st["current_phase"], st["next"] = _derive_phase(st)
+    return st
+
+
+def _phase_gate_ids(st, phase_id):
+    """A gate bound to a phase, or the run-global obligation set."""
+    mapped = [gate["id"] for gate in st["gates"]
+              if gate.get("phase") == phase_id]
+    return mapped or [gate["id"] for gate in st["gates"]]
+
+
+def _derive_phase(st):
+    """(current_phase, next) — gates drive the phase, the DAG drives next.
+
+    A phase is complete when every gate mapped to it has passing evidence
+    AND every earlier phase is complete; a phase with no gate completes
+    automatically once its predecessors do. `next` is the first work step
+    of the current phase (its label), falling back to the phase label.
+    """
+    nodes, edges = st["nodes"], st["edges"]
+    if not nodes:
+        return None, None
+    gates_by_phase = {
+        pid: _phase_gate_ids(st, pid) for pid in _phase_order(nodes)
+    }
+    order = _phase_order(nodes)
+    done_phases = set()
+    current = None
+    for pid in order:
+        if all(gid in st["passed_gates"] for gid in gates_by_phase.get(pid, [])):
+            done_phases.add(pid)
+        else:
+            current = pid
+            break
+    if current is None:
+        return None, ("done" if st["done"] else None)
+    steps = _phase_steps(nodes, edges, current)
+    if steps:
+        nxt = nodes[steps[0]][1] or steps[0]
+    else:
+        nxt = nodes[current][1] or current
+    return current, nxt
+
+
+# ---------------------------------------------------------- validation ----
+
+def _check_plan(text, nodes, edges, shaping_path, active, basis, basis_only=False):
+    """(issues, warnings) shared by validate / activate / rebase / slice."""
+    issues, warnings = [], []
+
+    if not marker_present(text):
+        issues.append(
+            "missing the {} marker line after the title".format(MARKER_LINE))
+    if not re.match(r"^#\s*Run:\s*\S", text.lstrip()):
+        issues.append("title must be `# Run: <name>`")
+
+    headings = [t.strip() for _lvl, t in
+                re.findall(r"^(#{1,2})\s+(.+)$", text, re.M)]
+    wanted = ["Run:"] + list(PLAN_TITLES)
     pos = []
-    last = -1
-    for w in wanted_order:
-        for i, t in enumerate(titles):
-            if t.startswith(w) or t == w.rstrip(":"):
+    for w in wanted:
+        for i, t in enumerate(headings):
+            if t == w or t.startswith(w):
                 pos.append(i)
-                last = max(last, i)
                 break
         else:
-            issues.append("missing section: {!r}".format(w))
+            issues.append("missing plan section: {}".format(w))
     if pos != sorted(pos):
-        issues.append("sections out of order; expected packet.md order")
+        issues.append("plan sections out of order")
 
-    # Objective is one sentence starting with "We need"
-    mo = re.search(r"^## Objective\s*\n(.+?)(?=\n##\s)", text, re.S | re.M)
-    if mo:
-        first_line = mo.group(1).strip().splitlines()[0] if mo.group(1).strip() else ""
-        if "We need" not in first_line and "Necesitamos" not in first_line:
-            issues.append("Objective does not open with \"We need…\"")
-        if _sentence_count(mo.group(1)) > 1:
-            warnings.append(
-                "Objective is more than one sentence — the spec asks for one "
-                "(what \"done\" produces); move rationale to '### Why'")
-    elif text:
-        issues.append("no ## Objective section found")
+    if not _first_line(_section(text, "Objective")):
+        issues.append("## Objective is empty")
+    if not _bullets(_section(text, "Constraints")):
+        issues.append("## Constraints has no items")
+    if not _bullets(_section(text, "DO NOT")):
+        issues.append("## DO NOT has no items (scope enforcement missing)")
+    if not _first_line(_section(text, "Deliverable")):
+        issues.append("## Deliverable is empty")
 
-    # Pre-registered claims
-    mp = re.search(
-        r"^## Pre-registered claims\s*\n(.*?)(?=\n##\s)", text, re.S | re.M
-    )
-    if mp:
-        claims = re.findall(r"^-+\s+P\d+", mp.group(1), re.M)
-        if not claims:
-            issues.append("Pre-registered claims section is empty")
-    elif text:
-        issues.append("no ## Pre-registered claims section found")
+    claims = _parse_claims(text)
+    if not claims:
+        issues.append("## Claims has no P# entries")
+    seen = set()
+    for c in claims:
+        if c["id"] in seen:
+            issues.append("duplicate claim id {}".format(c["id"]))
+        seen.add(c["id"])
 
-    # DO NOT section non-empty
-    md = re.search(r"^## DO NOT\s*\n(.*?)(?=\n##\s|\Z)", text, re.S | re.M)
-    if md:
-        body = md.group(1).strip()
-        items = [l for l in body.splitlines() if l.strip().startswith("-")]
-        if not items:
-            issues.append("DO NOT section has no items (scope enforcement missing)")
+    gates = _parse_gates(text)
+    gate_ids = {g["id"] for g in gates}
+    if len(gate_ids) != len(gates):
+        issues.append("duplicate gate id in ## Gates")
+    phase_ids = {nid for nid in nodes if PHASE_ID_RE.match(nid)}
+    for g in gates:
+        if g["phase"] and g["phase"] not in phase_ids:
+            issues.append("gate {} maps to phase {} which is not in the "
+                          "graph".format(g["id"], g["phase"]))
+        if not g["label"]:
+            issues.append("gate {} has no label".format(g["id"]))
 
-    # Context keywords: non-fatal — a contract without them still validates, but
-    # the context-fetch step has nothing to search (see spec-contract-format).
-    if not context_keywords(text):
-        warnings.append(
-            "no '### Context keywords' under ## Context "
-            "(nothing for the context fetch to search)")
-
-    # Graph conventions — two registers: a ```mermaid block (rich: branches,
-    # loops, decision nodes) or a plain F#/W# phase list (canonical simple:
-    # linear funnel, the gate is each phase's last step). Rules become
-    # greps either way — a register without any graph is an ISSUE.
-    parsed_nodes = {}
-    parsed_edges = []
-    blocks = re.findall(r"```mermaid\n(.*?)```", text, re.S)
-    if not blocks:
-        parsed_nodes, parsed_edges = list_graph(
-            _section(text, "Execution graph"))
-        if not parsed_nodes:
-            issues.append(
-                "no execution graph found (a mermaid block or a plain "
-                "F#/W# phase list under ## Execution graph)")
-        else:
-            # List register: linear funnel. Each phase's LAST step is its
-            # gate — a phase that does not end in RUN/VERIFY has no
-            # verification, and every step must use the closed verbs.
-            phase_ids = [nid for nid in parsed_nodes
-                         if re.match(r"^[FW]\d+$", nid)]
-            for pid in phase_ids:
-                outs = [v for u, _l, v in parsed_edges if u == pid]
-                last = outs[-1] if outs else None
-                gate = parsed_nodes.get(last, ("", ""))[1] if last else ""
-                if not re.match(r"(RUN|VERIFY)\b", gate):
-                    issues.append(
-                        "list phase {} ends with {!r} — the last step of a "
-                        "phase is its gate (RUN or VERIFY)".format(
-                            pid, gate or "<no steps>"))
-            bad_verbs = []
-            for nid, (_shape, label) in parsed_nodes.items():
-                if re.match(r"^[FW]\d+$", nid):
-                    continue
-                m = re.match("[A-Za-z]+", label.strip())
-                verb = m.group(0).upper() if m else ""
-                if verb not in _CLOSED_VERBS:
-                    bad_verbs.append((nid, label[:50]))
-            if bad_verbs:
-                issues.append(
-                    "list step(s) not starting with a closed verb "
-                    "(READ/EDIT/CREATE/RUN/VERIFY/ASK): {}".format(
-                        sorted(set(bad_verbs))))
+    # graph conventions — parsed shapes and parsed edges only
+    if not nodes:
+        issues.append("no execution graph under ## Graph (a ```mermaid block "
+                      "or a plain F#/W# phase list)")
     else:
-        g = blocks[0]
-        parsed_nodes, parsed_edges = mermaid_graph(g)
-        ok_ids = {"S", "G", "W", "F", "END", "START", "Q", "SELF", "DC", "APP",
-                  "REC", "FIX", "ERR"}
-        bad_ids = [
-            nid for nid in parsed_nodes
-            if nid.upper() not in ok_ids and not re.match(r"^(S|G|W|F)\d+", nid)
-        ]
-        if bad_ids:
-            issues.append("non-predictable node ids: {}".format(sorted(set(bad_ids))))
-        # A graph with nodes but no edges at all is degenerate
-        if "-->" not in blocks[0]:
+        if not edges:
             issues.append("execution graph has no edges")
-        pops_run = re.findall(r'\[\"RUN ', blocks[0])
-        pops_verify = re.findall(r'\{"[^\"]*"', blocks[0])
-        if not pops_run:
-            issues.append("no RUN gate found in graph")
-        if not pops_verify:
-            issues.append("no VERIFY/Check decision found in graph (funnel missing)")
-        # Every decision node must have at least one labeled outgoing edge
-        decisions = re.findall(r"([A-Za-z_][A-Za-z0-9_]*)\{", blocks[0])
-        for node in set(decisions):
-            if not re.search(
-                r"{}.*-->?\s*\|".format(re.escape(node)), blocks[0]
-            ):
-                issues.append(
-                    "decision node {!r} has no labeled outgoing edge".format(node)
-                )
-        # --- closed verb vocabulary on execution nodes (riel-contract) ---
-        bad_verbs = []
-        for nid, (shape, label) in parsed_nodes.items():
+        for nid, (shape, label) in nodes.items():
             lab = label.strip()
-            m = re.match("[A-Za-z]+", lab)
-            verb = m.group(0).upper() if m else ""
-            if shape == "[" and verb not in _CLOSED_VERBS:
-                bad_verbs.append((nid, lab[:50]))
+            verb_m = re.match(r"[A-Za-z]+", lab)
+            verb = verb_m.group(0).upper() if verb_m else ""
+            if shape == "[" and not PHASE_ID_RE.match(nid) \
+                    and verb not in CLOSED_VERBS:
+                issues.append(
+                    "node {} {!r} does not start with a closed verb "
+                    "(READ/EDIT/CREATE/RUN/VERIFY/ASK)".format(nid, lab[:50]))
             if verb == "ASK" and not re.match(
                     r"ASK\[(irreversible|outside-claims|goal-changing)\]", lab):
                 issues.append(
-                    "ASK node {!r} must start with its trigger: "
+                    "ASK node {} must start with its trigger: "
                     "ASK[irreversible|outside-claims|goal-changing]".format(nid))
-            if len(lab.split()) > 20:
-                warnings.append(
-                    "node {} label is {} tokens (keep <= 15-20)".format(
-                        nid, len(lab.split())))
-        if bad_verbs:
-            issues.append(
-                "execution node(s) not starting with a closed verb "
-                "(READ/EDIT/CREATE/RUN/VERIFY/ASK): {}".format(bad_verbs))
-        if "<br" in g:
-            issues.append(
-                "uses <br/> — mermaid v11 strict breaks on it; "
-                "use a line-break label")
-        if any(ln.strip().startswith("style ") for ln in g.splitlines()):
-            issues.append(
-                "execution graph carries `style` — a parsed-as-spec DAG must not")
-        labels = re.findall('"([^"]*)"', g)
-        found_tools = sorted({
-            t for label in labels
-            for t in _TOOL_NAMES
-            if t in re.findall("[A-Za-z_][A-Za-z0-9_]*", label)
-        })
-        if found_tools:
-            issues.append(
-                "tool name(s) in node labels — use semantic verbs: {}".format(
-                    found_tools))
-        # soft: a loop without a counter guard
-        if graph_back_edges(parsed_edges) and not re.search(
-                "< *[0-9]|>= *[0-9]", g):
+        outgoing = {}
+        for u, lbl, v in edges:
+            outgoing.setdefault(u, []).append((lbl, v))
+        for nid, (shape, _label) in nodes.items():
+            if shape != "{":
+                continue
+            outs = outgoing.get(nid, [])
+            if not outs or any(not lbl for lbl, _v in outs):
+                issues.append(
+                    "decision node {} needs a label on every outgoing edge "
+                    "(parsed from the edges)".format(nid))
+        blocks = re.findall(r"```mermaid\n(.*?)```", _section(text, "Graph"),
+                            re.S)
+        for block in blocks:
+            if "<br" in block:
+                issues.append("graph uses <br/> — mermaid v11 breaks on it")
+            if any(ln.strip().startswith("style ")
+                   for ln in block.splitlines()):
+                issues.append(
+                    "graph carries `style` — not a parsed-as-spec DAG")
+        if graph_back_edges(edges) and not re.search(
+                r"< *[0-9]|>= *[0-9]", _section(text, "Graph")):
             warnings.append(
-                "graph has a loop but no counter guard (< 3 / >= 3) — "
-                "bounded retries prevent infinite loops")
+                "graph has a loop but no counter guard (< 3 / >= 3)")
+        issues.extend(mmdc_issues(blocks))
 
-    # if mmdc is available, try parsing each graph block
-    issues.extend(mmdc_issues(blocks))
-
-    # Claim anchors (Spec 2 + Spec 7). A claim with no anchor cannot be
-    # re-read at a seam — a WARN, never fatal: the shipped templates carry
-    # none. An anchor whose support is missing IS a failure (the section
-    # forms); a node the local graph lacks is the inherited-on-a-slice case.
-    shaping_path = os.path.join(
-        os.path.dirname(os.path.abspath(args.file)),
-        os.path.basename(SHAPING_PATH))
-    for claim in claim_anchors(text):
-        if not claim["anchor"]:
-            warnings.append(
-                "{} has no anchor — a seam cannot re-read its support: add "
-                "'— anchor: §Section#n', a node id, or 'shaping:F#'".format(
-                    claim["id"]))
+    # anchors
+    node_ids = set(nodes)
+    graph_section = _section(text, "Graph")
+    for c in claims:
+        if not c["anchor"]:
+            warnings.append("{} has no anchor — add '— anchor: §Section#n', "
+                            "a node id, or 'shaping:F#'".format(c["id"]))
             continue
-        kind, detail = resolve_anchor(claim["anchor"], text, parsed_nodes,
-                                      shaping_path)
-        if kind == "unknown":
+        sm = FROZEN_RE.match(c["anchor"])
+        am = SECTION_ANCHOR_RE.match(c["anchor"])
+        if sm:
+            fid = "F{}".format(sm.group(1))
+            if active or basis_only:
+                if not any(b["id"] == fid for b in basis):
+                    issues.append(
+                        "{} anchors {} — not present in the frozen Basis "
+                        "(activate/rebase re-copies it)".format(
+                            c["id"], c["anchor"]))
+            elif shaping_path and os.path.isfile(shaping_path):
+                stext = _read_file(shaping_path)
+                if not any(f["id"] == fid
+                           for f in shaping_findings(stext)):
+                    issues.append(
+                        "{} anchors {} — no such finding in {}".format(
+                            c["id"], c["anchor"], shaping_path))
+            else:
+                warnings.append(
+                    "{} anchors {} but no shaping file exists — activation "
+                    "will refuse".format(c["id"], c["anchor"]))
+        elif am:
+            name, idx = am.group(1).strip(), am.group(2)
+            body = _section(text, name)
+            if not body:
+                issues.append("{} anchor {} does not resolve — no such "
+                              "section".format(c["id"], c["anchor"]))
+            elif idx is not None:
+                items = _bullets(body)
+                if not 1 <= int(idx) <= len(items):
+                    issues.append(
+                        "{} anchor {} does not resolve — the section has {} "
+                        "bullet(s)".format(c["id"], c["anchor"], len(items)))
+        elif NODE_ANCHOR_RE.match(c["anchor"]):
+            if c["anchor"] not in node_ids \
+                    and c["anchor"] not in graph_section:
+                warnings.append(
+                    "{} anchor {} is not a node of this graph — on a slice "
+                    "it is inherited from the parent".format(
+                        c["id"], c["anchor"]))
+        else:
             issues.append(
                 "{} anchor {!r} is not a valid form: §<Section>[#<n>] | "
-                "<NodeId> | shaping:F<n>".format(claim["id"], claim["anchor"]))
-        elif kind == "section" and detail is None:
-            issues.append(
-                "{} anchor {!r} does not resolve — no such section or bullet "
-                "in this contract".format(claim["id"], claim["anchor"]))
-        elif kind == "node" and detail is None:
-            warnings.append(
-                "{} anchor {!r} is not a node of this graph — on a slice that "
-                "is inherited from the parent contract".format(
-                    claim["id"], claim["anchor"]))
-        elif kind == "shaping" and detail is None:
-            warnings.append(
-                "{} anchors {} — {}".format(
-                    claim["id"], claim["anchor"],
-                    "no such finding in {}".format(shaping_path)
-                    if os.path.isfile(shaping_path) else "no shaping file to check"))
+                "<NodeId> | shaping:F#".format(c["id"], c["anchor"]))
+    return issues, warnings
 
+
+def _validate_active_hashes(st, shaping_path):
+    """The stale check: plan/shaping bytes must match the activated hashes."""
+    current_plan = plan_sha256(st["plan_text"])
+    if st["plan_hash"] and st["plan_hash"] != current_plan:
+        raise EngineError(
+            "stale state: the plan changed since {} — run `run rebase` "
+            "(old evidence is reserved, not lost)".format(st["revision"]),
+            code=3)
+    current = None
+    if os.path.isfile(shaping_path):
+        current = hashlib.sha256(
+            _read_file(shaping_path).encode("utf-8")).hexdigest()
+    if st["shaping_hash"] != current:
+        raise EngineError(
+            "stale state: .riel/shaping.md changed since {} — run "
+            "`run rebase`".format(st["revision"]), code=3)
+
+
+# ---------------------------------------------------------- rendering ----
+
+def _render_state_sections(meta, core, open_qs, evidence, current_phase):
+    lines = ["## Metadata", ""]
+    for key in ("format", "revision", "activated", "plan_sha256",
+                "shaping_sha256"):
+        if key in meta:
+            lines.append("- {}: {}".format(key, meta[key]))
+    lines += ["", "## Execution state", "",
+              "- current_phase: {}".format(current_phase or "none"),
+              "", "## Core", ""]
+    if core:
+        for slot, entry in sorted(core):
+            entry = re.sub(r"\s+", " ", entry).strip()
+            lines.append("- {}. {}".format(slot, entry))
+    else:
+        lines.append("<!-- empty -->")
+    lines += ["", "## Open", ""]
+    if open_qs:
+        for q in open_qs:
+            question = re.sub(r"\s+", " ", q["text"]).strip()
+            settled_by = re.sub(r"\s+", " ", q.get("settled_by") or "").strip()
+            line = "- {}: {}".format(q["id"], question)
+            if settled_by:
+                line += " — settled-by: {}".format(settled_by)
+            if q.get("closed_by"):
+                line += " — closed by: {}".format(q["closed_by"])
+            lines.append(line)
+    else:
+        lines.append("<!-- empty -->")
+    lines += ["", "## Evidence", ""]
+    if evidence:
+        for ev in evidence:
+            line = ("- {} gate:{} claims:{} revision:{} command_b64:{} "
+                    "exit_code:{} covering:{}".format(
+                        ev["id"], ",".join(ev["gates"]),
+                        ",".join(ev["claims"]) or "none", ev["revision"],
+                        base64.b64encode(ev["command"].encode("utf-8")).decode("ascii"),
+                        ev["exit_code"], ev["covering"]))
+            if ev["confidence"] is not None:
+                line += " confidence:{}".format(ev["confidence"])
+            lines.append(line)
+            if ev.get("out"):
+                lines.append("  out: {}".format(ev["out"]))
+    else:
+        lines.append("<!-- empty -->")
+    return "\n".join(lines) + "\n"
+
+
+def _build_basis(plan_text, findings, shaping_hash):
+    """Replace (or insert) the frozen `### Basis` inside `## Context`."""
+    entries = ["### Basis",
+               "<!-- Frozen from .riel/shaping.md (sha256 {}). Edit the "
+               "shaping and run `run rebase` to refresh; the plan is "
+               "otherwise frozen. -->".format(shaping_hash)]
+    for f in findings:
+        line = "- {}: {}".format(f["id"], f["text"])
+        if f["source"]:
+            line += " — source: {}".format(f["source"])
+        if f["confidence"]:
+            line += " — confidence: {}".format(f["confidence"])
+        entries.append(line)
+    block = "\n".join(entries) + "\n\n"
+    text = re.sub(r"### Basis\n.*?(?=\n###\s|\n##\s|\Z)", "", plan_text,
+                  flags=re.S | re.M)
+    kw = re.search(r"### Context keywords\n.*?(?=\n###\s|\n##\s|\Z)",
+                   text, re.S | re.M)
+    if kw:
+        return text[:kw.end()] + "\n" + block + text[kw.end():].lstrip("\n")
+    ctx = re.search(r"^## Context[^\n]*\n", text, re.M)
+    if ctx:
+        return text[:ctx.end()] + "\n" + block + text[ctx.end():]
+    raise EngineError("no ## Context section to freeze the Basis into")
+
+
+def _referenced_finding_ids(plan_text):
+    ids = []
+    for c in _parse_claims(plan_text):
+        m = FROZEN_RE.match(c["anchor"] or "")
+        if m:
+            ids.append("F{}".format(m.group(1)))
+    return ids
+
+
+# --------------------------------------------------------------- verbs ----
+
+def cmd_shape(args, out, err):
+    if args.cmd2 == "new":
+        return _shape_new(args, out, err)
+    if args.cmd2 == "fetch":
+        return _fetch_verb(args, out, err)
+    return _shape_validate(args, out, err)
+
+
+def _shape_validate(args, out, err):
+    path = getattr(args, "path", None) or \
+        _worktree_paths(args.worktree)["shaping"]
+    if not os.path.isfile(path):
+        raise EngineError("no shaping file at {}".format(path))
+    text = _read_file(path)
+    issues, warnings = validate_shaping(text)
     for w in warnings:
-        print("WARN: {}".format(w), file=sys.stderr)
+        print("WARN: {}".format(w), file=err)
     if issues:
-        print("INVALID packet {}:".format(args.file))
+        print("INVALID shaping {}:".format(path), file=out)
         for issue in issues:
-            print("  - " + issue)
+            print("  - " + issue, file=out)
         return 1
-    print("valid: {}".format(args.file))
+    print("valid shaping: {} ({} finding(s))".format(
+        path, len(shaping_findings(text))), file=out)
     return 0
 
 
-# ------------------------------------------------------------------ fetch ---
+def _shape_new(args, out, err):
+    text, leftover = _render_template("shaping", args.param,
+                                      args.template_dir, args.strict, args.worktree)
+    for name in sorted(set(leftover)):
+        print("note: unfilled placeholder {{{{{}}}}}".format(name), file=err)
+    print(text, end="", file=out)
+    return 0
 
-def _redact_url(url):
-    """Drop the query string so a token in the URL never reaches logs/stderr."""
-    parts = urllib.parse.urlsplit(url)
-    if parts.query:
-        return urllib.parse.urlunsplit(
-            (parts.scheme, parts.netloc, parts.path, "", parts.fragment))
-    return url
+
+def cmd_run(args, out, err):
+    return {
+        "new": _run_new,
+        "validate": _run_validate,
+        "activate": _run_activate,
+        "rebase": _run_rebase,
+        "status": _run_status,
+        "slice": _run_slice,
+        "fetch": _fetch_verb,
+    }[args.cmd2](args, out, err)
+
+
+def _run_new(args, out, err):
+    text, leftover = _render_template("run", args.param,
+                                      args.template_dir, args.strict, args.worktree)
+    for name in sorted(set(leftover)):
+        print("note: unfilled placeholder {{{{{}}}}}".format(name), file=err)
+    print(text, end="", file=out)
+    return 0
+
+
+def _run_validate(args, out, err):
+    paths = _worktree_paths(args.worktree)
+    path = args.file or paths["run"]
+    text = _read_file(path)
+    if not marker_present(text):
+        raise EngineError(
+            "{} is not a {} file (missing {} after the title); riel {} "
+            "does not read legacy formats".format(
+                path, RUN_FORMAT, MARKER_LINE, VERSION))
+    plan_text, _ = _split_plan(text)
+    meta = _parse_metadata(text)
+    active = bool(meta.get("revision"))
+    nodes, edges, _reg = graph_any(plan_text, strict_section=True)
+    basis = _parse_basis(plan_text)
+    issues, warnings = _check_plan(
+        text, nodes, edges, paths["shaping"], active, basis,
+        basis_only=bool(basis))
+    if active:
+        try:
+            _validate_active_hashes({
+                "plan_text": plan_text,
+                "revision": meta.get("revision"),
+                "plan_hash": meta.get("plan_sha256"),
+                "shaping_hash": (None if meta.get("shaping_sha256") == "none"
+                                 else meta.get("shaping_sha256")),
+            }, paths["shaping"])
+        except EngineError as exc:
+            issues.append(str(exc))
+    for w in warnings:
+        print("WARN: {}".format(w), file=err)
+    if issues:
+        print("INVALID run {}:".format(path), file=out)
+        for issue in issues:
+            print("  - " + issue, file=out)
+        return 1
+    print("valid {} run: {}".format("active" if active else "draft", path),
+          file=out)
+    return 0
+
+
+def _freeze_from_shaping(paths, plan_text, err):
+    """(plan_with_basis, shaping_hash, findings) — or None after refusing.
+
+    Present shaping → validated, referenced findings frozen into Basis.
+    Missing shaping → allowed ONLY with NO shaping anchors.
+    """
+    shaping_hash = "none"
+    findings = []
+    referenced = _referenced_finding_ids(plan_text)
+    if os.path.isfile(paths["shaping"]):
+        stext = _read_file(paths["shaping"])
+        s_issues, s_warns = validate_shaping(stext)
+        for w in s_warns:
+            print("WARN: shaping: {}".format(w), file=err)
+        if s_issues:
+            print("refusing — invalid .riel/shaping.md:", file=err)
+            for issue in s_issues:
+                print("  - " + issue, file=err)
+            return None
+        by_id = {f["id"]: f for f in shaping_findings(stext)}
+        for fid in referenced:
+            if fid not in by_id:
+                print("refusing — a claim anchors {} which does not exist "
+                      "in .riel/shaping.md".format(fid), file=err)
+                return None
+            findings.append(by_id[fid])
+        shaping_hash = hashlib.sha256(stext.encode("utf-8")).hexdigest()
+    elif referenced:
+        print("refusing — claims anchor shaping findings ({}) but "
+              ".riel/shaping.md does not exist".format(
+                  ", ".join(referenced)), file=err)
+        return None
+    if findings:
+        plan_text = _build_basis(plan_text, findings, shaping_hash)
+    return plan_text, shaping_hash, findings
+
+
+def _run_activate(args, out, err):
+    paths = _worktree_paths(args.worktree)
+    _refuse_legacy(args.worktree)
+    with _Locked(paths["lock"]):
+        if not os.path.exists(paths["run"]):
+            raise EngineError(
+                "no run to activate at {} — `run new` renders the template; "
+                "an editor writes the file".format(paths["run"]))
+        text = _read_file(paths["run"])
+        if not marker_present(text):
+            raise EngineError("{} is not a {} file (missing {})".format(
+                paths["run"], RUN_FORMAT, MARKER_LINE))
+        meta = _parse_metadata(text)
+        if meta.get("revision"):
+            raise EngineError(
+                "run at {} is already active (revision {}) — a run "
+                "activates once; edit the plan and `run rebase` instead"
+                .format(paths["run"], meta["revision"]))
+        plan_text, _ = _split_plan(text)
+        nodes, edges, _reg = graph_any(plan_text, strict_section=True)
+        issues, _warnings = _check_plan(
+            text, nodes, edges, paths["shaping"], False, [])
+        if issues:
+            print("refusing activation — {} issue(s):".format(len(issues)),
+                  file=out)
+            for issue in issues:
+                print("  - " + issue, file=out)
+            return 1
+        frozen = _freeze_from_shaping(paths, plan_text, err)
+        if frozen is None:
+            return 1
+        plan_text, shaping_hash, _findings = frozen
+        meta = {
+            "format": RUN_FORMAT,
+            "revision": "r1",
+            "activated": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "plan_sha256": plan_sha256(plan_text),
+            "shaping_sha256": shaping_hash,
+        }
+        body = plan_text + "\n" + _render_state_sections(
+            meta, [], [], [], None)
+        _backup(paths["run"])
+        _atomic_write(paths["run"], body, args.worktree)
+    st = load_state(args.worktree, require_active=True)
+    print("activated {} revision r1 — current_phase: {}, next: {}".format(
+        paths["run"], st["current_phase"] or "(no graph)", st["next"] or "-"),
+        file=out)
+    return 0
+
+
+def _run_rebase(args, out, err):
+    paths = _worktree_paths(args.worktree)
+    with _Locked(paths["lock"]):
+        st = load_state(args.worktree, require_active=True)
+        old_revision = st["revision"]
+        plan_text = st["plan_text"]
+        nodes, edges, _reg = graph_any(plan_text, strict_section=True)
+        issues, _w = _check_plan(plan_text, nodes, edges, paths["shaping"],
+                                 False, [])
+        if issues:
+            print("refusing rebase — {} issue(s):".format(len(issues)),
+                  file=out)
+            for issue in issues:
+                print("  - " + issue, file=out)
+            return 1
+        frozen = _freeze_from_shaping(paths, plan_text, err)
+        if frozen is None:
+            return 1
+        plan_text, shaping_hash, _findings = frozen
+        new_plan_hash = plan_sha256(plan_text)
+        if (new_plan_hash == st["plan_hash"]
+                and shaping_hash == (st["shaping_hash"] or "none")):
+            print("nothing to rebase — plan and shaping match {}".format(
+                old_revision), file=out)
+            return 0
+        rev_n = int(old_revision[1:]) + 1
+        meta = dict(st["meta"])
+        meta.update({
+            "revision": "r{}".format(rev_n),
+            "plan_sha256": new_plan_hash,
+            "shaping_sha256": shaping_hash,
+            "activated": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        })
+        # Old evidence is RETAINED verbatim but no longer counted: its
+        # revision no longer matches the current one.
+        body = plan_text + "\n" + _render_state_sections(
+            meta, st["core"], st["open"], st["evidence"], st["current_phase"])
+        _backup(paths["run"])
+        _atomic_write(paths["run"], body, args.worktree)
+    print("rebased to r{} — {} evidence record(s) reserved (retained, not "
+          "counted)".format(rev_n, len(st["evidence"])), file=out)
+    return 0
+
+
+def _run_status(args, out, err):
+    st = load_state(args.worktree)
+    assert st is not None  # require_exists=True rejects the missing run above
+    if st["active"]:
+        _validate_active_hashes(
+            st, os.path.join(args.worktree, RIEL_DIR, SHAPING_MD))
+    payload = {
+        "format": RUN_FORMAT,
+        "revision": st["revision"],
+        "status": "active" if st["active"] else "draft",
+        "current_phase": st["current_phase"],
+        "next": st["next"],
+        "claims": {c["id"]: ("covered" if c["id"] in st["covered_claims"]
+                             else "open") for c in st["claims"]},
+        "gates": {g["id"]: ("passed" if g["id"] in st["passed_gates"]
+                            else "pending") for g in st["gates"]},
+        "open": {q["id"]: ("closed" if q["closed_by"] else "open")
+                 for q in st["open"]},
+        "evidence": {"total": len(st["evidence"]),
+                     "counted": len(st["counted_evidence"])},
+        "done": st["done"],
+        "todos": todo_projection(st),
+    }
+    print(json.dumps(payload, ensure_ascii=False), file=out)
+    return 0
+
+
+def _run_slice(args, out, err):
+    paths = _worktree_paths(args.worktree)
+    st = load_state(args.worktree, require_active=True)
+    nodes, edges = st["nodes"], st["edges"]
+    if not nodes:
+        raise EngineError("the run has no graph to slice")
+    phase = args.phase
+    if phase not in nodes:
+        raise EngineError(
+            "no phase node {!r} in the run's graph (phases: {})".format(
+                phase, ", ".join(_phase_order(nodes)) or "none"))
+    keep = _phase_subgraph(nodes, edges, phase)
+    closers = {"[": "]", "(": ")", "{": "}"}
+
+    claims = [c for c in st["claims"]
+              if NODE_ANCHOR_RE.match(c["anchor"] or "")
+              and c["anchor"] in keep]
+    if not claims:
+        claims = st["claims"]
+    gates = [g for g in st["gates"] if g["phase"] == phase]
+
+    title_m = re.match(r"^#\s*Run:\s*(.+)$", st["plan_text"], re.M)
+    parent_title = title_m.group(1).strip() if title_m else "(task)"
+    body = ["# Run: {} — {}".format(parent_title, nodes[phase][1] or phase),
+            MARKER_LINE, ""]
+    for name in PLAN_TITLES:
+        body.append("## " + name)
+        if name == "Graph":
+            body += ["", "```mermaid", "flowchart TD"]
+            for nid, (opener, label) in nodes.items():
+                if nid in keep:
+                    body.append('  {}{}"{}"{}'.format(
+                        nid, opener, (label or nid).replace('"', "'"),
+                        closers[opener]))
+            for u, lbl, v in edges:
+                if u in keep and v in keep:
+                    body.append("  {} -->|{}| {}".format(u, lbl, v) if lbl
+                                else "  {} --> {}".format(u, v))
+            body += ["```"]
+        elif name == "Claims":
+            body.append("")
+            for c in claims:
+                line = "- {}: {}".format(c["id"], c["text"])
+                if c["anchor"]:
+                    line += " — anchor: {}".format(c["anchor"])
+                body.append(line)
+        elif name == "Gates":
+            body.append("")
+            for g in gates:
+                line = "- {}: {}".format(g["id"], g["label"])
+                if g["phase"]:
+                    line += " — phase: {}".format(g["phase"])
+                body.append(line)
+            if not gates:
+                body.append(
+                    "<!-- no gate mapped to {} in the parent run -->".format(
+                        phase))
+        elif name == "Context":
+            body.append("")
+            basis = _subsection(st["plan_text"], "Context", "Basis")
+            if basis:
+                body += ["### Basis", basis, ""]
+            why = _subsection(st["plan_text"], "Context", "Why")
+            if why:
+                body += ["### Why", why, ""]
+            kws = context_keywords(st["plan_text"])
+            if kws:
+                body += ["### Context keywords"]
+                body += ["- {}{}".format(
+                    k["term"],
+                    " → {}".format(k["source"]) if k["source"] else "")
+                    for k in kws]
+                body.append("")
+        else:
+            section = _section(st["plan_text"], name)
+            if section:
+                body += ["", section]
+        body.append("")
+    packet = "\n".join(body).rstrip("\n") + "\n"
+
+    # self-validating: the packet must pass the same validator as a draft
+    nodes2, edges2, _r = graph_any(packet, strict_section=True)
+    issues, _w = _check_plan(packet, nodes2, edges2, paths["shaping"],
+                             False, _parse_basis(packet), basis_only=True)
+    if issues:
+        raise EngineError("slice of {} is not self-validating: {}".format(
+            phase, "; ".join(issues)))
+    if args.output:
+        target = args.output if os.path.isabs(args.output) \
+            else os.path.join(args.worktree, args.output)
+        _atomic_write(target, packet, args.worktree)
+    print(packet, end="", file=out)
+    return 0
+
+
+# --------------------------------------------------------------- note ----
+
+def _note_evidence(st, args):
+    """Run --command in the worktree; capture the REAL exit code + snippet.
+
+    There is no way to self-supply an exit code: none exists as a flag.
+    """
+    plan_claims = {c["id"] for c in st["claims"]}
+    plan_gates = {g["id"] for g in st["gates"]}
+    for g in args.gate:
+        if g not in plan_gates:
+            raise EngineError("unknown gate {!r} — ## Gates has {}".format(
+                g, ", ".join(sorted(plan_gates)) or "no gates"))
+    for c in args.claim:
+        if c not in plan_claims:
+            raise EngineError("unknown claim {!r} — ## Claims has {}".format(
+                c, ", ".join(sorted(plan_claims)) or "no claims"))
+    if not args.command:
+        raise EngineError(
+            "--gate evidence needs --command (the engine runs it and "
+            "captures the exit code; self-supplied codes do not exist)")
+    if not args.covering:
+        raise EngineError(
+            "--gate evidence needs --covering (what scope the command "
+            "actually covers)")
+    if args.confidence is not None and not 1 <= args.confidence <= 20:
+        raise EngineError("--confidence must be 1..20")
+    command = args.command
+    try:
+        proc = subprocess.run(
+            command, shell=True, cwd=args.worktree,
+            capture_output=True, timeout=NOTE_TIMEOUT)
+        exit_code = proc.returncode
+        raw = (proc.stdout or b"") + (proc.stderr or b"")
+        snippet = re.sub(r"\s+", " ",
+                         raw.decode("utf-8", "replace")).strip()
+    except subprocess.TimeoutExpired as exc:
+        exit_code = 124  # conventional: the command was killed on timeout
+        raw = (exc.stdout or b"") + (exc.stderr or b"")
+        snippet = (re.sub(r"\s+", " ",
+                          raw.decode("utf-8", "replace")).strip()
+                   + " [timeout after {}s]".format(NOTE_TIMEOUT)).strip()
+    except OSError as exc:
+        raise EngineError("could not run --command: {}".format(exc))
+    snippet = snippet[:NOTE_SNIPPET_CHARS]
+    next_n = 1 + max((int(e["id"][1:]) for e in st["evidence"]), default=0)
+    records = []
+    for i, g in enumerate(args.gate):
+        records.append({
+            "id": "E{}".format(next_n + i),
+            "gates": [g],
+            "claims": list(args.claim),
+            "revision": st["revision"],
+            "command": command,
+            "exit_code": exit_code,
+            "covering": re.sub(r"\s+", " ", args.covering).strip(),
+            "confidence": args.confidence,
+            "out": snippet,
+        })
+    return records
+
+
+def _note_core(st, args):
+    text = re.sub(r"[\r\n]+", " ", args.core).strip()
+    if " — " not in text:
+        raise EngineError(
+            "--core must look like 'name — defining fact' (em-dash)")
+    core = list(st["core"])
+    if args.core_slot is not None:
+        slot = args.core_slot
+        if slot < 1 or slot > len(core) + 1:
+            raise EngineError(
+                "--core-slot must be 1..{} (1-based; {} live entr{})".format(
+                    len(core) + 1, len(core),
+                    "y" if len(core) == 1 else "ies"))
+        core = [(s, e) for s, e in core if s != slot]
+        core.append((slot, text))
+    else:
+        core.append((len(core) + 1, text))
+    if len(core) > 2:
+        raise EngineError("Core is full (2/2); replace an existing --core-slot")
+    return sorted(core)
+
+
+def cmd_note(args, out, err):
+    paths = _worktree_paths(args.worktree)
+    gate_mode = bool(args.gate or args.claim or args.command
+                     or args.covering)
+    if not any((args.gate, args.claim, args.command, args.covering,
+                args.core, args.open is not None, args.close is not None)):
+        raise EngineError(
+            "note writes state: --gate G# --claim P# --command CMD "
+            "--covering WHAT | --core 'name — fact' [--core-slot N] | "
+            "--open Q --settled-by TEST | --close Q# --evidence E#")
+    if gate_mode and not args.gate:
+        raise EngineError("--gate evidence needs at least one --gate")
+    if args.core_slot is not None and args.core is None:
+        raise EngineError("--core-slot needs --core")
+    if args.settled_by and args.open is None:
+        raise EngineError("--settled-by needs --open")
+    if args.open is not None and not args.settled_by:
+        raise EngineError("--open requires --settled-by (the cheapest "
+                          "refuting test)")
+    if args.evidence_ref is not None and args.close is None:
+        raise EngineError("--evidence needs --close")
+    if args.close is not None:
+        if args.evidence_ref is None:
+            raise EngineError(
+                "--close requires --evidence E# (a question closes against "
+                "evidence, never silently)")
+        if gate_mode:
+            raise EngineError("one note, one kind: question close OR gate "
+                              "evidence — not a mix")
+    if gate_mode and (args.core is not None or args.open is not None
+                      or args.close is not None):
+        raise EngineError("one note, one kind: gate evidence OR core OR "
+                          "open/close — not a mix")
+    with _Locked(paths["lock"]):
+        st = load_state(args.worktree, require_active=True)
+        _validate_active_hashes(st, paths["shaping"])
+        core, open_qs, evidence = st["core"], st["open"], st["evidence"]
+        what = ""
+        if gate_mode:
+            new = _note_evidence(st, args)
+            what = ", ".join(e["id"] for e in new)
+            evidence = evidence + new
+        if args.core is not None:
+            core = _note_core(st, args)
+            what = "--core"
+        if args.open is not None:
+            next_q = 1 + max((int(q["id"][1:]) for q in open_qs), default=0)
+            open_qs = open_qs + [{
+                "id": "Q{}".format(next_q), "text": args.open,
+                "settled_by": args.settled_by, "closed_by": ""}]
+            what = "Q{}".format(next_q)
+        if args.close is not None:
+            target = "Q{}".format(args.close)
+            hits = [q for q in open_qs if q["id"] == target]
+            if not hits:
+                raise EngineError("no such open question {}".format(target))
+            if hits[0]["closed_by"]:
+                raise EngineError("{} is already closed by {}".format(
+                    target, hits[0]["closed_by"]))
+            ev_ids = {e["id"] for e in st["evidence"]}
+            if "E{}".format(args.evidence_ref) not in ev_ids:
+                raise EngineError(
+                    "--evidence E{} does not exist — ## Evidence has {}".format(
+                        args.evidence_ref,
+                        ", ".join(sorted(ev_ids)) or "no evidence"))
+            open_qs = [dict(q, closed_by="E{}".format(args.evidence_ref))
+                       if q["id"] == target else q for q in open_qs]
+            what = "closed {}".format(target)
+        meta = dict(st["meta"])
+        body = st["plan_text"] + "\n" + _render_state_sections(
+            meta, core, open_qs, evidence, st["current_phase"])
+        _backup(paths["run"])
+        _atomic_write(paths["run"], body, args.worktree)
+    st2 = load_state(args.worktree, require_active=True)
+    print("noted {} — revision {} | phase {} | next: {} | claims {}/{} "
+          "covered | gates passed: {} | done: {}".format(
+              what, st2["revision"], st2["current_phase"] or "-",
+              st2["next"] or "-",
+              sum(1 for c in st2["claims"]
+                  if c["id"] in st2["covered_claims"]),
+              len(st2["claims"]),
+              ", ".join(sorted(st2["passed_gates"])) or "none",
+              str(st2["done"]).lower()), file=out)
+    return 0
+
+
+# --------------------------------------------------------------- todo ----
+
+def todo_projection(st):
+    """Project Plan+Evidence as Hermes checks with their step subchecks.
+
+    A phase is a check; each gate mapped to it is a nested check; each work
+    step hangs under the gate that verifies it (or directly under the phase
+    when the phase has no explicit gate). Only passing current-revision
+    evidence completes a check. A global gate is a top-level check.
+    """
+    nodes, edges = st["nodes"], st["edges"]
+    phase_ids = _phase_order(nodes)
+    objective = _first_line(_section(st["plan_text"], "Objective"))
+    items = [{
+        "id": "riel-goal", "content": "GOAL: " + (objective or "<empty>"),
+        "status": "completed" if st["done"] else "pending",
+    }]
+    completed_phases = set()
+    for index, phase_id in enumerate(phase_ids):
+        predecessors_done = set(phase_ids[:index]) == completed_phases
+        phase_gate_ids = _phase_gate_ids(st, phase_id)
+        if predecessors_done and all(
+                gate_id in st["passed_gates"] for gate_id in phase_gate_ids):
+            completed_phases.add(phase_id)
+    work_started = st["done"]
+    for phase_id in phase_ids:
+        steps = _phase_steps(nodes, edges, phase_id)
+        phase_gates = [g for g in st["gates"] if g.get("phase") == phase_id]
+        complete = phase_id in completed_phases
+        current = phase_id == st["current_phase"] and not complete
+        phase_row = "riel-phase-" + phase_id
+        items.append({
+            "id": phase_row,
+            "content": "PHASE {}: {}".format(phase_id, nodes[phase_id][1]),
+            "status": "completed" if complete else (
+                "in_progress" if current else "pending"),
+            "parent": "riel-goal",
+        })
+        gate_rows = {}
+        for gate in phase_gates:
+            passed = gate["id"] in st["passed_gates"]
+            items.append({
+                "id": "riel-gate-" + gate["id"],
+                "content": "CHECK {}: {}".format(gate["id"], gate["label"]),
+                "status": "completed" if passed else (
+                    "in_progress" if current and not work_started else "pending"),
+                "parent": phase_row,
+            })
+            gate_rows[gate["id"]] = "riel-gate-" + gate["id"]
+        step_parent = next(iter(gate_rows.values()), phase_row)
+        for step_id in steps:
+            status = "completed" if complete else "pending"
+            if current and not work_started:
+                status = "in_progress"
+                work_started = True
+            items.append({
+                "id": "riel-step-{}-{}".format(phase_id, step_id),
+                "content": "{}: {}".format(step_id, nodes[step_id][1] or step_id),
+                "status": status,
+                "parent": step_parent,
+            })
+    # A gate with no phase is a run-global check: keep it at plan level.
+    mapped = {g["id"] for g in st["gates"] if g.get("phase")}
+    for gate in st["gates"]:
+        if gate["id"] in mapped:
+            continue
+        items.append({
+            "id": "riel-gate-" + gate["id"],
+            "content": "GLOBAL CHECK {}: {}".format(gate["id"], gate["label"]),
+            "status": "completed" if gate["id"] in st["passed_gates"] else "pending",
+            "parent": "riel-goal",
+        })
+    if st["done"]:
+        for row in items:
+            row["status"] = "completed"
+    return items
+
+
+def cmd_todo(args, out, err):
+    """Compatibility projection for callers that still read `riel todo`."""
+    st = load_state(args.worktree)
+    assert st is not None  # require_exists=True rejects the missing run above
+    print(json.dumps(todo_projection(st), ensure_ascii=False), file=out)
+    return 0
+
+
+# -------------------------------------------------------------- clean ----
+
+def cmd_clean(args, out, err):
+    """Snapshot and archive every requested artifact before removing any."""
+    paths = _worktree_paths(args.worktree)
+    targets = [paths["run"]]
+    if args.all:
+        targets.append(paths["shaping"])
+    with _Locked(paths["lock"]):
+        targets = [path for path in targets if os.path.isfile(path)]
+        for path in targets:
+            _confine(path, args.worktree)
+        snapshots = [(path, _read_file(path)) for path in targets]
+        if not args.purge:
+            for path, _body in snapshots:
+                _backup(path, keep=MAX_BACKUPS)
+        removed = []
+        failing_path = "<requested targets>"
+        try:
+            for path, _body in snapshots:
+                failing_path = path
+                os.unlink(path)
+                removed.append(os.path.relpath(path, args.worktree))
+        except OSError as exc:
+            raise EngineError(
+                "clean failed at {}: {}; previous originals remain or can be "
+                "restored from their .riel backups".format(failing_path, exc))
+    if removed:
+        print("cleaned: {}{}".format(
+            ", ".join(removed),
+            "" if args.purge else " (backed up in .riel/)"), file=out)
+    else:
+        print("nothing to clean", file=out)
+    return 0
+
+
+# -------------------------------------------------------------- check ----
+
+def _dense_report(path):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError as exc:
+        return False, "ship: cannot read {}: {}".format(path, exc)
+    problems = [(lineno, line) for lineno, line in
+                enumerate(text.splitlines(), 1) if DENSE_RE.search(line)]
+    if not problems:
+        return True, "{}: clean".format(path)
+    out = ["{}: dense markers found in outer register:".format(path)]
+    out += ["  L{}: {}".format(lineno, line[:120])
+            for lineno, line in problems[:20]]
+    return False, "\n".join(out)
+
+
+def _digest_report(path):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError as exc:
+        return False, "digest: cannot read {}: {}".format(path, exc)
+    nodes, edges, _register = graph_any(text, strict_section=False)
+    if not nodes:
+        return True, "SKIP: {} (no execution graph)".format(path)
+    out = ["Graph digest — explicit structure (the diagram stays for humans)",
+           "", "Elements ({}):".format(len(nodes))]
+    for nid, (_shape, label) in nodes.items():
+        out.append("  {} — {}".format(nid, label))
+    out += ["", "Edges, authored order ({}):".format(len(edges))]
+    for u, lbl, v in edges:
+        out.append("  {} {} {}".format(
+            u, "=[{}]=>".format(lbl) if lbl else "->", v))
+    outgoing = {}
+    for u, lbl, v in edges:
+        outgoing.setdefault(u, []).append((lbl, v))
+    branches = {u: a for u, a in outgoing.items()
+                if len({v for _l, v in a}) > 1}
+    if branches:
+        out += ["", "Branches (decision → labeled alternatives):"]
+        for u, alts in branches.items():
+            out.append("  {} → {}".format(
+                u, " | ".join("{}: {}".format(l or "?", v)
+                              for l, v in alts)))
+    incoming = {v for _u, _l, v in edges}
+    source = {u for u, _l, _v in edges}
+    entries = [nid for nid in nodes if nid not in incoming] or ["(none)"]
+    terminals = [nid for nid in nodes if nid not in source] or ["(none)"]
+    out += ["", "Entry (no incoming): " + ", ".join(entries),
+            "Terminals (no outgoing): " + ", ".join(terminals)]
+    backs = graph_back_edges(edges)
+    if backs:
+        guarded = bool(re.search(r"< *[0-9]|>= *[0-9]", text))
+        out.append("Loops (back-edges): " + ", ".join(
+            "{}->{}".format(u, v) for u, _l, v in backs)
+            + ("  guards: yes" if guarded
+               else "  guards: NONE — add a bounded '< 3 / >= 3'"))
+    out += ["", "Meaning & limits: a graph proves order, branches and loops "
+            "only. It does not prove a command ran, a gate passed, or the "
+            "deliverable exists — that lives in the gates and the evidence."]
+    return True, "\n".join(out)
 
 
 def _mermaid_report(path):
-    """`(passed, text, blocks)` for one file's mmdc parse — no printing."""
     path = os.path.expanduser(path)
     if not os.path.isfile(path):
         return False, "MISSING: {}".format(path), 0
     try:
         with open(path, encoding="utf-8") as fh:
-            blocks = mermaid_blocks(fh.read())
+            blocks = re.findall(r"```mermaid\n(.*?)```", fh.read(), re.S)
     except OSError as exc:
         return False, "mermaid: cannot read {}: {}".format(path, exc), 0
     if not blocks:
         return True, "SKIP: {} (no mermaid block)".format(path), 0
     if not shutil.which(VERIFY_CMD):
-        return True, "SKIP: {} ({} block(s), mmdc not installed)".format(path, len(blocks)), len(blocks)
+        return True, "SKIP: {} ({} block(s), mmdc not installed)".format(
+            path, len(blocks)), len(blocks)
     issues = mmdc_issues(blocks)
     if issues:
-        text = "\n".join(
-            "FAIL: {} -> {}".format(path, issue.replace("\n", " ")[:200]) for issue in issues)
-        return False, text, len(blocks)
-    return True, "PASS: {} -> {} block(s)".format(path, len(blocks)), len(blocks)
+        return False, "\n".join(
+            "FAIL: {} -> {}".format(path, issue.replace("\n", " ")[:200])
+            for issue in issues), len(blocks)
+    return True, "PASS: {} -> {} block(s)".format(
+        path, len(blocks)), len(blocks)
 
 
-def cmd_mermaid(args):
-    """Parse every mermaid block of the given files with mmdc.
-
-    The repo gate behind `make validate` and the parser-level half of
-    `riel_check(mermaid=true)`: silence (exit 0) when there are no blocks or no
-    mmdc, exit 1 with one line per failing block.
-    """
-    total, failed = 0, 0
-    for path in args.file:
-        passed, text, blocks = _mermaid_report(path)
-        print(text)
-        total += blocks
-        if not passed:
-            failed += 1
-    print("----")
-    if not shutil.which(VERIFY_CMD):
-        print("mmdc not found (install: npm install -g @mermaid-js/mermaid-cli) "
-              "— {} block(s) skipped".format(total))
-        return 0
-    print("{} blocks, {} failed".format(total, failed))
-    return 0 if failed == 0 else 1
-
-
-def cmd_check(args):
-    """One call, three halves: dense markers, graph digest, optional mmdc.
-
-    `riel_check` used to run the engine three times (ship, digest, mermaid) and
-    stitch three envelopes in Python. The halves are the same report functions,
-    so one process answers the composite and the verdict lives in one place.
-    """
+def cmd_check(args, out, err):
     path = os.path.expanduser(args.file)
-    halves = {}
-    ok = True
-    for name, fn in (("ship", _ship_report), ("digest", _digest_report)):
+    halves, ok = {}, True
+    for name, fn in (("ship", _dense_report), ("digest", _digest_report)):
         passed, text = fn(path)
         halves[name] = {"passed": passed, "stdout": text}
         ok = ok and passed
@@ -1949,111 +1903,238 @@ def cmd_check(args):
         passed, text, _blocks = _mermaid_report(path)
         halves["mermaid"] = {"passed": passed, "stdout": text}
         ok = ok and passed
-    print(json.dumps({"file": path, "passed": ok, "halves": halves}, ensure_ascii=False))
+    print(json.dumps({"file": path, "passed": ok, "halves": halves},
+                     ensure_ascii=False), file=out)
     return 0 if ok else 1
 
 
-def cmd_fetch(args):
-    """Download a file over HTTP(S) and write it atomically.
+# -------------------------------------------------------------- fetch ----
+# ONE secure fetch implementation, shared by `run fetch` and `shape fetch`:
+# sha256 MANDATORY, scheme policy applied to EVERY redirect hop,
+# Authorization/Cookie stripped when the origin changes, incomplete
+# Content-Length bodies rejected, atomic confined write, NO auto activation,
+# and URLs are never printed with their path/query (credentials live there).
 
-    Server-agnostic: the URL carries whatever the server needs (e.g. a
-    short-lived signed token). Security defaults: https required (http only
-    for localhost, or anywhere with --allow-http for a trusted transport such
-    as a VPN), TLS verified, bounded response size, optional sha256 integrity
-    check, atomic write, and the URL is never printed (it may embed a secret).
-    """
-    url = args.url
-    out = args.output
-    parsed = urllib.parse.urlparse(url)
-    if parsed.scheme not in ("http", "https"):
-        print("fetch: unsupported scheme {!r} (want http/https)".format(
-            parsed.scheme), file=sys.stderr)
-        return 2
-    host = parsed.hostname or ""
-    if (parsed.scheme == "http" and not args.allow_http
-            and host not in ("localhost", "127.0.0.1", "::1")):
-        print("fetch: refusing plain http to non-local host {!r}; use https "
-              "or --allow-http (trusted transport, e.g. a VPN)".format(host),
-              file=sys.stderr)
-        return 2
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
 
-    req = urllib.request.Request(
-        url, headers={"User-Agent": "riel/{}".format(VERSION)})
+
+def _redact_url(url):
+    """scheme://host — path and query stripped (they can carry secrets)."""
+    parts = urllib.parse.urlsplit(url)
+    hostname = parts.hostname or ""
+    if ":" in hostname:
+        hostname = "[{}]".format(hostname)
+    try:
+        netloc = hostname if parts.port is None else "{}:{}".format(hostname, parts.port)
+    except ValueError:
+        netloc = hostname
+    return urllib.parse.urlunsplit((parts.scheme, netloc, "", "", ""))
+
+
+def _origin(url):
+    parts = urllib.parse.urlsplit(url)
+    return (parts.scheme, (parts.hostname or "").lower(),
+            parts.port or (443 if parts.scheme == "https" else 80))
+
+
+def _scheme_allowed(url, allow_http):
+    parts = urllib.parse.urlsplit(url)
+    host = (parts.hostname or "").lower()
+    if parts.scheme == "https":
+        return True, ""
+    if parts.scheme == "http" and (allow_http or host in (
+            "localhost", "127.0.0.1", "::1")):
+        return True, ""
+    return False, ("refusing plain http to non-local host {!r} — use https "
+                   "or --allow-http (trusted transport)".format(host))
+
+
+def _next_redirect(current, location, headers):
+    """Resolve one hop without caller headers leaking or HTTPS downgrading."""
+    target = urllib.parse.urljoin(current, location)
+    if (urllib.parse.urlsplit(current).scheme == "https"
+            and urllib.parse.urlsplit(target).scheme != "https"):
+        raise EngineError("fetch refuses an https redirect downgrade to http")
+    if _origin(target) != _origin(current):
+        headers = {}
+    return target, headers
+
+
+def _secure_fetch(url, output, sha256, worktree, allow_http=False,
+                  timeout=30.0, max_bytes=5 * 1024 * 1024, headers=None):
+    """Fetch URL → output. Returns (bytes, digest). Raises EngineError."""
+    if not sha256 or not SHA256_RE.match(sha256.strip().lower()):
+        raise EngineError(
+            "fetch requires --sha256 (a 64-hex digest) — integrity is "
+            "mandatory, not optional")
+    if not output:
+        raise EngineError("fetch requires -o FILE (kind=out)")
+    current, headers = url, dict(headers or {})
+    resp = None
+    for _hop in range(6):
+        ok, why = _scheme_allowed(current, allow_http)
+        if not ok:
+            raise EngineError(why)
+        req = urllib.request.Request(current)
+        for name, value in headers.items():
+            req.add_header(name, value)
+        req.add_header("User-Agent", "riel/{}".format(VERSION))
+        opener = urllib.request.build_opener(_NoRedirect)
+        try:
+            resp = opener.open(req, timeout=timeout)
+            break
+        except urllib.error.HTTPError as exc:
+            if exc.code in (301, 302, 303, 307, 308):
+                loc = exc.headers.get("Location")
+                if not loc:
+                    raise EngineError(
+                        "fetch: redirect without Location from {}".format(
+                            _redact_url(current)))
+                current, headers = _next_redirect(current, loc, headers)
+                continue
+            raise EngineError("fetch: HTTP {} for {}".format(
+                exc.code, _redact_url(current)))
+        except (urllib.error.URLError, OSError) as exc:
+            raise EngineError("fetch: {} for {}".format(
+                exc, _redact_url(current)))
+    else:
+        raise EngineError("fetch: too many redirects (last: {})".format(
+            _redact_url(current)))
+    try:
+        want_len = resp.headers.get("Content-Length")
+        want = int(want_len) if want_len is not None else None
+    except ValueError:
+        want = None
+    chunks, total = [], 0
+    try:
+        while True:
+            chunk = resp.read(65536)
+            if not chunk:
+                break
+            total += len(chunk)
+            if max_bytes and total > max_bytes:
+                raise EngineError(
+                    "fetch: body exceeds {} bytes — aborted".format(max_bytes))
+            chunks.append(chunk)
+    finally:
+        resp.close()
+    if want is not None and total != want:
+        raise EngineError(
+            "fetch: incomplete body from {} — Content-Length {} but got {} "
+            "bytes".format(_redact_url(current), want, total))
+    data = b"".join(chunks)
+    digest = hashlib.sha256(data).hexdigest()
+    if digest != sha256.strip().lower():
+        raise EngineError("fetch: sha256 mismatch\n  want {}\n  got  {}"
+                          .format(sha256.strip().lower(), digest))
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        raise EngineError("fetch: the artifact is not valid UTF-8 Markdown; nothing written")
+    _backup(output)
+    _atomic_write(output, text, worktree)
+    return data, digest
+
+
+def _fetch_verb(args, out, err):
+    headers = {}
     for raw in args.header or []:
         name, sep, value = raw.partition(":")
         if not sep or not name.strip():
-            print("fetch: bad --header {!r} (want 'Name: value')".format(raw),
-                  file=sys.stderr)
-            return 2
-        req.add_header(name.strip(), value.strip())
-
-    try:
-        with urllib.request.urlopen(req, timeout=args.timeout) as resp:
-            chunks, total = [], 0
-            while True:
-                chunk = resp.read(65536)
-                if not chunk:
-                    break
-                total += len(chunk)
-                if total > args.max_bytes:
-                    print("fetch: response exceeds {} bytes; aborting".format(
-                        args.max_bytes), file=sys.stderr)
-                    return 3
-                chunks.append(chunk)
-            data = b"".join(chunks)
-    except urllib.error.HTTPError as exc:
-        print("fetch: HTTP {} for {}".format(exc.code, _redact_url(url)),
-              file=sys.stderr)
-        return 1
-    except (urllib.error.URLError, OSError) as exc:
-        print("fetch: {} for {}".format(exc, _redact_url(url)), file=sys.stderr)
-        return 1
-
-    digest = hashlib.sha256(data).hexdigest()
-    if args.sha256:
-        want = args.sha256.strip().lower()
-        if digest != want:
-            print("fetch: sha256 mismatch\n  want {}\n  got  {}".format(
-                want, digest), file=sys.stderr)
-            return 4
-
-    outdir = os.path.dirname(os.path.abspath(out))
-    os.makedirs(outdir, exist_ok=True)
-    _backup_before_write(out)
-    fd, tmp = tempfile.mkstemp(dir=outdir, prefix=".riel-fetch-")
-    try:
-        with os.fdopen(fd, "wb") as fh:
-            fh.write(data)
-        os.replace(tmp, out)
-    except OSError as exc:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        print("fetch: cannot write {}: {}".format(out, exc), file=sys.stderr)
-        return 1
-
-    print("fetched {} bytes -> {} (sha256 {})".format(len(data), out, digest))
+            raise EngineError(
+                "bad --header {!r} (want 'Name: value')".format(raw))
+        headers[name.strip()] = value.strip()
+    target = args.output if os.path.isabs(args.output) \
+        else os.path.join(args.worktree, args.output)
+    paths = _worktree_paths(args.worktree)
+    with _Locked(paths["lock"]):
+        _confine(target, args.worktree)
+        for canonical in (paths["run"], paths["shaping"]):
+            if os.path.realpath(target) != os.path.realpath(canonical):
+                continue
+            if os.path.isfile(paths["run"]):
+                current_metadata = _parse_metadata(_read_file(paths["run"]))
+                if current_metadata.get("revision"):
+                    raise EngineError(
+                        "fetch refuses to replace {} while a run is active; "
+                        "archive it or write elsewhere and rebase explicitly".format(
+                            os.path.relpath(canonical, args.worktree)))
+        data, digest = _secure_fetch(
+            args.url, target, args.sha256, args.worktree,
+            allow_http=args.allow_http, timeout=args.timeout,
+            max_bytes=args.max_bytes, headers=headers)
+    print("fetched {} bytes -> {} (sha256 {}) — materialized as a draft; "
+          "activation is never automatic".format(
+              len(data), os.path.relpath(target, args.worktree), digest),
+          file=out)
     return 0
 
 
-# ------------------------------------------------------------------ main ----
+# ---------------------------------------------------------- templates ----
+
+PKG_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _template_dirs(worktree):
+    return [
+        os.path.expanduser("~/.hermes/riel/templates"),
+        os.path.join(worktree, RIEL_DIR, "templates"),
+        os.path.join(PKG_ROOT, "templates"),
+    ]
+
+
+_PARAM_RE = re.compile(r"\{\{([a-zA-Z_][a-zA-Z0-9_]*)\}\}")
+
+
+def _render_template(name, params, extra_dirs, strict, worktree):
+    dirs = list(extra_dirs or []) + _template_dirs(worktree)
+    path = None
+    for d in dirs:
+        candidate = os.path.join(d, name + ".md")
+        if os.path.exists(candidate):
+            path = candidate
+            break
+    if path is None:
+        raise EngineError("no template for {!r}; searched: {}".format(
+            name, ", ".join(dirs)))
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    mapping = {}
+    for raw in params or []:
+        key, sep, value = raw.partition("=")
+        if not sep or not key:
+            raise EngineError("bad --param {!r} (want key=value)".format(raw))
+        mapping[key] = value
+
+    def repl(match):
+        key = match.group(1)
+        if key in mapping:
+            return mapping[key]
+        if strict:
+            raise EngineError("missing --param {}=".format(key))
+        return match.group(0)
+
+    result = _PARAM_RE.sub(repl, text)
+    return result, _PARAM_RE.findall(result)
+
+
+# --------------------------------------------------------------- main ----
 
 _NOTE_PARAMS = None
 
 
 def _note_params():
-    """`engine/params.py` beside this file — the one declaration of note's flags.
-
-    Loaded by path rather than imported: the engine runs as a script (its own
-    directory is on `sys.path`) and is also imported by the package, and both
-    routes must find the same file. Cached; it never changes at runtime.
-    """
+    """`engine/params.py` beside this file — the one declaration of note's
+    flags. Loaded by path so both the script and package routes find it."""
     global _NOTE_PARAMS
     if _NOTE_PARAMS is None:
-        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "params.py")
-        spec = importlib.util.spec_from_file_location("riel_engine_params", path)
-        if spec is None or spec.loader is None:  # pragma: no cover - defensive
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "params.py")
+        spec = importlib.util.spec_from_file_location("riel_engine_params",
+                                                      path)
+        if spec is None or spec.loader is None:  # pragma: no cover
             raise RuntimeError("engine/params.py is missing from the package")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
@@ -2061,248 +2142,172 @@ def _note_params():
     return _NOTE_PARAMS
 
 
-def main(argv=None):
-    p = build_parser()
-    args = p.parse_args(argv)
-    if args.worktree:
-        target = os.path.abspath(os.path.expanduser(args.worktree))
-        if not os.path.isdir(target):
-            print("worktree is not a directory: {}".format(target), file=sys.stderr)
-            return 2
-        # One chdir, before any subcommand: every relative path below (the
-        # ledger, the contract, the shaping, a fetch destination, `.riel/` in
-        # clean) is then resolved against the WORKTREE, never against whatever
-        # directory the caller happened to run from.
-        os.chdir(target)
-    else:
-        target = os.getcwd()
-    _absolutize(args, target)
-    return args.fn(args)
+def _add_fetch_flags(parser):
+    parser.add_argument("url")
+    parser.add_argument("--output", "-o", required=True,
+                        help="destination path (written atomically; kind=out)")
+    parser.add_argument("--sha256", required=True,
+                        help="expected sha256 of the body (MANDATORY)")
+    parser.add_argument("--header", action="append", default=[],
+                        help="extra request header 'Name: value' (repeatable)")
+    parser.add_argument("--allow-http", action="store_true",
+                        help="permit plain http to any host (trusted "
+                             "transport, e.g. a VPN)")
+    parser.add_argument("--timeout", type=float, default=30.0,
+                        help="socket timeout in seconds (optional)")
+    parser.add_argument("--max-bytes", type=int, default=5 * 1024 * 1024,
+                        help="abort if the body exceeds this many bytes "
+                             "(optional; default 5MB)")
 
 
-# ------------------------------------------------------------ in-process ----
-# The tools' fast path: one verb against ONE worktree, resolved by PARAMETER.
-# The CLI path above keeps its chdir (it is a whole process, so the cwd is
-# its own); an in-process caller (the plugin handlers) must NOT chdir — a
-# gateway serves several sessions from one process — so `run_verb` binds
-# every path the verb may touch to the worktree instead.
+class _ArgumentParser(argparse.ArgumentParser):
+    """Argparse variant that cannot divert errors or help to global streams."""
 
-_PATH_KEYS = ("ledger", "contract", "shaping", "file", "output", "from_contract")
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._out = None
+        self._err = None
 
+    def _print_message(self, message, file=None):
+        if message:
+            print(message, end="", file=self._out or file or sys.stdout)
 
-def _absolutize(args, worktree):
-    """Point every path the verb may touch at the WORKTREE — no cwd assumptions.
-
-    The argparse defaults are relative (`.riel/ledger.md`, …); against a real
-    directory they become absolute here, and the four places that fall back
-    to a constant (`or SHAPING_PATH`, `clean`'s targets, `seam`'s anchor
-    hint) read the bound `args._*` mirrors instead. A `-` (stdout) stays.
-    """
-    args._riel_dir = os.path.join(worktree, LEDGER_DIR)
-    args._ledger = os.path.join(args._riel_dir, "ledger.md")
-    args._contract = os.path.join(args._riel_dir, "contract.md")
-    args._shaping = os.path.join(args._riel_dir, "shaping.md")
-    for key in _PATH_KEYS:
-        value = getattr(args, key, None)
-        if isinstance(value, str) and value and value != "-":
-            expanded = os.path.expanduser(value)
-            if not os.path.isabs(expanded):
-                setattr(args, key, os.path.join(worktree, expanded))
-        elif isinstance(value, list) and value and all(
-                isinstance(item, str) for item in value):
-            setattr(args, key, [
-                item if os.path.isabs(os.path.expanduser(item))
-                else os.path.join(worktree, os.path.expanduser(item))
-                for item in value])
+    def error(self, message):
+        raise EngineError("invalid arguments: {}".format(message), code=2)
 
 
-def run_verb(argv, worktree=None):
-    """One verb against one worktree, IN-PROCESS, without touching the cwd.
-
-    `argv` is the same shape the CLI takes (`["seam", "--mode", "json"]`);
-    `worktree` replaces the `--worktree` chdir. Safe to call from a
-    multiplexed process: nothing here is process-global state. Returns the
-    verb's exit code; an argparse refusal raises SystemExit like the CLI.
-    """
-    args = build_parser().parse_args(argv)
-    if args.worktree:
-        worktree = args.worktree
-    worktree = os.path.abspath(os.path.expanduser(worktree or os.getcwd()))
-    if not os.path.isdir(worktree):
-        print("worktree is not a directory: {}".format(worktree), file=sys.stderr)
-        return 2
-    _absolutize(args, worktree)
-    return args.fn(args)
-
-
-def build_parser():
-    p = argparse.ArgumentParser(prog="riel", description=__doc__)
+def build_parser(out=None, err=None):
+    p = _ArgumentParser(prog="riel", description=__doc__)
     p.add_argument("--version", action="version", version=VERSION)
     p.add_argument(
-        "--ledger", default=LEDGER_PATH,
-        help="path to the ledger file (default: .riel/ledger.md)",
-    )
-    p.add_argument(
         "--worktree", default=None,
-        help="directory whose .riel/ is the task state; the CLI chdirs into "
-             "it, so no relative path is ever resolved against the caller's cwd "
-             "(default: the process cwd)",
-    )
+        help="directory whose .riel/ holds the state (default: the cwd)")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    n = sub.add_parser("note", help="append/update ledger entries")
+    sh = sub.add_parser(
+        "shape", help="validate .riel/shaping.md, render its template, "
+                      "or fetch one")
+    shsub = sh.add_subparsers(dest="cmd2")
+    shv = shsub.add_parser("validate", help="validate a shaping file")
+    shv.add_argument("path", nargs="?", default=None)
+    shv.set_defaults(fn=cmd_shape, cmd2="validate")
+    shn = shsub.add_parser("new", help="render the shaping template (stdout)")
+    shn.add_argument("--param", action="append", default=[])
+    shn.add_argument("--template-dir", action="append", default=None)
+    shn.add_argument("--strict", action="store_true")
+    shn.set_defaults(fn=cmd_shape, cmd2="new")
+    shf = shsub.add_parser("fetch", help="fetch a shaping over https")
+    _add_fetch_flags(shf)
+    shf.set_defaults(fn=cmd_shape, cmd2="fetch")
+    sh.set_defaults(fn=cmd_shape, cmd2="validate", path=None)
+
+    r = sub.add_parser("run", help="work with .riel/run.md (riel-run/v1)")
+    rsub = r.add_subparsers(dest="cmd2", required=True)
+    rn = rsub.add_parser(
+        "new", help="render the run template (stdout; an editor is the "
+                    "writing path)")
+    rn.add_argument("--template", default="run", choices=("run",),
+                    help="the only Plan template (run)")
+    rn.add_argument("--param", action="append", default=[])
+    rn.add_argument("--template-dir", action="append", default=None)
+    rn.add_argument("--strict", action="store_true")
+    rn.set_defaults(fn=cmd_run, cmd2="new")
+    rv = rsub.add_parser("validate", help="validate the draft or active run")
+    rv.add_argument("file", nargs="?", default=None)
+    rv.set_defaults(fn=cmd_run, cmd2="validate")
+    ra = rsub.add_parser(
+        "activate", help="freeze the plan, compute the hashes, open r1")
+    ra.set_defaults(fn=cmd_run, cmd2="activate")
+    rb = rsub.add_parser(
+        "rebase", help="re-freeze hashes after a plan/shaping edit; "
+                       "reserves old evidence")
+    rb.set_defaults(fn=cmd_run, cmd2="rebase")
+    rs = rsub.add_parser("status", help="concise JSON state + derivation")
+    rs.set_defaults(fn=cmd_run, cmd2="status")
+    rsl = rsub.add_parser("slice", help="emit a self-validating phase packet")
+    rsl.add_argument("phase", help="phase node id (e.g. F1)")
+    rsl.add_argument("--output", "-o", default=None)
+    rsl.set_defaults(fn=cmd_run, cmd2="slice")
+    rf = rsub.add_parser("fetch", help="fetch a run file over https")
+    _add_fetch_flags(rf)
+    rf.set_defaults(fn=cmd_run, cmd2="fetch")
+
+    n = sub.add_parser("note", help="the ONLY writer of run state")
     params = _note_params()
     for param in params.NOTE_PARAMS:
         kwargs = {"help": param["help"]}
         if param["kind"] == "int":
             kwargs["type"] = int
+        if param.get("repeat"):
+            kwargs["action"] = "append"
+            kwargs["default"] = []
+        if param["name"] == "evidence":
+            kwargs["dest"] = "evidence_ref"
         n.add_argument(param["flag"], **kwargs)
-    n.add_argument(
-        params.FROM_CONTRACT["flag"], nargs="?", const=CONTRACT_PATH,
-        default=None, metavar="PATH", help=params.FROM_CONTRACT["help"],
-    )
     n.set_defaults(fn=cmd_note)
 
-    s = sub.add_parser("seam", help="re-print ledger + due reminders")
-    s.add_argument(
-        "--mode", choices=("read", "resume", "json"), default="read",
-        help="read (default): ledger + the invariants due now; resume: adds the "
-             "post-gap restore order; json: the same items the chip and the gate fold",
-    )
-    s.set_defaults(fn=cmd_seam)
-
-    an = sub.add_parser("anchor",
-                        help="re-read each claim beside its contract region "
-                             "(sections, graph nodes, shaping findings)")
-    an.add_argument("claim", nargs="?", default=None,
-                    help="only this claim (P1 or 1; default: all)")
-    an.add_argument("--contract", default=CONTRACT_PATH)
-    an.add_argument("--shaping", default=SHAPING_PATH)
-    an.set_defaults(fn=cmd_anchor)
-
-    sh = sub.add_parser("shaping", help="work with .riel/shaping.md (Spec 7)")
-    shsub = sh.add_subparsers(dest="shcmd", required=True)
-    shv = shsub.add_parser("validate", help="validate a shaping file")
-    shv.add_argument("file", nargs="?", default=None,
-                     help="path (default: .riel/shaping.md)")
-    shv.add_argument("--contract", default=CONTRACT_PATH,
-                     help="contract to check the shaping:F# anchors against")
-    shv.set_defaults(fn=cmd_shaping_validate)
-    shn = shsub.add_parser("new", help="instantiate the shaping template")
-    shn.add_argument("--type", default="shaping")
-    shn.add_argument("--param", action="append", default=[],
-                     help="template parameter key=value (repeatable)")
-    shn.add_argument("--template-dir", action="append", default=None)
-    shn.add_argument("--output", "-o", default=None,
-                     help="destination (default: .riel/shaping.md; '-' = stdout)")
-    shn.add_argument("--force", action="store_true",
-                     help="overwrite an existing shaping")
-    shn.add_argument("--strict", action="store_true")
-    shn.set_defaults(fn=cmd_shaping_new)
-
-    t = sub.add_parser("todo",
-                       help="derive the Hermes session-todo mirror (JSON): "
-                            "the plan — goal, phases and their steps")
+    t = sub.add_parser("todo", help="the session-todo mirror (JSON)")
     t.set_defaults(fn=cmd_todo)
 
-    ss = sub.add_parser("status",
-                        help="the ledger's own facts (JSON) for the chip and "
-                             "the gate: goal, phase, next, opens, claims, ✓")
-    ss.set_defaults(fn=cmd_status)
-
-    cx = sub.add_parser("context",
-                        help="context-fetch keywords from a contract (JSON)")
-    cx.add_argument("--contract", default=CONTRACT_PATH,
-                    help="path to contract.md (default: .riel/contract.md)")
-    cx.add_argument("--output", "-o")
-    cx.set_defaults(fn=cmd_context)
-
-    cl = sub.add_parser("clean",
-                        help="clear .riel/ state — flat timestamped backups "
-                             "inside .riel/, never a subdirectory")
-    cl.add_argument("--all", action="store_true",
-                    help="also clean contract.md and shaping.md "
-                         "(default: ledger only)")
+    cl = sub.add_parser(
+        "clean", help="clear .riel/ state (flat backups, max 3 kept)")
+    cl.add_argument("--all", action="store_true", help="also clean shaping.md")
     cl.add_argument("--purge", action="store_true",
                     help="remove without backing up")
     cl.set_defaults(fn=cmd_clean)
 
-    h = sub.add_parser("ship", help="check outgoing file for dense markers")
-    h.add_argument("files", nargs="+")
-    h.set_defaults(fn=cmd_ship)
-
     ck = sub.add_parser(
-        "check",
-        help="ONE call: dense markers + graph digest (+ mmdc) as JSON",
-    )
+        "check", help="dense markers + graph digest (+mmdc) as JSON")
     ck.add_argument("file")
     ck.add_argument("--mermaid", action="store_true",
                     help="also parse every mermaid block with mmdc")
     ck.set_defaults(fn=cmd_check)
 
-    mm = sub.add_parser("mermaid",
-                        help="parse every mermaid block of FILE... with mmdc "
-                             "(silent without mmdc; bounded per call)")
-    mm.add_argument("file", nargs="+", help="markdown files to check")
-    mm.set_defaults(fn=cmd_mermaid)
-
-    dg = sub.add_parser("digest",
-                        help="explicit text digest of a file's mermaid graph")
-    dg.add_argument("file")
-    dg.add_argument("--output", "-o")
-    dg.set_defaults(fn=cmd_contract_digest)
-
-    b = sub.add_parser("contract", help="work with contracts and packets")
-    bsub = b.add_subparsers(dest="bcmd", required=True)
-
-    bn = bsub.add_parser("new", help="instantiate a template")
-    bn.add_argument("--type", default="packet",
-                    help="template type (default: blank packet)")
-    bn.add_argument("--param", action="append", default=[],
-                    help="template parameter key=value (repeatable)")
-    bn.add_argument("--template-dir", action="append", default=None)
-    bn.add_argument("--list", action="store_true")
-    bn.add_argument("--output", "-o")
-    bn.add_argument("--strict", action="store_true",
-                    help="fail if any {{placeholder}} remains unfilled")
-    bn.set_defaults(fn=cmd_contract_new)
-
-    bv = bsub.add_parser("validate", help="validate a packet file")
-    bv.add_argument("file")
-    bv.set_defaults(fn=cmd_contract_validate)
-
-    bd = bsub.add_parser("digest",
-                         help="print an explicit text digest of the graph")
-    bd.add_argument("file")
-    bd.add_argument("--output", "-o")
-    bd.set_defaults(fn=cmd_contract_digest)
-
-    bs = bsub.add_parser("slice",
-                         help="slice one phase into a mini packet")
-    bs.add_argument("file")
-    bs.add_argument("--phase",
-                    help="phase node id (default: first F#/W#)")
-    bs.add_argument("--output", "-o")
-    bs.set_defaults(fn=cmd_contract_slice)
-
-    f = sub.add_parser("fetch",
-                       help="download a file over HTTP(S), atomically")
-    f.add_argument("url")
-    f.add_argument("--output", "-o", required=True,
-                   help="destination path (written atomically)")
-    f.add_argument("--sha256",
-                   help="expected sha256 of the body (integrity check)")
-    f.add_argument("--header", action="append", default=[],
-                   help="extra request header 'Name: value' (repeatable)")
-    f.add_argument("--allow-http", action="store_true",
-                   help="permit plain http to any host (trusted transport, e.g. a VPN)")
-    f.add_argument("--timeout", type=float, default=30.0,
-                   help="socket timeout in seconds (default: 30)")
-    f.add_argument("--max-bytes", type=int, default=5000000,
-                   help="abort if the body exceeds this many bytes (default: 5MB)")
-    f.set_defaults(fn=cmd_fetch)
-
+    parsers = [p]
+    for action in p._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            parsers.extend(action.choices.values())
+    for parser in parsers:
+        for child_action in parser._actions:
+            if isinstance(child_action, argparse._SubParsersAction):
+                parsers.extend(child_action.choices.values())
+        parser._out, parser._err = out, err
     return p
+
+
+# --------------------------------------------------------- in-process ----
+
+def run_verb(argv, worktree=None, out=None, err=None):
+    """Run one verb with per-call sinks, including parser failures and help."""
+    captured = out is None and err is None
+    out = out if out is not None else io.StringIO()
+    err = err if err is not None else io.StringIO()
+    try:
+        args = build_parser(out=out, err=err).parse_args(argv)
+        root = os.path.abspath(os.path.expanduser(
+            args.worktree or worktree or os.getcwd()))
+        if not os.path.isdir(root):
+            raise EngineError("worktree is not a directory: {}".format(root))
+        args.worktree = root
+        for key in ("file", "path"):
+            value = getattr(args, key, None)
+            if isinstance(value, str) and value and not os.path.isabs(value):
+                setattr(args, key, os.path.join(root, value))
+        code = args.fn(args, out, err)
+    except SystemExit as exc:  # argparse help/version, now bound to our sinks
+        code = exc.code if isinstance(exc.code, int) else 0
+    except EngineError as exc:
+        print(str(exc), file=err)
+        code = exc.code
+    if captured:
+        return code, out.getvalue(), err.getvalue()
+    return code
+
+
+def main(argv=None):
+    # Explicit sinks (the CLI's own stdout/stderr): run_verb returns the code.
+    return run_verb(argv if argv is not None else sys.argv[1:],
+                    out=sys.stdout, err=sys.stderr)
 
 
 if __name__ == "__main__":

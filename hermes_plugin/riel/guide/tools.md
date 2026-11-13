@@ -1,315 +1,53 @@
 ---
 topic: tools
-trigger: "Use when you need Riel's tool surface — which of the seven tools writes what, what each returns, and the template, fetch and exit-code rules. There is no command line: the tools are the interface."
-version: 1.19.0
+trigger: "Use for Riel's six-tool surface: guide, shape, run, note, clean and check, all operating explicitly on the session worktree."
+version: 2.0.0
 ---
+# tools — Six doors, one worktree
 
-# tools — Riel's tool surface (Riel)
+The public interface is typed tools, not command construction. Every operation
+runs against explicit session worktree storage; outputs use sinks local to the
+call rather than diverting process-wide stdout or stderr.
 
-Every part of Riel the agent would otherwise have to remember by hand is a
-**tool**, and each tool owns exactly one part — there is nothing to install and
-no command line to call:
+## Surface
 
-- Writing `.riel/ledger.md` with the exact expected format (`riel_note`)
-- Reading the prose itself — the index, a guide's section outline, one section,
-  or (rarely) the whole body (`riel_guide`)
-- Instantiating packet templates (`riel_plan(verb="new")`)
-- Verifying that a packet satisfies the structural constraints
-  (`riel_plan(verb="validate")`) — including the closed verb vocabulary
-- Expanding the execution graph into explicit text (`riel_plan(verb="digest")`)
-- Deriving the Hermes session-todo mirror from the plan (`riel_todo`)
-  and the ledger mirror the chip and the gate fold (`riel_seam(mode="json")`)
-- Handing over a contract's context keywords (`riel_plan`'s answer carries
-  them on a successful new/validate) so the memory search has one
-  authoritative index to read instead of re-parsing the contract
-- Downloading a remote contract to disk without routing it through the
-  agent's context (`riel_plan`) — HTTPS-only, atomic, sha256-verified
-- Instantiating the shaping skeleton and checking it against Spec 7
-  (`riel_plan(verb="new", kind="shaping")` / `verb="validate"`)
-- Re-reading each claim beside the region that supports it
-  (`riel_seam(anchors=true)`) — the anchor surface of a seam
-- Dense-register and graph-digest check on one file before delivering it
-  (`riel_check`)
+| Tool | Operations |
+|---|---|
+| `riel_guide` | prose index, topic outline, one section or full body |
+| `riel_shape` | shaping `new`, `validate`, `fetch` |
+| `riel_run` | Plan lifecycle AND synchronized session checks (gates + step subchecks) |
+| `riel_note` | execute gate evidence and manage Core/Open State |
+| `riel_clean` | archived removal of `run`, `all`, or explicit `purge` |
+| `riel_check` | dense-register and graph checks; optional Mermaid parsing |
 
-**When to use:** on any `loop`-mode task and on every delegated task, the
-agent calls these tools in `RUN` nodes instead of handwriting ledger files.
-`fast` and most `full` tasks don't need it — use only the machinery the
-task earns.
+`run new` prints the draft; writing and activation stay distinct. `shape new`
+also prints the research template. Both `fetch` operations require sha256
+and materialize a file only; no fetch mutates an active run.
 
-## The surface: tools, never a command line
+## Evidence call
 
-There is nothing to install and no command to remember: **the surface is the
-tools**. Each one acts on the worktree of the session you are in — the session's
-cwd, never the process's — and nothing is typed into a shell.
+Gate recording names references, not status prose: `gates`, `claims`, `command`,
+`covering` and optional `confidence`. The referenced IDs and run revision must
+match current metadata. Unknown or stale references fail; exit codes cannot be
+supplied by the model as a substitute for execution.
 
-| Tool | Takes | Answers |
-|---|---|---|
-| `riel_guide` | `topic`, `section`, `full` | the prose: index, a guide's section outline (default), one slice, or — with `full=true` — the whole body |
-| `riel_note` | `goal`, `next`, `source`, `phase`, `core`+`core_slot`, `claim`+`verify_with`, `check`+`by`+`covering`+`confidence`, `open`+`settled_by`, `close`, `from_contract` | writes the ledger |
-| `riel_seam` | `mode` (read/resume/json), `anchors=true` to also re-read each claim beside its support | the ledger at a seam: prose + due invariants, + the post-gap restore order, or the ledger's own facts as JSON |
-| `riel_todo` | — | the PLAN mirror (JSON) |
-| `riel_plan` | `verb` (new/validate/digest/slice/fetch) + `kind` (contract/shaping) + `template`/`params`/`file`/`phase`/`force`/`url`/`out`/`sha256`/`headers`/`allow_http` | the contract, the pre-contract shaping and the remote fetch — one door; a successful contract new/validate carries `keywords` |
-| `riel_clean` | `scope` (ledger/all/purge) | archives `.riel/` state |
-| `riel_check` | `file`, `mermaid=true` | dense-register check, graph digest, and the parser-level check of every diagram |
+`core` accepts at most two facts, replaced by a one-based `core_slot`. `close` and
+`evidence` take the numbers N of Q<N> and E<N> respectively.
+Legacy `goal`, `next`, `phase`, ad hoc claim creation, `check/by`,
+`from_contract` and `verify_with` are not parameters.
 
-Every tool returns the same envelope: `{tool, worktree, exit_code, passed,
-stdout, stderr}` plus its own keys (`verb` when the tool takes one, and the
-prose's `topic`/`section` for `riel_guide`). **`tool` is provenance** — which
-tool answered — never an interface: no tool takes argv, no flag travels as data,
-and nothing here is meant to be typed into a shell.
+## Envelope and scope
 
-All state-mutating tools write to `.riel/` in the worktree of the session; the
-ones that only read take `worktree` to address another checkout explicitly.
+Tool calls answer `{tool, worktree, exit_code, passed, stdout, stderr}`, with
+`verb` when applicable and operation-specific fields such as keywords. Errors
+use the same base envelope. `tool` is provenance, not an argument to type.
 
-### Reading the prose without paying for it
+`clean` removes only the named new artifacts. `purge` is explicitly destructive;
+archived scopes back up the state first. Old `contract.md` and `ledger.md` are
+never implicitly selected or deleted as run state.
 
-`riel_guide` is sectioned on purpose: a guide runs 5–23 KB, the section a task
-needs is 300–800 bytes. So the call ladder is:
+## Verification
 
-```
-riel_guide()                                    # the topics, one line each
-riel_guide(topic="ledger")                      # that guide's SECTION OUTLINE — names, first
-                                                # line, size of each `## heading`
-riel_guide(topic="ledger", section="Pitfalls")  # the one section the task needs
-riel_guide(topic="ledger", full=true)           # the whole body — only when it earns it
-```
-
-An exact heading wins over a substring (`section="DISPATCH"` opens
-`## DISPATCH — …`, not `## Step 6: Write the dispatch prompt`). Read the
-outline first: it tells you which section is worth its bytes, and the size
-column is there to choose with.
-
-### Ledger
-
-```
-riel_note(goal="what done means", next="first action")
-riel_note(next="next action")
-riel_note(core="Mailer — sends via Swoosh", core_slot=1)
-riel_note(claim="token expires at 1h", verify_with="mix test token_test.exs")
-riel_note(check="token signs", by="mix test token_test.exs",
-          covering="sign+verify+expiry", confidence=14)
-riel_note(open="does the link survive quote chars?",
-          settled_by="property test on URI.encode_www_form")
-riel_note(close=1, check="it survives", by="test", covering="encoding")
-```
-
-`close` requires `check`/`by`: a question is closed against the checkpoint that
-settled it, never dropped silently.
-
-Numbering (✓NN, ?NN) is assigned by `riel_note` — never hand-edited.
-
-### Inspections
-
-```
-riel_seam(anchors=true)            # the ledger + each claim beside its support
-riel_seam(mode="resume")           # post-gap: the ledger + the restore order + what is due
-riel_seam(mode="json")             # the ledger's facts as JSON (chip and gate fold this)
-riel_check(file="packet-f2.md")   # dense markers + the graph digest, before delivery
-```
-
-### Clean (start a task over existing `.riel/` state)
-
-```
-riel_clean(scope="ledger")   # back up .riel/ledger.md, then remove it
-riel_clean(scope="all")      # also the contract.md and the shaping.md
-riel_clean(scope="purge")    # remove without backing up
-```
-
-The backup is a **flat timestamped file INSIDE `.riel/`**
-(`ledger-<ts>.bak.md`) — never a subdirectory. A second clean within the
-same second appends `-N` instead of clobbering. Idempotent: with nothing to
-clean it reports success and says so.
-
-The same convention runs on **every engine write that overwrites an existing
-artifact** — a second `riel_note`, a `contract new -o` over an existing
-contract, a re-`fetch`: the previous version lands beside the live one
-(`name-<ts>.bak.md`) before the write, best-effort. Recovery from a clobbered
-ledger is `grep`-simple; hand edits are NOT covered (the engine only sees
-its own writes).
-
-**The agent asks the user before cleaning** — a `.riel/` found at the
-opening holds another task's state, and the choice (back up / purge /
-continue the existing ledger via `riel_seam(mode="resume")`) is the user's, not a silent
-default (rule in `riel_guide(topic="ledger")`, "Opening over an existing `.riel/`").
-
-### Shaping (Spec 7)
-
-```
-riel_plan(verb="new", kind="shaping", params=["name=reset flow"])    # writes .riel/shaping.md
-riel_plan(verb="validate", kind="shaping", file=".riel/shaping.md")  # the rules
-```
-
-`verb="new"` drops the shipped skeleton into `.riel/shaping.md`; it refuses to
-overwrite an existing shaping (exit 3) — a shaping is research, not a template
-drop — unless `force=true`. The shipped skeleton carries one placeholder `F#`
-line with its `source:`/`confidence` slots, so it validates like every other
-fixture: the structure is there, the research is not.
-
-`verb="validate"` errors on a missing section, an empty `## Question` and a
-`## Findings` with no `F#` line; it WARNs on a finding without `source:` or
-`confidence`, an alternative without a `verdict:`, an open question without
-`settled by:`, a Verdict with no `We need …` line, and a contract claim
-anchored to a finding this shaping does not have.
-
-### Claim anchors (Spec 2 + Spec 7)
-
-`riel_seam(anchors=true)` prints every claim beside the region that supports
-it. A claim may end its line with `— anchor: <ref>`: `§<Section>[#<n>]` (the
-n-th bullet of that section), a graph node id, or `shaping:F<n>` (a finding of
-`.riel/shaping.md`). The tool resolves it and prints the excerpt — the seam's
-own re-read surface, so a claim's support is re-read without re-reading the
-whole contract. A claim with no anchor or an unresolvable one is reported; a
-`shaping:` anchor falls back to the shaping beside the contract.
-
-### Context keywords (Spec 2)
-
-A successful contract `new`/`validate` carries `keywords` —
-`[{"term": …, "source": …}]`, the index the memory search reads (one term per
-line under `### Context keywords`; `→ dran` is an optional source hint). The
-key is absent when the contract has none.
-
-### Session todo (Hermes mirror, Spec 6)
-
-`riel_todo` returns the **plan**: the contract's `## Objective` → root `goal`;
-**each contract phase → a row (`PHASE F1: …`) and each phase's steps → nested
-subtasks** (`parent` = the phase — the todo tool's own nesting). The ledger
-only sets the statuses: a phase whose gate has a ✓ is completed; in the active
-phase (the one owning the Next) the step the Next points at is the only
-`in_progress`, the earlier steps completed, the rest pending (the `goal` row
-carries it once every phase is gated). **No ledger fact is a row here.**
-Without a contract the todo degrades to `goal` + the ledger's single `PHASE:`
-row.
-
-`riel_seam(mode="json")` returns the **ledger's own facts** as items (goal, phase, next,
-`OPEN NN`, `CLAIM:`, `DONE NN`) — the mirror the desktop chip and the
-`pre_verify` gate fold. Keep the two apart: `riel_todo` = plan, `riel_seam(mode="json")` =
-state.
-
-The todo is a projection — fix the ledger (or the contract) and regenerate
-the mirror; never hand-edit the todo into a divergent plan. Spec:
-`riel/specs/spec-todo-hermes.md`.
-
-**Injecting it (Hermes):** the mirror is complete only when the array reaches
-the session todo UI — pass it to the `todo_list` tool as
-`todo_list(todos=<array>)` right after `riel_todo` returns it. Regenerate +
-re-inject at every seam where the ledger moved; the store is session-scoped,
-so a new session re-injects from the current ledger.
-
-What each tool reports, in the envelope's `exit_code`:
-
-- `riel_note` / `riel_seam` / `riel_todo`: 0
-  unless the arguments are invalid or the ledger is missing (1).
-- `riel_clean`: always 0 — "nothing to clean" is a message, not an error.
-- `riel_plan(verb="validate", kind="shaping")`: 0 with WARNs only; 1 with an `ISSUE` or a
-  missing file. `verb="new"`: 0; 3 when the destination already exists (pass
-  `force=true`).
-- `riel_seam(anchors=true)`: the seam's own code, and the anchor half reports
-  its own (1 with no contract; 2 with no claims or an unknown claim id) under
-  `anchors.exit_code`.
-- `riel_check`: 0 when the file is clean; 1 when it finds dense markers or the
-  graph cannot be expanded (fix before delivery).
-
-### Contracts & packets
-
-```
-# the contract (the plan) — from a typed skeleton, then write it yourself
-riel_plan(verb="new", template="feature",
-           params=["name=reset flow", "one_sentence=add password reset via email"])
-# → returns the rendered text; write it to .riel/contract.md with write_file
-
-riel_plan(verb="validate", file=".riel/contract.md")
-riel_plan(verb="digest",   file=".riel/contract.md")   # the graph as explicit text
-
-# a child's packet — one phase sliced from the contract
-riel_plan(verb="slice", file=".riel/contract.md", phase="F2")
-```
-
-`verb="new"` searches templates in order:
-
-1. `~/.hermes/riel/templates/<type>.md` (a user-level override)
-2. `<worktree>/.riel/templates/<type>.md` (versioned with the code)
-3. `<package>/templates/<type>.md` (the shipped set)
-
-Double-curly placeholders `{{param}}` are replaced with the `params` values;
-unknown params abort non-zero so typos never silently produce broken
-packets. Fill in the remaining content by hand with `patch` afterwards — the
-template is the skeleton, not the final packet.
-
-`verb="validate"` checks the structure, the Objective/claims/DO-NOT, and the
-execution graph against `riel_guide(topic="contract")` — predictable ids, a RUN + VERIFY
-funnel, labeled decision edges, **every execution node starting with a
-closed verb** (READ/EDIT/CREATE/RUN/VERIFY/ASK), **an `ASK` node naming its
-trigger** (`ASK[irreversible|outside-claims|goal-changing]`), no `<br/>`, no
-`style` in the DAG, no tool names in labels — plus an mmdc parse when
-mermaid-cli is present. Loops without a counter guard (`< 3` / `>= 3`),
-over-long labels and an Objective that runs past one sentence (the spec
-asks for one — rationale goes in `### Why`) are reported as non-fatal
-`WARN`s. **Claim anchors** are checked too: a claim with no anchor is a
-`WARN`; a `§Section#n` that does not resolve, or an anchor in no known form,
-is an `ISSUE`; a node the local graph lacks (the inherited-on-a-slice case)
-and a `shaping:F#` the shaping does not have are `WARN`s.
-
-`verb="slice"` extracts one phase's subgraph as a mini packet. It inherits
-mechanically — never as FILL — the Objective, the `### Why` rationale (with the
-rule: the child escalates `ASK[goal-changing]` on a conflict instead of
-reinterpreting) and the `### Context keywords`; the rest of the sections stay
-FILL for the parent.
-
-`verb="digest"` prints the explicit **graph digest** — elements, authored
-edges, branches, entry/terminals and loops, with a "meaning & limits" footer.
-Use it to give an agent the text beside the diagram (the diagram stays for
-humans). `riel_check` runs the same expansion on any file.
-
-### Fetch (download a contract, Spec 2 — local-first)
-
-```
-riel_plan(verb="fetch", url=URL, out=".riel/contract.md", sha256=H, headers=["Name: value"],
-           allow_http=False)
-```
-
-Materializes a contract that lives on a server (e.g. Gorim's
-`GET /api/steps/:id/contract.md`) into the worktree — the body never travels
-through the agent's context (MCP responses cap at ~10KB; a contract exceeds
-it). The server's export returns a reference `{url, sha256, bytes}`; the tool
-downloads the URL and verifies the hash before writing. The URL typically
-embeds a **short-lived signed token** (not the api_key): it expires (TTL) and
-is single-use, so the tool needs no credentials.
-
-**When to run it:** at the *opening* of a task that uses a remote contract —
-`riel_seam(mode="resume")` / `riel_note(from_contract=true)`, before the
-context fetch — **not only when delegating**. A solo task fetches its contract
-the same way; `riel_plan(verb="slice")` (for a child) is a later, separate
-moment and is never the trigger.
-
-Security defaults (not optional): **HTTPS required** — plain `http` is refused
-except for `localhost`/`127.0.0.1`/`::1`, or anywhere with `allow_http=true` (a
-trusted transport such as a VPN); TLS is verified; the body is bounded; the
-write is **atomic** (temp file + rename, so a failed or mismatched download
-never leaves a partial file); and the URL is **never printed** — a short-lived
-token embedded in the query string must not leak into logs or tool output. Pass
-`sha256` to enforce end-to-end integrity.
-
-How a fetch can fail, in the envelope's `exit_code`: `0` ok · `1`
-network/HTTP/write error · `2` bad scheme or refused plain-http · `3` body over
-the bound · `4` sha256 mismatch (nothing written).
-
-## Where the long form lives
-
-The specs are the long form of the formats this guide summarizes — they are not
-shipped with the plugin, they live with the repo:
-
-| Cited as | File | Holds |
-|---|---|---|
-| Spec 1 | `spec-ledger-format.md` | the ledger: every field, the registers, the phase advance |
-| Spec 2 | `spec-contract-format.md` | the contract: sections, claim anchors, the graph rules |
-| Spec 6 | `spec-todo-hermes.md` | the session-todo mirror and the ledger mirror |
-| Spec 7 | `spec-shaping-format.md` | the shaping: findings, sources, the verdict that seeds the plan |
-| Spec 8 | `spec-plugin-package.md` | what this package is, and what it refuses to be |
-
-## The one rule
-
-Riel decides nothing and verifies nothing semantically. The tools are clerks:
-they keep the format perfect so the agent can spend its reasoning on the actual
-work. Every semantic decision — what the Goal is,
-whether the gate actually passed, whether the claim is satisfied — remains
-the agent's.
+`riel_check(file=…)` must run on the file that will ship, not an earlier copy.
+A draft validates structurally; only an activated, revision-bound run can record
+Evidence. Read status from `run`, not the todo UI: the latter is a projection.

@@ -1,8 +1,9 @@
 """Riel — Hermes plugin registration.
 
 The package is the whole product: the prose (`guide/`, which lives here — the
-tree IS the source, no build step), the engine it documents, the ten typed tools, the
-`pre_verify` gate and the desktop chip. No command line and no skills.
+tree IS the source, no build step), the engine it documents, the SIX typed
+tools (the run/shaping model), the `pre_verify` gate and the desktop chip. No
+command line and no skills.
 
 The prose reaches the agent through ONE door: the `riel_guide` tool reads
 `guide/<topic>.md` on demand, and the `riel` prompt section publishes what the
@@ -13,7 +14,7 @@ worktree's ledger state. Nothing registers a skill: a plugin skill never enters
 
 import logging
 
-from . import _load, commands, hooks, schemas, section, tools
+from . import _load, commands, hooks, schemas, section, todos, tools
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,7 @@ def register(ctx) -> None:
     # (`plugins.entries.riel.settings.*`), so a chip toggle lands on the next turn.
     hooks.SETTINGS["enabled"] = bool(ctx.get_config("gate", default=True))
     hooks.SETTINGS["attempts"] = int(ctx.get_config("gate_attempts", default=1) or 1)
+    todos.configure(ctx)
 
     for schema in schemas.SCHEMAS:
         name = schema["name"]

@@ -75,8 +75,14 @@ def handle(raw_args: str = "", **kwargs) -> str:
 
     if action == "note":
         text = " ".join(rest).strip()
+        value = "" if text in ("-", "clear", "none") else text
         try:
-            landed = settings.write(settings.NOTE_KEY, "" if text in ("-", "clear", "none") else text)
+            # The same write-side validation the POST /settings route applies:
+            # a note the section would render is a note the surface accepts.
+            settings.validate({settings.NOTE_KEY: value})
+            landed = settings.write(settings.NOTE_KEY, value)
+        except settings.Rejected as exc:
+            return f"note refused: {exc}"
         except Exception as exc:
             return f"Could not write the note: {exc}"
         return (

@@ -24,17 +24,22 @@ Hermes and injects a fake `hermes_cli.config` / `hermes_cli.plugins_state`.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, Dict
 
 PLUGIN_ID = "riel"
 GROUP_KEYS = ("gate", "tools", "context")
 NOTE_KEY = "harness_note"
+ATTEMPTS_KEY = "gate_attempts"
 # The section caps the note; keep the write-side cap identical so a value the
 # operator sets here is the value the prompt renders.
 NOTE_MAX_CHARS = 400
+# Hermes caps pre_verify continues at agent.max_verify_nudges (3); a bigger
+# number here only fights that cap, so the surface refuses it.
+ATTEMPTS_MAX = 10
 
 
-def _settings_readonly() -> Dict[str, Any]:
+def _settings_readonly() -> Mapping[str, Any]:
     """`plugins.entries.riel.settings` from the ACTIVE profile, `{}` on any failure."""
     try:
         from hermes_cli.config import load_config_readonly
@@ -47,7 +52,10 @@ def _settings_readonly() -> Dict[str, Any]:
         settings = (entries.get(PLUGIN_ID) or {}).get("settings") or {}
     except AttributeError:
         return {}
-    return settings if isinstance(settings, dict) else {}
+    # The surface is read as a MAPPING, never a dict: a config loader is free
+    # to hand over a frozen view, and a read path that demands `dict` would
+    # fail closed on it.
+    return settings if isinstance(settings, Mapping) else {}
 
 
 def read(key: str, default: Any = True) -> Any:
@@ -87,9 +95,10 @@ def write(key: str, value: Any) -> Any:
 
 
 def state() -> Dict[str, Any]:
-    """The whole switch surface: `{group: bool, ...}` plus the operator's note."""
+    """The whole switch surface: `{group: bool, ...}` plus note and attempts."""
     snapshot: Dict[str, Any] = read_groups()
     snapshot[NOTE_KEY] = read_note()
+    snapshot[ATTEMPTS_KEY] = read(ATTEMPTS_KEY, 1)
     return snapshot
 
 
@@ -98,7 +107,12 @@ class Rejected(ValueError):
 
 
 def validate(values: Dict[str, Any]) -> Dict[str, Any]:
-    """Check a `{key: value}` patch against the manifest's schema, or raise `Rejected`."""
+    """Check a `{key: value}` patch against the manifest's schema, or raise `Rejected`.
+
+    The manifest types `gate_attempts` as `int` and this is the write-side
+    half of that promise: a boolean is Python's `int` subclass, so it is
+    refused EXPLICITLY — a switch is not a count.
+    """
     if not isinstance(values, dict) or not values:
         raise Rejected("expected a non-empty object of settings")
     checked: Dict[str, Any] = {}
@@ -111,8 +125,16 @@ def validate(values: Dict[str, Any]) -> Dict[str, Any]:
                 raise Rejected(f"{NOTE_KEY} must be a string, got {type(value).__name__}")
             if len(value) > NOTE_MAX_CHARS:
                 raise Rejected(f"{NOTE_KEY} is capped at {NOTE_MAX_CHARS} chars, got {len(value)}")
+        elif key == ATTEMPTS_KEY:
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise Rejected(f"{ATTEMPTS_KEY} must be an integer, got {type(value).__name__}")
+            if not 0 <= value <= ATTEMPTS_MAX:
+                raise Rejected(f"{ATTEMPTS_KEY} must be between 0 and {ATTEMPTS_MAX}, got {value}")
         else:
-            raise Rejected(f"unknown setting '{key}' — known: {', '.join((*GROUP_KEYS, NOTE_KEY))}")
+            raise Rejected(
+                f"unknown setting '{key}' — known: "
+                f"{', '.join((*GROUP_KEYS, NOTE_KEY, ATTEMPTS_KEY))}"
+            )
         checked[key] = value
     return checked
 

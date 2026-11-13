@@ -1,44 +1,40 @@
 # Changelog
 
-Notable changes to Riel. Version numbers refer to the plugin (`hermes_plugin/riel/plugin.yaml`);
-the five guides carry their own versions in frontmatter.
+Notable changes to Riel. Version numbers refer to `hermes_plugin/riel/plugin.yaml`;
+packaged guides carry their own versions.
+
+## 2.0.0
+
+### Changed
+- Replaced separate contract and ledger state with `.riel/run.md`: one immutable
+  Plan, revision-bound State and typed Evidence.
+- Shaping stays separate as `.riel/shaping.md`, versioned `riel-shaping/v1`,
+  and its referenced Findings are frozen into run slices.
+- Six tools: `riel_guide`, `riel_shape`, `riel_run`, `riel_note`,
+  `riel_clean`, `riel_check`.
+- Activating a run keeps the session checklist synchronized automatically:
+  phases and gates are checks, steps are their subchecks, and only passing
+  evidence completes them. Non-Riel rows are preserved.
+- Gate calls execute their commands and record their actual exit codes.
+  Current gate and claim IDs—not checkpoint counts—drive progress.
+- Added atomic writes, cross-process locks, bounded backups and per-call output
+  sinks. Remote fetch requires SHA-256 and applies its safety policy to every
+  redirect.
+- README reduced to purpose, use cases, practical flow and installation.
+
+### Removed
+- `.riel/contract.md` and `.riel/ledger.md` support, conversion and fallback.
+- `riel_plan` and `riel_seam`; separate graph/context verbs and legacy templates.
+  Graph checks remain in `riel_check`.
+- Free-form claim creation, Goal/Phase/Next state edits and self-supplied gate
+  exit codes through `riel_note`.
+
+### Upgrade
+This is a deliberate breaking release. Archive any previous local task state and
+start a new run; there is no automatic migration.
 
 ## 1.0.0
 
-The simplification release: Riel keeps the core steering (plan + ledger + gate) with less surface,
-a simpler plan format and a faster engine.
-
-### Changed
-- **7 tools, one plan door.** `riel_contract`, `riel_shaping`, `riel_fetch` and `riel_context`
-  collapsed into **`riel_plan`** (`verb=new/validate/digest/slice/fetch`, `kind=contract|shaping`).
-  Surface: `riel_guide`, `riel_note`, `riel_seam`, `riel_todo`, `riel_plan`, `riel_clean`, `riel_check`.
-- **The contract accepts two registers**: a rich mermaid execution graph, or a plain `F#`/`W#`
-  phase list (canonical simple). `graph_any` dispatches; validate, todo, digest and slice share
-  one code path. A phase's last step is its gate (`RUN`/`VERIFY`).
-- **The engine runs in-process** by default: `run_verb` binds every path to the worktree by
-  parameter, no global chdir. Measured ~36× faster than the old subprocess path
-  (`scripts/bench-engine.py`, 200 calls). Subprocess remains as fallback.
-- **The context index travels in `riel_plan`'s answer** on a successful contract `new`/`validate`.
-- **README declares the core**: plan + ledger + gate; everything else is accessory.
-- `make validate` covers 15 mermaid blocks; suite count 312.
-
-### Removed
-- **`protocol` guide.** Six topics down to five: `contract`, `delegate`, `ledger`, `shaping`, `tools`.
-  Its opening conditions are owned by the harness/profile, not the framework.
-- Standalone `riel_context`, `riel_contract`, `riel_shaping`, `riel_fetch` tool names.
-
-### Fixed
-- The engine resolves `__file__` absolutely, so by-path loads survive the plugin being installed
-  as a copy (no more broken `engine/` resolution in some environments).
-
-### Upgrade
-Update from a previous version:
-
-```bash
-hermes plugins update riel    # or --force when already enabled
-hermes plugins doctor riel
-```
-
-Call sites change: use `riel_plan(verb=...)` where you used `riel_contract`, `riel_shaping`
-(`kind="shaping"`) or `riel_fetch` (`verb="fetch"`). The context keywords that came from
-`riel_context` now ride in the plan's answer.
+- Seven concrete tools under one plan door, in-process engine and a contract
+  supporting mermaid or plain phase lists.
+- Prose shipped inside the plugin, read by section, with an optional desktop chip.

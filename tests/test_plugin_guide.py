@@ -24,6 +24,10 @@ REPO = os.path.dirname(HERE)
 PLUGIN = os.path.join(REPO, "hermes_plugin", "riel")
 GUIDE_DIR = os.path.join(PLUGIN, "guide")
 
+# The topics the prose ships today (the v2 set: the run model replaced the
+# ledger/contract pair).
+RUN, DELEGATE, TOOLS = "run", "delegate", "tools"
+
 
 def load_module(name, path):
     loader = importlib.machinery.SourceFileLoader(name, path)
@@ -60,38 +64,39 @@ class GuideModuleTest(unittest.TestCase):
             self.assertNotIn("description", fields, topic)
 
     def test_read_answers_with_the_section_outline_by_default(self):
-        outline, error = self.guide.read("ledger")
+        outline, error = self.guide.read(RUN)
         self.assertIsNone(error)
-        self.assertNotIn("topic: ledger", outline)
-        self.assertIn("# ledger guide —", outline)
+        self.assertNotIn("topic: run", outline)
+        self.assertIn("# run guide —", outline)
         self.assertEqual(len(self.guide.sections(outline)), 0, "the outline has no ## headings of its own")
-        self.assertIn("## The protocol", self.guide.read("ledger", full=True)[0])
+        self.assertIn("## State and Evidence", self.guide.read(RUN, full=True)[0])
 
     def test_full_returns_the_body_without_frontmatter(self):
-        body, error = self.guide.read("ledger", full=True)
+        body, error = self.guide.read(RUN, full=True)
         self.assertIsNone(error)
-        self.assertNotIn("topic: ledger", body)
-        self.assertIn("# ledger —", body)
+        self.assertNotIn("topic: run", body)
+        self.assertIn("# run —", body)
 
     def test_the_outline_is_much_cheaper_than_the_body(self):
         """The whole point of the default: a topic costs its outline, not 20 KB."""
-        outline, _ = self.guide.read("delegate")
-        body, _ = self.guide.read("delegate", full=True)
+        outline, _ = self.guide.read(DELEGATE)
+        body, _ = self.guide.read(DELEGATE, full=True)
         self.assertLess(len(outline) * 3, len(body))
 
     def test_read_slices_one_section(self):
-        body, _ = self.guide.read("ledger", full=True)
-        chunk, error = self.guide.read("ledger", "The three registers")
+        body, _ = self.guide.read(RUN, full=True)
+        chunk, error = self.guide.read(RUN, "State and Evidence")
         self.assertIsNone(error)
         self.assertLess(len(chunk), len(body))
         self.assertTrue(chunk.startswith("## "))
-        self.assertEqual([line for line in chunk.splitlines() if line.startswith("## ")], ["## The three registers"])
+        self.assertEqual([line for line in chunk.splitlines() if line.startswith("## ")],
+                         ["## State and Evidence"])
 
     def test_an_exact_heading_beats_a_substring(self):
-        """`DISPATCH` opens the DISPATCH section, never 'Step 6: … dispatch prompt'."""
-        chunk, error = self.guide.read("delegate", "DISPATCH")
+        """`Dispatch` opens the Dispatch section, never 'Failure and revision'."""
+        chunk, error = self.guide.read(DELEGATE, "Dispatch")
         self.assertIsNone(error)
-        self.assertTrue(chunk.startswith("## DISPATCH"), chunk.splitlines()[0])
+        self.assertTrue(chunk.startswith("## Dispatch"), chunk.splitlines()[0])
 
     def test_unknown_topic_errors_with_the_list(self):
         body, error = self.guide.read("nope")
@@ -100,7 +105,7 @@ class GuideModuleTest(unittest.TestCase):
         self.assertEqual(sorted(error["topics"]), sorted(self.guide.topics()))
 
     def test_unknown_section_errors_with_the_headings(self):
-        body, error = self.guide.read("ledger", "no such heading")
+        body, error = self.guide.read(RUN, "no such heading")
         self.assertIsNone(body)
         self.assertIn("no section matching", error["error"])
         self.assertTrue(error["sections"])
@@ -135,28 +140,28 @@ class GuideHandlerTest(unittest.TestCase):
         self.assertTrue(result["bytes"])
 
     def test_a_topic_returns_the_section_outline(self):
-        result = self.payload({"topic": "contract"})
+        result = self.payload({"topic": RUN})
         self.assertTrue(result["passed"], result)
-        self.assertEqual(result["topic"], "contract")
+        self.assertEqual(result["topic"], RUN)
         self.assertIn("sections", result["content"])
         self.assertIn('section="<name>"', result["content"])
         self.assertEqual(result["content"], result["stdout"])
         self.assertEqual(result["bytes"], len(result["content"]))
 
     def test_full_returns_the_whole_body(self):
-        outline = self.payload({"topic": "contract"})
-        body = self.payload({"topic": "contract", "full": True})
+        outline = self.payload({"topic": RUN})
+        body = self.payload({"topic": RUN, "full": True})
         self.assertTrue(body["passed"], body)
         self.assertGreater(body["bytes"], outline["bytes"])
-        self.assertIn("mermaid", body["content"])
+        self.assertIn("run.md", body["content"])
 
     def test_a_section_returns_just_that_slice(self):
-        whole = self.payload({"topic": "ledger", "full": True})
-        slice_ = self.payload({"topic": "ledger", "section": "Pitfalls"})
+        whole = self.payload({"topic": RUN, "full": True})
+        slice_ = self.payload({"topic": RUN, "section": "Plan"})
         self.assertTrue(slice_["passed"], slice_)
         self.assertLess(slice_["bytes"], whole["bytes"])
-        self.assertEqual(slice_["section"], "Pitfalls")
-        self.assertIn("## Pitfalls", slice_["content"])
+        self.assertEqual(slice_["section"], "Plan")
+        self.assertIn("## Plan", slice_["content"])
 
     def test_unknown_topic_is_a_structured_error(self):
         result = self.payload({"topic": "no-such-topic"})
@@ -167,19 +172,19 @@ class GuideHandlerTest(unittest.TestCase):
         self.assertIn("hint", result)
 
     def test_unknown_section_is_a_structured_error(self):
-        result = self.payload({"topic": "ledger", "section": "no such heading"})
+        result = self.payload({"topic": RUN, "section": "no such heading"})
         self.assertFalse(result["passed"])
         self.assertIn("no section matching", result["error"])
         self.assertTrue(result["sections"])
 
     def test_the_guide_needs_no_worktree_state(self):
         """The prose ships with the package: a call outside any worktree works."""
-        result = self.payload({"topic": "tools", "worktree": "/tmp"})
+        result = self.payload({"topic": TOOLS, "worktree": "/tmp"})
         self.assertTrue(result["passed"], result)
 
     def test_an_empty_worktree_with_no_repo_still_answers(self):
         """A bare `/tmp` has no `.riel/`: the guide does not care."""
-        result = self.payload({"topic": "delegate", "worktree": "/tmp"})
+        result = self.payload({"topic": DELEGATE, "worktree": "/tmp"})
         self.assertEqual(result["bytes"], len(result["content"]))
         self.assertIn("delegat", result["content"].lower())
 

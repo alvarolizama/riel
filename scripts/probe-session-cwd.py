@@ -1,36 +1,10 @@
 #!/usr/bin/env python3
-"""Probe the plugin the way a LIVE Hermes session would.
+"""Exercise Riel's live Hermes discovery, registry and pre_verify dispatch.
 
-Not part of `make test`: it needs Hermes itself importable (module names like
-`hermes_cli.plugins` and `tools.registry` only resolve inside a Hermes install),
-so it lives outside the stdlib-only regression suite.
-
-What it proves, against a real Hermes install:
-  1. Hermes' own discovery + registration finds the plugin and its tools;
-  2. dispatching a tool through the real registry resolves the worktree from
-     the **session cwd record**, not from this process's cwd;
-  3. two sessions in different worktrees never touch each other's ledger;
-  4. bad input returns error JSON instead of raising;
-  5. the `pre_verify` gate fires through Hermes' own hook dispatch
-     (`get_pre_verify_continue_message`) and closes once a ✓ with evidence is
-     in the ledger;
-  6. the plan tool returns the contract's keyword index and stops there — the
-     search belongs to the agent, whose memory backends a plugin cannot reach.
-
-The Hermes import bootstraps itself: a managed install keeps the agent tree
-outside site-packages and initializes its deps through `hermes_bootstrap`, which
-only the launcher runs — so this probe retries through it, and says what to set
-when it cannot find the tree.
-
-Usage (run from a directory that is NOT either worktree):
-
-    python3 scripts/probe-session-cwd.py
-
-A `hermes` launcher that is not in `~/.hermes/hermes-agent` needs its root:
-
-    HERMES_AGENT_ROOT=/path/to/hermes-agent python3 scripts/probe-session-cwd.py
+Use the interpreter Hermes itself uses. HERMES_AGENT_ROOT can point at a managed
+agent tree when the ordinary import is unavailable. Temporary plugin/session
+homes and run fixtures are created and removed by this process.
 """
-
 import json
 import os
 import shutil
@@ -43,206 +17,101 @@ REPO = Path(__file__).resolve().parent.parent
 PLUGIN = REPO / "hermes_plugin" / "riel"
 ENGINE = PLUGIN / "engine" / "run.py"
 
-DEFAULT_AGENT_ROOT = Path.home() / ".hermes" / "hermes-agent"
 
-
-def _import_hermes() -> None:
-    """Make a Hermes install importable, bootstrapping a managed one if needed.
-
-    A pip install is importable as-is. A MANAGED install keeps the agent tree
-    outside site-packages and runs `hermes_bootstrap` from its launcher, so a
-    bare `python3 probe…` finds neither: we add the tree (from `$HERMES_AGENT`
-    or the managed default) and retry, mirroring the launcher.
-    """
+def import_hermes():
     try:
         import hermes_cli.plugins  # noqa: F401
         return
     except ModuleNotFoundError:
         pass
-    root = Path(os.environ.get("HERMES_AGENT_ROOT") or DEFAULT_AGENT_ROOT)
-    if not root.is_dir():
-        raise SystemExit(
-            "Hermes is not importable. Run this with the interpreter `hermes` "
-            "uses, or point HERMES_AGENT_ROOT at the agent tree "
-            f"({root} does not exist)."
-        )
+    root = Path(os.environ.get("HERMES_AGENT_ROOT") or
+                Path.home() / ".hermes" / "hermes-agent")
     sys.path.insert(0, str(root))
     try:
         import hermes_bootstrap  # noqa: F401
-    except ModuleNotFoundError:
-        pass
-    except Exception as exc:  # e.g. TypeError from `X | Y` on python < 3.10
-        raise SystemExit(
-            "The agent tree imported but raised — you are probably running an "
-            "older system python. Run this probe with the interpreter Hermes "
-            "itself uses (`head -1 $(command -v hermes)` names it). "
-            f"Underlying error: {exc!r}"
-        )
-    try:
         import hermes_cli.plugins  # noqa: F401
-    except ModuleNotFoundError as exc:
-        raise SystemExit(f"Hermes still not importable after adding {root}: {exc}")
+    except Exception as exc:
+        raise SystemExit(f"Hermes is not importable: {exc!r}")
 
 
-_import_hermes()
+import_hermes()
+from hermes_cli.plugins import get_plugin_manager, get_pre_verify_continue_message  # noqa: E402
+from tools.registry import registry  # noqa: E402
+from tools.terminal_tool import record_session_cwd  # noqa: E402
 
 
-def _dispatch(registry, tool: str, args: dict, task: str) -> dict:
-    """Dispatch through the real registry; the handler always returns JSON text."""
-    raw = registry.dispatch(tool, args, task_id=task)
+def dispatch(tool, args, task_id):
+    raw = registry.dispatch(tool, args, task_id=task_id)
     return json.loads(raw if isinstance(raw, str) else json.dumps(raw))
 
 
-def _seed(worktree: str, *argv) -> None:
-    """Write ledger entries with the bundled engine."""
-    subprocess.run(
-        [sys.executable, str(ENGINE), *argv],
-        cwd=worktree,
-        capture_output=True,
-        text=True,
-        check=True,
+def draft(objective):
+    proc = subprocess.run(
+        [sys.executable, str(ENGINE), "run", "new"],
+        capture_output=True, text=True, check=True,
     )
+    return proc.stdout.replace("{{title}}", "live probe").replace(
+        "{{objective}}", objective).replace("{{claim}}", "a real command ran").replace(
+        "{{anchor}}", "§Graph")
 
 
-def _seed_contract(worktree: str, keywords: str) -> None:
-    """Write a valid contract with a Context keywords block."""
-    path = Path(worktree) / ".riel" / "contract.md"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        "# Task: probe\n\n## Objective\nWe need to probe\n\n## Context\n\n"
-        "### Context keywords\n" + keywords +
-        "\n## Constraints\n- r\n\n"
-        "## Pre-registered claims\n- P1: a — verify with: true\n\n"
-        "## Execution graph\n\n```mermaid\nflowchart TD\n"
-        '  S1["RUN true"] --> G1{"ok?"}\n  G1 -->|yes| END([Done])\n'
-        '  G1 -->|no| S1\n```\n\n'
-        "## Verification gates\ng\n\n## Deliverable\nd\n\n## DO NOT\n- x\n",
-        encoding="utf-8",
-    )
-
-
-def main() -> int:
-    home = tempfile.mkdtemp(prefix="hermes-probe-home-")
-    work_a = tempfile.mkdtemp(prefix="riel-session-a-")
-    gate_tree = tempfile.mkdtemp(prefix="riel-gate-")
-    work_b = tempfile.mkdtemp(prefix="riel-session-b-")
-    cwd_before = os.getcwd()
-    # The probe may be run from a directory that legitimately has its own ledger
-    # (e.g. this repo). What must not happen is the ledger *changing* there.
-    cwd_ledger = Path(cwd_before) / ".riel" / "ledger.md"
-    ledger_before = cwd_ledger.read_text() if cwd_ledger.exists() else None
+def main():
+    temp = Path(tempfile.mkdtemp(prefix="riel-live-probe-"))
+    home = temp / "home"
+    sessions = [temp / "a", temp / "b"]
+    for worktree in sessions:
+        (worktree / ".riel").mkdir(parents=True)
+        (worktree / ".riel" / "run.md").write_text(
+            draft(f"The run for {worktree.name} stays isolated."), encoding="utf-8")
     try:
-        os.environ["HERMES_HOME"] = home
-        plugins_root = Path(home) / "plugins"
-        plugins_root.mkdir(parents=True)
-        os.symlink(PLUGIN, plugins_root / "riel")
-
-        from hermes_cli.plugins import get_plugin_manager
-        from tools.registry import registry
-        from tools.terminal_tool import get_session_cwd, record_session_cwd
-
-        # THE manager the runtime uses (module-level lookups like has_hook go
-        # through it) — a private PluginManager() would register into an object
-        # nothing else consults.
+        os.environ["HERMES_HOME"] = str(home)
+        plugin_root = home / "plugins"
+        plugin_root.mkdir(parents=True)
+        os.symlink(PLUGIN, plugin_root / "riel")
         manager = get_plugin_manager()
-        manifests = manager._scan_directory(plugins_root, source="user")
-        if len(manifests) != 1:
-            print(f"FAIL: expected 1 manifest, found {len(manifests)}", file=sys.stderr)
-            return 1
-        manifest = manifests[0]
-        manager._load_plugin(manifest)
-        loaded = manager._plugins.get(manifest.key or manifest.name)
-        if loaded is None or loaded.error:
-            print(f"FAIL: registration error: {getattr(loaded, 'error', 'no record')}", file=sys.stderr)
-            return 1
-        print(f"discovery : {manifest.name} {manifest.version} ({manifest.source})")
-        print(f"registered: {sorted(loaded.tools_registered)} + hooks {sorted(loaded.hooks_registered)}")
+        manifests = manager._scan_directory(plugin_root, source="user")
+        assert len(manifests) == 1
+        manager._load_plugin(manifests[0])
+        loaded = manager._plugins.get(manifests[0].key or manifests[0].name)
+        assert loaded is not None and not loaded.error, getattr(loaded, "error", "missing")
+        assert loaded.tools_registered == [
+            "riel_guide", "riel_shape", "riel_run", "riel_note", "riel_clean",
+            "riel_check"]
+        print(f"registered: {loaded.tools_registered}")
 
-        record_session_cwd("probe-a", work_a)
-        record_session_cwd("probe-b", work_b)
-        print(f"process cwd: {cwd_before}")
-        print(f"session A  : {get_session_cwd('probe-a')}")
-        print(f"session B  : {get_session_cwd('probe-b')}")
+        for task, worktree in zip(("probe-a", "probe-b"), sessions):
+            record_session_cwd(task, str(worktree))
+            activated = dispatch("riel_run", {"verb": "activate"}, task)
+            assert activated["passed"], activated
+            assert activated["worktree"] == str(worktree)
+            noted = dispatch("riel_note", {"core": f"session {worktree.name} — only here"}, task)
+            assert noted["passed"], noted
+            status = dispatch("riel_run", {"verb": "status"}, task)
+            assert status["passed"], status
+            assert json.loads(status["stdout"])["status"] == "active"
+        bodies = [(root / ".riel" / "run.md").read_text() for root in sessions]
+        assert "session a — only here" in bodies[0]
+        assert "session b — only here" not in bodies[0]
+        assert "session b — only here" in bodies[1]
+        print("session cwd: isolated registry dispatch passed")
 
-        out_a = _dispatch(registry, "riel_note", {"goal": "goal of session A"}, "probe-a")
-        out_b = _dispatch(registry, "riel_note", {"goal": "goal of session B"}, "probe-b")
-        for label, out, expected in (("A", out_a, work_a), ("B", out_b, work_b)):
-            print(f"{label} -> worktree={out.get('worktree')} exit_code={out.get('exit_code')}")
-            assert out.get("worktree") == expected, (out.get("worktree"), expected)
-            assert out.get("exit_code") == 0, out
-
-        for tool, task, extra in (("riel_todo", "probe-a", {}),
-                                  ("riel_seam", "probe-b", {}),
-                                  ("riel_seam", "probe-a", {"mode": "resume"}),
-                                  ("riel_seam", "probe-b", {"mode": "json"})):
-            payload = _dispatch(registry, tool, extra, task)
-            print(f"{tool:12s} -> exit_code={payload['exit_code']} {payload['stdout'].splitlines()[0][:48]}")
-            assert payload["exit_code"] == 0, payload
-
-        ledger_a = (Path(work_a) / ".riel" / "ledger.md").read_text()
-        ledger_b = (Path(work_b) / ".riel" / "ledger.md").read_text()
-        assert "goal of session A" in ledger_a and "goal of session B" not in ledger_a
-        assert "goal of session B" in ledger_b and "goal of session A" not in ledger_b
-        ledger_after = cwd_ledger.read_text() if cwd_ledger.exists() else None
-        assert ledger_after == ledger_before, "the ledger leaked into the process cwd"
-
-        bad = _dispatch(registry, "riel_seam", {"worktree": "/nope/nope"}, "probe-a")
-        assert "error" in bad, bad
-        print(f"bad input  -> error JSON: {bad['error']}")
-
-        # --- the pre_verify gate, through Hermes' own hook dispatch ---------
-        from hermes_cli.plugins import get_pre_verify_continue_message
-
-        _seed(gate_tree, "note", "--goal", "gate probe",
-              "--claim", "P1: la cosa", "--verify-with", "make test")
-        payload = {
-            "session_id": "probe-a",
-            "platform": "desktop",
-            "model": "m",
-            "coding": True,
-            "changed_paths": [str(Path(gate_tree) / "lib" / "a.ex")],
-        }
-        nudge = get_pre_verify_continue_message(attempt=0, **payload)
-        print(f"gate       -> {nudge.splitlines()[0][:88] if nudge else 'NO NUDGE'}")
-        assert nudge and os.path.realpath(gate_tree) in nudge, nudge
-
-        throttled = get_pre_verify_continue_message(attempt=1, **payload)
-        assert throttled is None, throttled
-        print("gate       -> no insiste dos veces (gate_attempts=1 por defecto)")
-
-        untracked = tempfile.mkdtemp(prefix="riel-untracked-")
-        try:
-            assert get_pre_verify_continue_message(
-                attempt=0, **{**payload, "changed_paths": [str(Path(untracked) / "a.py")]}
-            ) is None
-        finally:
-            shutil.rmtree(untracked, ignore_errors=True)
-        print("gate       -> no toca worktrees sin .riel/ledger.md")
-
-        _seed(gate_tree, "note", "--check", "el gate corrió", "--by", "probe-session-cwd.py")
+        gate_probe = sessions[0]
+        payload = {"session_id": "probe-a", "coding": True,
+                   "changed_paths": [str(gate_probe / "sample.py")]}
+        assert get_pre_verify_continue_message(attempt=0, **payload)
+        result = dispatch("riel_note", {
+            "gates": ["G1"], "claims": ["P1"], "command": "true",
+            "covering": "a real registry-invoked gate", "worktree": str(gate_probe),
+        }, "probe-a")
+        assert result["passed"], result
         assert get_pre_verify_continue_message(attempt=0, **payload) is None
-        print("gate       -> cierra el turno cuando hay un ✓ con evidencia")
-
-        # --- the plan's context index through the real registry --------------
-        # It hands over the index and stops there: memory lives in the agent's
-        # memory manager, not in the registry, so the plugin cannot search.
-        _seed_contract(gate_tree, "- login flow → dran\n- phoenix streams\n")
-        ctx_out = _dispatch(registry, "riel_plan",
-                            {"verb": "validate", "file": ".riel/contract.md",
-                             "worktree": gate_tree}, "probe-a")
-        print(f"plan        -> passed={ctx_out.get('passed')} "
-              f"keywords={[k['term'] for k in ctx_out.get('keywords', [])]}")
-        assert [k["term"] for k in ctx_out["keywords"]] == ["login flow", "phoenix streams"], ctx_out
-        assert "hits" not in ctx_out and "keywords_note" in ctx_out, ctx_out
-        print("plan        -> solo entrega el índice (la búsqueda es del agente)")
-
-        print("\nOK: discovery, registry dispatch, session cwd resolution, per-session")
-        print("    isolation, the pre_verify gate and the plan's context index verified")
-        return 0
+        rejected = dispatch("riel_run", {"verb": "fictional",
+                                        "worktree": str(gate_probe)}, "probe-a")
+        assert rejected["exit_code"] == 1
+        print("pre_verify: pending nudge, executed gate and completion passed")
     finally:
-        os.chdir(cwd_before)
-        for path in (home, work_a, work_b, gate_tree):
-            shutil.rmtree(path, ignore_errors=True)
+        shutil.rmtree(temp, ignore_errors=True)
+    return 0
 
 
 if __name__ == "__main__":

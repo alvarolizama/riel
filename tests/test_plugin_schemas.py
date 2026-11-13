@@ -1,4 +1,4 @@
-"""The tool contract as the MODEL sees it: first line, budget, and the CLI door.
+"""The tool contract as the MODEL sees it: first line, budget, and the verbs.
 
 A tool description is not documentation — it is the routing signal. With
 progressive disclosure the model reads a one-line entry per tool in the
@@ -7,7 +7,13 @@ sentence. So the first sentence has to name the family (`Riel`) inside the
 window that actually survives, and the rest of the description carries the
 detail only a reader that already chose the tool will pay for.
 
-Stdlib only, no Hermes: the schemas and handlers are loaded from the package.
+The verb surfaces are pinned here against the HANDLERS too: a verb the schema
+promises must be one the handler accepts, and a verb it refuses must be
+refused with the allowed list — the model reads that list to recover.
+
+Stdlib only, no Hermes: the schemas and handlers are loaded from the package
+(the handlers against the stub engine, so verb surfaces are exercised, not
+assumed).
 """
 
 import json
@@ -16,20 +22,29 @@ import shutil
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.dirname(HERE)
-PLUGIN = os.path.join(REPO, "hermes_plugin", "riel")
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parent
+PLUGIN = REPO / "hermes_plugin" / "riel"
 
-if REPO not in sys.path:
-    sys.path.insert(0, REPO)
+sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(REPO))
 
+import _stub_engine as stub  # noqa: E402
 from hermes_plugin.riel import schemas, tools  # noqa: E402
 
+stub.install(tools)
+
 # The window the deferred `tool_search` catalog shows for a tool (measured on a
-# live prompt: `- riel_note: Write or update the Riel ledger (.riel/ledger.md) in a`).
+# live prompt: `- riel_run: Riel run — ONE door for the machine-checkable plan`).
 CATALOG_WINDOW = 60
 DESC_MAX_CHARS = 1_200
+
+SIX_TOOLS = frozenset({
+    "riel_guide", "riel_shape", "riel_run", "riel_note",
+    "riel_clean", "riel_check",
+})
 
 
 class SchemaContractTest(unittest.TestCase):
@@ -82,90 +97,114 @@ class TypedToolsTest(unittest.TestCase):
             for banned in ("args", "argv", "flags"):
                 self.assertNotIn(banned, props, f"{schema['name']} smuggles a command line ({banned})")
 
-    def test_the_surface_is_the_seven_tools_the_prose_calls(self):
-        self.assertEqual(
-            sorted(tools.HANDLERS),
-            sorted(["riel_guide", "riel_note", "riel_seam", "riel_todo",
-                    "riel_plan", "riel_clean", "riel_check"]),
-        )
+    def test_the_surface_is_the_six_tools_the_prose_calls(self):
+        self.assertEqual(set(tools.HANDLERS), set(SIX_TOOLS))
 
-    def test_the_seam_carries_the_three_modes_the_old_three_tools_had(self):
-        """seam/resume/state collapsed into one tool: the modes are the surface."""
-        described = self.schema("riel_seam")["parameters"]["properties"]
-        self.assertIn("mode", described)
-        self.assertEqual(sorted(tools.SEAM_MODES), ["json", "read", "resume"])
+    def test_run_declares_and_refuses_its_seven_verbs(self):
+        spelled = self.schema("riel_run")["parameters"]["properties"]["verb"]["description"]
+        for verb in tools.RUN_VERBS:
+            self.assertIn(verb, spelled)
+        payload = self.call("riel_run", {"verb": "digest"})
+        self.assertIn("unsupported verb", payload["error"])
+        self.assertEqual(payload["allowed"], list(tools.RUN_VERBS))
+
+    def test_shape_declares_and_refuses_its_three_verbs(self):
+        spelled = self.schema("riel_shape")["parameters"]["properties"]["verb"]["description"]
+        for verb in tools.SHAPE_VERBS:
+            self.assertIn(verb, spelled)
+        payload = self.call("riel_shape", {"verb": "activate"})
+        self.assertIn("unsupported verb", payload["error"])
+        self.assertEqual(payload["allowed"], list(tools.SHAPE_VERBS))
 
     def test_the_guide_is_the_door_the_prose_names(self):
-        """Whatever the guide's own topics say, the tool exists and takes a topic."""
         described = self.schema("riel_guide")["parameters"]["properties"]
         self.assertIn("topic", described)
         self.assertIn("section", described)
 
-    def test_verb_and_kind_are_declared_and_refused(self):
-        spelled = self.schema("riel_plan")["parameters"]["properties"]["verb"]["description"]
-        for verb in tools.PLAN_VERBS:
-            self.assertIn(verb, spelled)
-        payload = self.call("riel_plan", {"verb": "run"})
-        self.assertIn("unsupported verb", payload["error"])
-        self.assertEqual(payload["allowed"], list(tools.PLAN_VERBS))
-        payload = self.call("riel_plan", {"verb": "validate", "kind": "packet"})
-        self.assertIn("unsupported kind", payload["error"])
-        payload = self.call("riel_plan", {"verb": "digest", "kind": "shaping"})
-        self.assertIn("supports the verbs new and validate", payload["error"])
-
-    def test_plan_validate_maps_named_parameters_onto_the_engine(self):
-        payload = self.call("riel_plan", {"verb": "validate", "file": ".riel/contract.md"})
-        self.assertEqual(payload["tool"], "riel_plan")
-        self.assertEqual(payload["verb"], "validate")
-        self.assertNotIn("command", payload, "no command-shaped provenance")
-
-    def test_plan_new_renders_and_does_not_write(self):
-        payload = self.call("riel_plan", {"verb": "new", "template": "feature",
-                                          "params": ["name=demo", "one_sentence=do the thing"]})
+    def test_run_new_prints_the_draft_and_does_not_write(self):
+        payload = self.call("riel_run", {"verb": "new", "params": ["name=demo"]})
         self.assertTrue(payload["passed"], payload)
-        self.assertIn("# Task: demo", payload["stdout"])
-        self.assertFalse(os.path.exists(os.path.join(self.tmp, ".riel", "contract.md")),
-                         "the tool returns the text; the agent decides what to write")
+        self.assertIn("# Run:", payload["stdout"])
+        self.assertEqual(payload["tool"], "riel_run")
+        self.assertEqual(payload["verb"], "new")
+        self.assertFalse((Path(self.tmp) / ".riel" / "run.md").exists(),
+                         "the tool returns the draft; the agent writes .riel/run.md itself")
 
-    def test_plan_new_rejects_a_parameter_that_is_not_key_equals_value(self):
-        payload = self.call("riel_plan", {"verb": "new", "template": "feature", "params": ["name"]})
+    def test_run_new_rejects_a_parameter_that_is_not_key_equals_value(self):
+        payload = self.call("riel_run", {"verb": "new", "params": ["name"]})
         self.assertIn("key=value", payload["error"])
 
-    def test_plan_without_a_target_file_is_refused(self):
-        payload = self.call("riel_plan", {"verb": "digest"})
-        self.assertIn("needs 'file'", payload["error"])
+    def test_run_status_answers_one_json_object(self):
+        self.call("riel_note", {"core": "fact — x"})
+        payload = self.call("riel_run", {"verb": "status"})
+        self.assertTrue(payload["passed"], payload)
+        self.assertEqual(payload["verb"], "status")
+        state = json.loads(payload["stdout"])
+        self.assertIsInstance(state, dict, "status is an object, never the old list")
+        for key in ("exit_code", "passed", "stdout", "stderr"):
+            self.assertIn(key, payload)
+
+    def test_run_slice_needs_a_phase(self):
+        self.assertIn("needs 'phase'", self.call("riel_run", {"verb": "slice"})["error"])
+
+    def test_run_without_a_worktree_directory_is_a_negative_envelope(self):
+        payload = json.loads(tools.HANDLERS["riel_run"](
+            {"verb": "status", "worktree": os.path.join(self.tmp, "nope")}))
+        for key in ("tool", "worktree", "exit_code", "passed", "stdout", "stderr"):
+            self.assertIn(key, payload)
+        self.assertIn("error", payload)
 
     def test_a_scope_is_not_a_verb_and_the_argv_stays_inside(self):
-        """The envelope reports the TOOL; the engine's flags are implementation.
-
-        What each scope does to `.riel/` is pinned in the engine's own suite
-        (`tests/test_engine.py`); here we pin what the caller can see.
-        """
-        for scope in ("ledger", "all", "purge"):
+        """The envelope reports the TOOL; the engine's flags are implementation."""
+        for scope in ("run", "all", "purge"):
             payload = self.call("riel_clean", {"scope": scope})
             self.assertEqual(payload["tool"], "riel_clean", scope)
             self.assertNotIn("verb", payload, scope)
             self.assertNotIn("command", payload, scope)
         self.assertIn("unsupported scope", self.call("riel_clean", {"scope": "everything"})["error"])
 
-    def test_seam_can_carry_the_anchor_re_read(self):
-        self.assertEqual(self.call("riel_note", {"goal": "ship it", "next": "run the suite"})["exit_code"], 0)
-        payload = self.call("riel_seam", {"anchors": True})
-        self.assertEqual(payload["exit_code"], 0, payload)
-        self.assertIn("anchors", payload, "seam with anchors must report both surfaces")
-        self.assertIn("anchors", self.schema("riel_seam")["parameters"]["properties"])
-        self.assertEqual(payload["anchors"]["exit_code"], 1, "no contract here: the anchor half says so")
-
-    def test_a_failed_seam_does_not_run_the_anchor_half(self):
-        payload = self.call("riel_seam", {"anchors": True})
-        self.assertEqual(payload["exit_code"], 1, "no ledger: the seam itself failed")
-        self.assertNotIn("anchors", payload)
-
-    def test_fetch_requires_a_url_and_never_echoes_it_back(self):
-        self.assertIn("needs 'url'", self.call("riel_plan", {"verb": "fetch"})["error"])
-        payload = self.call("riel_plan", {"verb": "fetch", "url": "https://example.test/c.md?token=secret"})
-        self.assertEqual(payload["tool"], "riel_plan")
+    def test_fetch_requires_url_and_pin_and_never_echoes_the_token(self):
+        payload = self.call("riel_run", {"verb": "fetch"})
+        self.assertIn("needs 'url'", payload["error"])
+        payload = self.call("riel_run", {"verb": "fetch", "url": "https://example.test/r.md?token=secret"})
+        self.assertIn("sha256", payload["error"], "the pin is mandatory")
         self.assertNotIn("token", payload.get("error", ""))
+        payload = self.call("riel_shape", {"verb": "fetch", "url": "https://example.test/s.md"})
+        self.assertIn("sha256", payload["error"])
+
+    def test_fetch_passes_the_pin_and_the_bounds(self):
+        payload = self.call("riel_run", {
+            "verb": "fetch", "url": "https://example.test/run.md",
+            "sha256": "a" * 64, "out": ".riel/run.md", "timeout": 30, "max_bytes": 1024,
+        })
+        # No network in the suite: the stub writes the file and reports success.
+        self.assertTrue(payload["passed"], payload)
+        self.assertTrue((Path(self.tmp) / ".riel" / "run.md").exists())
+
+    def test_fetch_refuses_a_junk_bound(self):
+        payload = self.call("riel_run", {"verb": "fetch", "url": "https://x.test/r",
+                                         "sha256": "a" * 64, "timeout": "soon"})
+        self.assertIn("timeout must be an integer", payload["error"])
+
+    def test_note_declares_the_gate_surface(self):
+        described = self.schema("riel_note")["parameters"]["properties"]
+        for name in ("gates", "command", "covering", "claims", "worktree"):
+            self.assertIn(name, described, name)
+        self.assertEqual(described["claims"]["type"], "array")
+        self.assertEqual(described["gates"]["type"], "array")
+        self.assertNotIn("exit_code", described,
+                         "the engine records the exit code; the model never passes one")
+
+    def test_note_without_content_flags_refuses_and_names_what_it_accepts(self):
+        payload = self.call("riel_note", {})
+        self.assertIn("error", payload)
+        self.assertIn("accepted", payload)
+        self.assertIn("gates", payload["accepted"])
+        self.assertIn("claims", payload["accepted"])
+
+    def test_note_rejects_a_claims_array_that_is_not_strings(self):
+        payload = self.call("riel_note", {"claims": [1, 2]})
+        self.assertIn("array of strings", payload["error"])
 
     def test_check_runs_both_halves_on_one_file(self):
         target = os.path.join(self.tmp, "doc.md")
@@ -175,47 +214,18 @@ class TypedToolsTest(unittest.TestCase):
         self.assertIn("ship", payload)
         self.assertIn("digest", payload)
         self.assertEqual(payload["ship"]["exit_code"], 0, payload)
-        self.assertIn("A", payload["digest"]["stdout"])
         self.assertNotIn("mermaid", payload, "the parser-level half is opt-in")
 
     def test_check_answers_with_the_shared_envelope(self):
         """A composite tool still speaks the envelope every other tool speaks."""
         target = os.path.join(self.tmp, "doc.md")
         with open(target, "w", encoding="utf-8") as handle:
-            handle.write("# Doc\n\n```mermaid\nflowchart TD\n  A[\"x\"] --> B[\"y\"]\n```\n")
+            handle.write("# Doc\n")
         payload = self.call("riel_check", {"file": target})
         for key in ("tool", "worktree", "exit_code", "passed", "stdout", "stderr"):
             self.assertIn(key, payload, f"riel_check misses {key}")
         self.assertEqual(payload["tool"], "riel_check")
         self.assertEqual(payload["exit_code"], 0 if payload["passed"] else 1)
-        self.assertIn("A", payload["stdout"], "the halves' text rides in stdout too")
-
-    def test_check_parses_the_diagrams_when_asked(self):
-        """`mermaid=true` adds the parser-level half, and only then."""
-        target = os.path.join(self.tmp, "doc.md")
-        with open(target, "w", encoding="utf-8") as handle:
-            handle.write("# Doc\n\n```mermaid\nflowchart TD\n  A[\"x\"] --> B[\"y\"]\n```\n")
-        payload = self.call("riel_check", {"file": target, "mermaid": True})
-        self.assertIn("mermaid", payload)
-        self.assertEqual(payload["mermaid"]["exit_code"], 0, payload)
-        self.assertIn("PASS:", payload["mermaid"]["stdout"])
-        self.assertTrue(payload["passed"], payload)
-
-    def test_check_without_diagrams_is_not_a_failure(self):
-        """A file with no mermaid block is skipped, never failed."""
-        target = os.path.join(self.tmp, "plain.md")
-        with open(target, "w", encoding="utf-8") as handle:
-            handle.write("# Plain\nno diagrams at all\n")
-        payload = self.call("riel_check", {"file": target, "mermaid": True})
-        self.assertEqual(payload["mermaid"]["exit_code"], 0, payload)
-        self.assertIn("SKIP:", payload["mermaid"]["stdout"])
-
-    def test_state_is_the_seam_in_json_mode(self):
-        payload = self.call("riel_seam", {"mode": "json"})
-        self.assertEqual(payload["tool"], "riel_seam")
-        self.assertEqual(payload["verb"], "json")
-        for key in ("exit_code", "passed", "stdout", "stderr"):
-            self.assertIn(key, payload)
 
 
 if __name__ == "__main__":

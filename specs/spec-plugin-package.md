@@ -1,192 +1,68 @@
-# Spec 8 — The Hermes plugin package (`.riel/` is not in it)
+# Spec 3 — The Hermes plugin package
 
-Status: draft v2 · Riel — plugin-first
-Applies to `hermes_plugin/riel/`, the one artifact a Hermes user installs.
+Riel 2 ships as one installed copy of `hermes_plugin/riel/`. The package contains
+its prose, engine, two artifact templates, typed handlers, pre_verify hook,
+settings and desktop integration. There are no external guides, package
+symlinks, root skills, PATH entries or generated build copies.
 
-The **package is the product**. Everything the agent needs to run Riel — the
-prose, the engine that writes the formats, the tools that reach it, the gate
-that holds the line and the desktop chip — ships inside one directory that
-installs as a copy of a commit and updates the same way. Nothing about it is
-configured on disk outside the package: no skills directory, no `external_dirs`,
-no symlink, nothing on `PATH`.
+## Product and operational state
 
-## What the package contains
+Only the package is installed. Task-local `.riel/` remains in its worktree and
+outside the package. The engine exclusively writes `.riel/run.md` and new
+`.riel/shaping.md`. The previous contract and ledger files are unsupported as
+inputs or state, without migration; state resolution cannot silently fall back
+to them or to another session's cwd.
 
-| Path | What it is | Source of truth |
-|---|---|---|
-| `plugin.yaml` | the manifest: tools, hooks, the switch schema | itself |
-| `__init__.py` | `register()`: tools, the prompt section, `/riel`, the gate | itself |
-| `schemas.py` | the tool schemas — what the model reads to choose | itself |
-| `tools.py` | the handlers: named parameters → the engine's argv | itself |
-| `guide.py` | the prose's only door: index, one guide, one section | the `guide/` files |
-| `section.py` | the `riel` prompt section (the door + worktree state) | itself |
-| `settings.py` | per-call reads/writes of `plugins.entries.riel.settings.*` | itself |
-| `commands.py` | the `/riel` slash command | itself |
-| `hooks.py` | `pre_verify`, the checkpoint gate | itself |
-| `dashboard/` | the chip's backend routes (`/api/plugins/riel/*`) | itself |
-| `desktop/plugin.js` | the statusbar chip, the switches and the ⌘K commands | itself |
-| `guide/` | the prose, one file per topic — **the source**, edited here | itself |
-| `engine/` | `run.py` — the machine behind the tools, sole writer of the formats — **the source** | itself |
-| `templates/` | the packet and shaping templates — **the source** | itself |
+Six tools are registered: `riel_guide`, `riel_shape`, `riel_run`, `riel_note`,
+`riel_clean` and `riel_check`. Every tool returns the common
+`{tool, worktree, exit_code, passed, stdout, stderr}` envelope, including invalid
+input and disabled-group refusals. Internal engine argv never reaches callers.
 
-**One tree, no copies.** `guide/`, `engine/` and `templates/` are the package's
-own sources, edited in place: there is no build step and nothing to keep in sync.
-`tests/test_plugin_vendor.py` asserts each part exists inside the package and that
-no same-named directory reappears at the repo root — the duplication cannot come
-back by accident.
+## Hot paths and concurrency
 
-## The prose: topics, one door
+All in-process calls receive their own output and error sinks. They never
+redirect process-global stdout, chdir, inherit mutable task state or cache a
+transient loader failure permanently. Storage paths are explicit and resolved
+per session; environment cwd is not worktree identity in multiplexed sessions.
+A failed engine load yields a checkpoint retry, not an invisible permanent
+quality reduction.
 
-The prose is five guides, each a markdown file with frontmatter:
+Engine writes use an atomic replacement and serialize their full transaction
+under a file lock. State does not follow symlinks outside the worktree. Readers
+and writers observe either complete revisions or explicit errors, not a blank
+truncate-then-write state.
 
-```yaml
----
-topic: contract
-trigger: "Use when authoring mermaid verb-graph contracts …"
-version: 3.7.1
----
-```
+## Prose and prompt
 
-| File | Topic | Holds |
-|---|---|---|
-| `guide/ledger.md` | `ledger` | the state: Goal/Claims/Core/Verified/Open/Next (Spec 1) |
-| `guide/contract.md` | `contract` | mermaid as contract: closed verbs, funnel, anchors (Spec 2) |
-| `guide/delegate.md` | `delegate` | the packets a delegate receives AND the dispatch/verify cycle |
-| `guide/shaping.md` | `shaping` | the evidence before the plan |
-| `guide/tools.md` | `tools` | the tool surface and the engine's rules |
+`guide.py` is the one prose reader. Each of run, shaping, delegate and tools
+has frontmatter `topic`, `trigger` and `version`; `riel_guide` serves topic
+outlines by default and sections/full content on demand. No Hermes skill is
+registered beside these sources.
 
-**One door**: `riel_guide` reads them.
+The `riel` prompt publishes that prose, tools and when available a status summary
+of the explicitly selected run. It accepts mappings supplied by Hermes and never
+substitutes another worktree. `harness_note` occupies its bounded operator slot.
 
-| Call | Answers |
-|---|---|
-| `riel_guide()` | the index — each topic with its trigger, read from the files |
-| `riel_guide(topic="contract")` | that guide's body, frontmatter stripped |
-| `riel_guide(topic="ledger", section="Pitfalls")` | just that `## section` |
+Shared `gate`, `tools`, `context`, `gate_attempts` and `harness_note` settings
+are typed, validated at their single writer, and reread by their consumers. The
+pre_verify gate reads structured run status instead of counting arbitrary
+verified lines. It is bounded, switchable and scoped away from inactive runs.
 
-The section match is a case-insensitive substring, so `section="Claim anchors"`
-also finds `## Claim anchors (Spec 2 + Spec 7)`. An unknown topic or section is
-a **structured error** carrying what does exist (`topics`, `sections`) and a
-hint — never an exception and never a silence.
+## Desktop API and UI
 
-**Nothing registers a Hermes skill.** `ctx.register_skill` is not called: a
-plugin skill never enters `<available_skills>`, so it would need the prompt
-section to be found anyway — and then there would be two doors and two ways for
-the prose to drift. `tests/test_plugin_vendor.py` asserts the package contains no
-`register_skill` call, and `tests/test_plugin_guide.py` pins the door.
+The desktop client reads a single `/api/plugins/riel/run` resource with the
+confined Markdown and structured state it needs. The worktree URL parameter is
+The worktree parameter is not arbitrary filesystem authority: the target remains
+exactly `.riel/run.md` without symlink escapes. Responses are bounded and carry
+explicit missing/error states. Synchronous routes let FastAPI use its threadpool
+instead of blocking the event loop. The chip does not reimplement validation.
 
-The files keep their identity: the repo's `guide/<topic>.md` and the package's
-copy are the same bytes, and the H1 opens with the topic (`# ledger — …`) — the
-file name, the frontmatter `topic:` and the title agree.
-A citation in prose uses the call (`riel_guide(topic="ledger")`); a mermaid
-label uses the bare topic (`ledger`), because a graph label is not a place for a
-tool signature.
+## Installation
 
-## The `riel` prompt section
+Install a commit using the Hermes plugin manager. The package tree is the source,
+not a copyable intermediate tree. Uncommitted changes do not travel through the
+commit installer. Desktop and gateway loading follow their next-session/reload
+rules after updating Riel.
 
-`ctx.register_system_prompt_section("riel", section.render, position="after_memory",
-max_chars=3000)` — registered always, rendered once per session and frozen by
-Hermes. It answers the one question no tool can: *that the prose exists at all*.
-The tools live in the model's catalog; the topics do not.
-
-| Part | Content | Budget |
-|---|---|---|
-| head | what Riel is + that the prose is read through `riel_guide` | ≤ 220 |
-| index | ONE line: the topics that exist right now + the two call shapes | ~240 |
-| state | the worktree's ledger: goal · phase · next · claims/verified/open | only if it fits whole |
-| door | the seven tools by name, the seam's three modes included; no command line, no `PATH` | ~250 |
-| note | the operator's `harness_note`, appended last, exactly as written | ≤ 400 |
-
-Cut rules, all silent-failure-proof: the topic list comes from `guide/*.md` at
-render time, so the index cannot drift from the prose and there is no "… N more"
-declaration to get wrong; the state line joins only when it fits WHOLE; the note
-yields before the door does; and if not even head + index + door fit, the
-section renders `""` — Hermes discards empty sections, and empty beats a lie.
-With `context` off, the section is empty.
-
-The state line runs the engine's `status` with a 3s cap. A slow or missing
-engine is silence, never an error inside the prompt.
-
-`harness_note` is where adaptation lives (one line per profile), never a
-per-model table: the structure carries the rest (one action per line, capped
-descriptions, tools named in English).
-
-## The switches
-
-Three groups, all in `plugins.entries.riel.settings.*`, all read **per call**
-(the gate on every turn, the section once per session, the chip whenever it
-asks) and all fail-open — an unreadable config means ON:
-
-| Group | Off means | Enforced by |
-|---|---|---|
-| `gate` | `pre_verify` stands down | the hook reads it per turn |
-| `tools` | the seven tools leave the model's surface **and** refuse to run | a non-cached `check_fn` hides them; the handler guard refuses before the engine |
-| `context` | the prompt section renders `""` | the render reads it per session |
-
-**Semantics the UI must state:** a switch written now is obeyed by the NEXT
-session — a running session keeps the prompt and the tool list it started with.
-The handler guard is the only immediate half, and it is a refusal. The chip, the
-⌘K commands and `/riel status` say exactly that; nothing claims the running turn
-changed.
-
-Writes go through Hermes' own writer (`hermes_cli.plugins_state.save_plugin_setting`),
-never a hand-edited `config.yaml`, so the cross-process lock and the
-managed-install refusals apply.
-
-## The interface: tools, never a command line
-
-The engine (`engine/run.py`, one stdlib file) does the mechanical work and is the
-sole writer of the formats. It is **implementation**: no tool takes argv, no flag
-travels as data, and nothing in the package is meant to be typed into a shell.
-The seven tools are the surface — the seam appears three times because it carries
-three modes, not because it is three tools:
-
-| Tool | Verb behind it |
-|---|---|
-| `riel_guide` | reads the package's prose (no engine call) |
-| `riel_note` | write/update the ledger |
-| `riel_seam` (+ `anchors`) | re-read the ledger, and each claim beside its support |
-| `riel_seam(mode="resume")` | post-gap restore order (the same tool) |
-| `riel_todo` | the plan mirror |
-| `riel_seam(mode="json")` | the ledger's facts (the same tool) |
-| `riel_plan` (new/validate/digest/slice/fetch) | the contract, the shaping (Spec 7), the remote fetch — one door; a successful contract new/validate carries the context keywords |
-| `riel_clean` (ledger/all/purge) | archive `.riel/` state |
-| `riel_check` | dense markers + graph digest on one file (+ `mermaid=true`: the parser check) |
-
-Every tool returns one envelope — `{tool, worktree, exit_code, passed, stdout,
-stderr}` plus its own keys (`verb` when the tool takes one) — so a caller, a test
-or the chip can read the result the same way. `riel_guide` puts the prose in
-`stdout` (and `content`) and needs no worktree state: it reads the package, not
-the task. `tool` is **provenance** (which tool answered), not an interface — there
-is no command-shaped field anywhere in the envelope.
-
-## What the package is not
-
-- It is not `.riel/`. The ledger, the contract and the shaping are the task's
-  local state, in the worktree, gitignored — the package never carries them.
-- It is not a service. Nothing listens; the chip's backend runs inside the
-  gateway and reads only `<worktree>/.riel/*`.
-- It registers **no skills**: the prose reaches the model through `riel_guide`
-  and the prompt section, and through nothing else.
-- It is not the whole framework without Hermes: a checkout with no plugin has
-  the prose and the engine but no tool surface, and the prose says so.
-
-## Install and update
-
-A copy of a commit with provenance, never a symlink:
-
-```bash
-hermes plugins install "file:///path/to/riel#hermes_plugin/riel" --enable   # local checkout
-hermes plugins install "git@github.com:alvarolizama/riel.git#hermes_plugin/riel" --enable
-hermes plugins update riel                                                  # after new commits
-```
-
-Commit first: the installer clones a commit, so anything uncommitted does not
-travel. The desktop half is opt-in in the app (Capabilities → Plugins → riel).
-
-## Cross-references
-
-- The ledger and the contract the tools write: `spec-ledger-format.md` (Spec 1),
-  `spec-contract-format.md` (Spec 2)
-- The shaping: `spec-shaping-format.md` (Spec 7)
-- The plan mirror and the prompt section's state line: `spec-todo-hermes.md` (Spec 6)
-- The prose itself: `guide/*.md`, read through `riel_guide`
+Verify with the real suite and Mermaid checks (`make test`, `make lint`, `make
+validate`) before publishing the installable commit.

@@ -1,177 +1,139 @@
-"""Normalize a worktree's Riel ledger into the small summary the statusbar chip shows.
+"""The worktree's ACTIVE RUN for the desktop chip — one safe, bounded read.
 
 Stdlib only, and importable without FastAPI so the repo suite can test it
-directly. It shells out to the **bundled engine's** `status` — the ledger's own
-facts as JSON — instead of re-parsing `.riel/ledger.md` here, so the ledger
-format keeps exactly one owner (the engine). The plan the session todo mirrors
-(phases and their steps) is `riel_todo`'s business, not the chip's.
+directly. It answers ONE shape — `{present, worktree, markdown, status}` —
+where `markdown` is `.riel/run.md` verbatim (capped) for the chip's click
+dialog and `status` is the engine's own `run status` JSON object (the state
+the gate folds). The engine is reached the SAFE way — in-process, through the
+tools' loader (explicit worktree, explicit sinks) — never a subprocess, and
+never a raw path: the worktree is symlink-resolved and the run file must land
+inside it after resolution.
 
-Never raises: the caller is an HTTP route and the panel must degrade to
-"no ledger" instead of a 500.
+Never raises: the caller is an HTTP route and the chip must degrade to
+"no run" instead of a 500.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import subprocess
-import sys
 import time
 from pathlib import Path
+
+try:  # a package import when the host loaded us as one …
+    from .. import tools
+except ImportError:  # … a by-path load when it did not (repo suite, dashboard)
+    import importlib.util as _ilu
+
+    _spec = _ilu.spec_from_file_location(
+        "riel_dashboard_load", str(Path(__file__).resolve().parent.parent / "_load.py"))
+    if _spec is None or _spec.loader is None:  # pragma: no cover - defensive
+        raise RuntimeError("cannot load _load.py beside the dashboard")
+    _load = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_load)
+    tools = _load.sibling("riel_plugin_tools", "tools.py")
 
 PLUGIN_DIR = Path(__file__).resolve().parent.parent
 ENGINE = PLUGIN_DIR / "engine" / "run.py"
 TIMEOUT_SECS = 15
-
-_LEDGER_SUFFIX = (".riel", "ledger.md")
-_CONTRACT_SUFFIX = (".riel", "contract.md")
-# A contract is working memory for the task in flight, not a book — if it ever
+# A run is working memory for the task in flight, not a book — if it ever
 # grows past this, the dialog still opens, it just stops at the cap.
-MAX_CONTRACT_CHARS = 262_144
+MAX_RUN_CHARS = 262_144
+_RUN_PARTS = (".riel", "run.md")
 
 
 def _blank(worktree: str) -> dict:
-    return {
-        "present": False,
-        "worktree": worktree,
-        "goal": "",
-        "next": "",
-        "phase": "",
-        "claims": 0,
-        "open": 0,
-        "verified": 0,
-        "updated": None,
-        "stale_secs": None,
-    }
+    return {"present": False, "worktree": worktree, "markdown": "", "chars": 0,
+            "status": None, "updated": None, "stale_secs": None}
 
 
-def _strip(content: str, prefix: str) -> str:
-    text = str(content or "")
-    return text[len(prefix):].strip() if text.startswith(prefix) else text.strip()
-
-
-def summarize(items: list) -> dict:
-    """Fold `seam --mode json` items into the chip's counters, headlines AND detail.
-
-    The detail lists carry each item's content (claims with their verify-with,
-    verified checkpoints with their evidence, open questions) so the popover can
-    show everything the ledger has — the counters alone are the bar's business.
-    """
-    summary = {
-        "goal": "", "next": "", "phase": "",
-        "claims": 0, "open": 0, "verified": 0,
-        "claims_detail": [], "verified_detail": [], "open_detail": [],
-    }
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        item_id = str(item.get("id") or "")
-        content = str(item.get("content") or "")
-        if item_id == "goal":
-            summary["goal"] = _strip(content, "GOAL: ")
-        elif item_id == "next":
-            summary["next"] = _strip(content, "NEXT: ")
-        elif item_id == "phase":
-            summary["phase"] = _strip(content, "PHASE: ")
-        elif item_id.startswith("open-"):
-            summary["open"] += 1
-            summary["open_detail"].append(_strip(content, "OPEN "))
-        elif item_id.startswith("claim-"):
-            summary["claims"] += 1
-            summary["claims_detail"].append(_strip(content, "CLAIM: "))
-        elif item_id.startswith("done-"):
-            summary["verified"] += 1
-            summary["verified_detail"].append(_strip(content, "DONE "))
-    return summary
-
-
-def read_status(worktree: str, engine: Path = ENGINE, timeout: int = TIMEOUT_SECS) -> dict:
-    """Ledger summary for *worktree*, or a `present: False` report. Never raises."""
+def _resolve(worktree: str) -> tuple:
+    """(root, error) — the worktree symlink-resolved, or the reason it is junk."""
     raw = str(worktree or "").strip()
     if not raw:
         # An empty value must NOT fall back to the gateway's cwd: that would
-        # silently report some unrelated directory's ledger.
-        status = _blank("")
-        status["error"] = "worktree is required"
-        return status
-    root = os.path.abspath(os.path.expanduser(raw))
-    status = _blank(root)
+        # silently report some unrelated directory's run.
+        return "", "worktree is required"
+    try:
+        root = os.path.realpath(os.path.abspath(os.path.expanduser(raw)))
+    except (OSError, ValueError) as exc:
+        return "", f"worktree is unusable: {exc}"
     if not os.path.isdir(root):
-        status["error"] = "worktree is not a directory"
-        return status
+        return root, "worktree is not a directory"
+    return root, ""
 
-    ledger = Path(root).joinpath(*_LEDGER_SUFFIX)
-    if not ledger.is_file():
-        return status
+
+def _run_path(root: str) -> tuple:
+    """(path, error) — the run file, refusing to escape the worktree via symlinks."""
+    candidate = Path(root).joinpath(*_RUN_PARTS)
+    try:
+        if candidate.is_symlink() or candidate.parent.is_symlink():
+            return None, "the run path contains a symlink"
+        resolved = Path(os.path.realpath(candidate))
+    except (OSError, ValueError) as exc:
+        return None, f"run path is unusable: {exc}"
+    if not str(resolved).startswith(str(root) + os.sep):
+        return None, "the run path escapes the worktree (symlink)"
+    if not resolved.is_file():
+        return None, ""
+    return resolved, ""
+
+
+def _engine_status(root: str) -> dict:
+    """The engine's `run status` object, `{}` with `error` when it fails."""
+    try:
+        payload = json.loads(tools.riel_run({"verb": "status", "worktree": root}))
+    except Exception as exc:
+        return {"error": f"the engine's status call failed: {exc}"}
+    if payload.get("error"):
+        return {"error": payload["error"]}
+    if payload.get("exit_code") != 0:
+        return {"error": (payload.get("stderr") or "").strip() or "the engine's status call failed"}
+    try:
+        state = json.loads(payload.get("stdout") or "{}")
+    except ValueError:
+        return {"error": "the engine's status call did not return JSON"}
+    return state if isinstance(state, dict) else {"error": "the engine's status call did not return an object"}
+
+
+def read_run(worktree: str, timeout: int = TIMEOUT_SECS) -> dict:
+    """The worktree's run, verbatim + the engine's status — or `present: False`.
+
+    `timeout` bounds the engine call (the tools layer enforces it); the read
+    itself is bounded by `MAX_RUN_CHARS`. A worktree without a run is a
+    normal answer, not an error.
+    """
+    root, error = _resolve(worktree)
+    report = _blank(root)
+    if error:
+        report["error"] = error
+        if not root:
+            report["worktree"] = ""
+        return report
+
+    path, error = _run_path(root)
+    if error:
+        report["error"] = error
+        return report
+    if path is None:
+        return report  # no .riel/run.md here: the normal absent case
 
     try:
-        status["updated"] = int(ledger.stat().st_mtime)
+        report["updated"] = int(path.stat().st_mtime)
+        report["stale_secs"] = max(0, int(time.time()) - report["updated"])
     except OSError:
         pass
-    if status["updated"] is not None:
-        status["stale_secs"] = max(0, int(time.time()) - status["updated"])
-    status["present"] = True
-
-    if not engine.exists():
-        status["error"] = "bundled engine is missing (reinstall: hermes plugins update riel)"
-        return status
     try:
-        proc = subprocess.run(
-            [sys.executable, str(engine), "--worktree", root, "status"],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-    except subprocess.TimeoutExpired:
-        status["error"] = f"the engine timed out after {timeout}s"
-        return status
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        with os.fdopen(fd, encoding="utf-8", errors="replace") as handle:
+            text = handle.read(MAX_RUN_CHARS + 1)
     except OSError as exc:
-        status["error"] = f"the engine could not be executed: {exc}"
-        return status
-    if proc.returncode != 0:
-        # A ledger with no goal/next/verified yet: present, just empty.
-        status["error"] = (proc.stderr or "").strip() or "the engine's status call failed"
-        return status
-    try:
-        items = json.loads(proc.stdout)
-    except ValueError:
-        status["error"] = "the engine's status call did not return JSON"
-        return status
-    if isinstance(items, list):
-        status.update(summarize(items))
-    return status
-
-
-def read_contract(worktree: str) -> dict:
-    """The worktree's contract.md, verbatim, for the statusbar dialog. Never raises.
-
-    Same boundary discipline as `read_status`: the only path this ever reads is
-    `<worktree>/.riel/contract.md`, and `present` is only true when that file
-    exists — a missing contract is reported, never invented.
-    """
-    raw = str(worktree or "").strip()
-    if not raw:
-        status = {"present": False, "worktree": "", "markdown": "", "chars": 0}
-        status["error"] = "worktree is required"
-        return status
-    root = os.path.abspath(os.path.expanduser(raw))
-    status = {"present": False, "worktree": root, "markdown": "", "chars": 0}
-    if not os.path.isdir(root):
-        status["error"] = "worktree is not a directory"
-        return status
-    path = Path(root).joinpath(*_CONTRACT_SUFFIX)
-    if not path.is_file():
-        status["error"] = "no .riel/contract.md in this worktree (write the contract first)"
-        return status
-    try:
-        text = path.read_text(encoding="utf-8", errors="replace")
-    except OSError as exc:
-        status["error"] = f"contract unreadable: {exc}"
-        return status
-    if len(text) > MAX_CONTRACT_CHARS:
-        text = text[:MAX_CONTRACT_CHARS] + "\n\n<!-- truncated at 256 KiB -->"
-    status["present"] = True
-    status["markdown"] = text
-    status["chars"] = len(text)
-    return status
+        report["error"] = f"run unreadable: {exc}"
+        return report
+    if len(text) > MAX_RUN_CHARS:
+        text = text[:MAX_RUN_CHARS] + "\n\n<!-- truncated at 256 KiB -->"
+    report["present"] = True
+    report["markdown"] = text
+    report["chars"] = len(text)
+    report["status"] = _engine_status(root)
+    return report

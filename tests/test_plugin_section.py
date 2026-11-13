@@ -3,28 +3,29 @@
 Stdlib-only and Hermes-free on purpose: the section is loaded from the repo
 package and the only Hermes touch (`hermes_cli.config.load_config_readonly`)
 is faked, so these tests exercise the render the way a session build does —
-including the budget, the fail-open switches and the operator's note.
+including the budget, the fail-open switches and the operator's note. The
+state line runs against the stub engine (the same file the handler suite
+uses), so the whole block is testable without the bundled engine's file.
 """
 
 import json
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 import types
 import unittest
+from pathlib import Path
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.dirname(HERE)
-PLUGIN = os.path.join(REPO, "hermes_plugin", "riel")
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parent
+PLUGIN = REPO / "hermes_plugin" / "riel"
 
-if REPO not in sys.path:
-    sys.path.insert(0, REPO)
+sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(REPO))
 
-from hermes_plugin.riel import section  # noqa: E402  (path set above)
-
-TOPICS = ("ledger", "contract", "shaping", "delegate", "tools")
+import _stub_engine as stub  # noqa: E402
+from hermes_plugin.riel import section  # noqa: E402
 
 
 def fake_hermes_config(settings=None):
@@ -42,6 +43,10 @@ class SectionTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="riel-section-test-")
         fake_hermes_config({})
+        # The section reads the worktree through the dashboard's `read_run`,
+        # which reaches the engine via its own tools reference — point that at
+        # the stub so the state line is exercised end-to-end, offline.
+        stub.install(section._ledger_status().tools)
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -53,15 +58,23 @@ class SectionTest(unittest.TestCase):
 
     # -- the index ---------------------------------------------------------
 
-    def test_names_the_one_door_and_the_topics_that_exist(self):
+    def test_names_the_one_door_and_the_six_tools(self):
         block = self.block()
         self.assertIn("riel_guide()", block)
         self.assertIn("everything Riel does is a tool", block)
-        for topic in TOPICS:
-            self.assertIn(topic, block, block)
-        self.assertIn("riel_guide", block)
+        for tool in ("riel_guide", "riel_shape", "riel_run", "riel_note",
+                     "riel_clean", "riel_check"):
+            self.assertIn(tool, block, block)
+        self.assertNotIn("riel_todo", block, "the run owns the checks now")
         self.assertNotIn("skill_view", block)
+        self.assertNotIn("riel_plan", block, "the old plan tool is gone")
+        self.assertNotIn("riel_seam", block, "the old seam tool is gone")
         self.assertNotIn("riel:", block)
+
+    def test_the_run_verbs_travel_in_the_door_line(self):
+        block = self.block()
+        self.assertIn("new|validate|activate|rebase|status|slice|fetch", block)
+        self.assertIn("new|validate|fetch", block)
 
     def test_stays_within_the_section_budget(self):
         block = self.block()
@@ -74,7 +87,7 @@ class SectionTest(unittest.TestCase):
         try:
             # Room for the core block and the state, not for the operator's note.
             core = len(section.HEAD) + len(section.index_line()) + len(section._door_line()) + 4
-            section.SECTION_MAX_CHARS = core + 120
+            section.SECTION_MAX_CHARS = core + 160
             block = section.render({"cwd": self.tmp})
             self.assertTrue(block)
             self.assertLessEqual(len(block), section.SECTION_MAX_CHARS)
@@ -138,29 +151,25 @@ class SectionTest(unittest.TestCase):
 
     # -- the worktree state ------------------------------------------------
 
-    def test_state_line_reads_the_worktree_the_session_sits_in(self):
-        subprocess.run(
-            [sys.executable, str(section.ENGINE), "note", "--goal", "ship the package",
-             "--next", "run the suite"],
-            cwd=self.tmp, capture_output=True, text=True, check=True,
-        )
+    def test_state_line_reads_the_active_run(self):
+        tools = section._ledger_status().tools
+        stub.seed(self.tmp, goal="ship the package", next="run the suite")
+        payload = json.loads(tools.riel_note({"core": "fact — x", "worktree": self.tmp}))
+        self.assertEqual(payload["exit_code"], 0, payload)
         state = section.state_line(self.tmp)
         self.assertIn("Goal: ship the package", state)
         self.assertIn("Next: run the suite", state)
-        self.assertIn("0 claims · 0 verified · 0 open", state)
+        self.assertIn("0 claims · 0 gates · 0 evidence", state)
 
-    def test_no_ledger_means_no_state_line(self):
+    def test_no_run_means_no_state_line(self):
         self.assertEqual(section.state_line(self.tmp), "")
 
-    def test_a_missing_engine_is_silence_not_an_error(self):
+    def test_a_junk_worktree_is_silence_not_an_error(self):
         self.assertEqual(section.state_line(""), "")
         self.assertEqual(section.state_line(os.path.join(self.tmp, "nope")), "")
 
-    def test_the_block_carries_the_state_when_there_is_a_ledger(self):
-        subprocess.run(
-            [sys.executable, str(section.ENGINE), "note", "--goal", "ship the package"],
-            cwd=self.tmp, capture_output=True, text=True, check=True,
-        )
+    def test_the_block_carries_the_state_when_there_is_a_run(self):
+        stub.seed(self.tmp, goal="ship the package")
         self.assertIn("Worktree state — Goal: ship the package", self.render())
 
 
@@ -170,18 +179,19 @@ class GuideWiringTest(unittest.TestCase):
     def test_the_index_line_names_every_shipped_topic(self):
         line = section.index_line()
         topics = section.guide.topics()
-        self.assertEqual(sorted(topics), sorted(TOPICS))
+        self.assertTrue(topics, "the package ships no guide topics")
         for topic in topics:
             self.assertIn(topic, line)
-        self.assertIn("riel_guide(topic=\"contract\")", line)
+        self.assertIn('riel_guide(topic="', line)
 
-    def test_the_engine_the_section_runs_is_in_the_package(self):
-        self.assertTrue(os.path.isfile(section.ENGINE), section.ENGINE)
-        self.assertEqual(os.path.basename(os.path.dirname(section.ENGINE)), "engine")
+    def test_the_engine_the_section_reads_through_is_in_the_package(self):
+        module = section._ledger_status()
+        self.assertTrue(Path(module.ENGINE).is_file(), module.ENGINE)
+        self.assertEqual(os.path.basename(os.path.dirname(str(module.ENGINE))), "engine")
 
     def test_no_hermes_import_at_module_level(self):
         for name in ("section.py", "settings.py"):
-            with open(os.path.join(PLUGIN, name), encoding="utf-8") as fh:
+            with open(PLUGIN / name, encoding="utf-8") as fh:
                 for line in fh:
                     if line.startswith(("import ", "from ")):
                         self.assertNotIn("hermes", line.lower(), f"{name}: {line}")

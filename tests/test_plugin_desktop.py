@@ -4,19 +4,15 @@ Three layers, each with the cheapest honest check available:
 
   * package wiring — manifest/paths, and the two rules the SDK enforces on a
     disk plugin (allowed import specifiers, no hardcoded colors);
-  * `ledger_status.read_status` — stdlib-only, driven by the **bundled**
-    engine against a real temp worktree;
+  * `ledger_status.read_run` — stdlib-only, driven by the STUB engine
+    (`_stub_engine.py`, the 2.0 run contract) against a real temp worktree:
+    one bounded, symlink-safe read answering `{present, worktree, markdown,
+    status}`;
   * the chip itself — the plugin file is loaded by a real Node process against
-    stubbed `@hermes/plugin-sdk` / `react` modules, `register()` is called, the
-    gateway events are emitted and the component is rendered, so a syntax
+    stubbed `@hermes/plugin-sdk` / `react` modules, `register()` is called,
+    the gateway events are emitted and the component is rendered, so a syntax
     error, a bad import, a broken label or a missing refetch fails here instead
     of silently in the app.
-
-The stub is a tiny stand-in for React's state/effect cells: `useState` keys its
-cells by call order (0 = ledger status, 1 = last tool, 2 = refetch revision) and
-`useEffect` re-runs a cell after its cleanup. Re-rendering is explicit —
-the harness resets the call indexes and invokes the component again — which is
-enough to assert what a render produces without pulling in React itself.
 
 The FastAPI route test needs `fastapi` (present in a Hermes venv, absent from a
 plain interpreter) and skips without it; `node` is skipped when not installed.
@@ -41,7 +37,10 @@ REPO = HERE.parent
 PLUGIN = REPO / "hermes_plugin" / "riel"
 DASHBOARD = PLUGIN / "dashboard"
 DESKTOP = PLUGIN / "desktop"
-BUNDLED_ENGINE = PLUGIN / "engine" / "run.py"
+
+sys.path.insert(0, str(HERE))
+
+import _stub_engine as stub  # noqa: E402
 
 CLIENT_CWD = "/tmp/riel-statusbar-test-worktree"
 ALLOWED_SPECIFIERS = {"@hermes/plugin-sdk", "react", "react/jsx-runtime"}
@@ -75,9 +74,9 @@ function map() {
   return (globalThis.__RIEL_LISTENERS__ ||= new Map())
 }
 
-// Dialog/Streamdown/Popover stubs: they only need to EXIST for the import to
-// resolve. `asChild` triggers (PopoverTrigger) must PASS THROUGH their child
-// so the walk still finds the real button — Radix does the same.
+// Dialog/Streamdown stubs: they only need to EXIST for the import to
+// resolve. `asChild` triggers must PASS THROUGH their child so the walk
+// still finds the real button.
 const makeStub = (tag) => (props) => {
   if (props && props.asChild && props.children) return props.children
   return { tag, props: props || {} }
@@ -119,8 +118,6 @@ export const Popover = makeStub('popover')
 export const PopoverContent = makeStub('popover-content')
 export const PopoverTrigger = makeStub('popover-trigger')
 export const ScrollArea = makeStub('scroll-area')
-// Interactive stubs: the plugin imports them, so the stub must EXPORT them or
-// the ESM link step fails before any assertion runs.
 export const Switch = makeStub('switch')
 export const Input = makeStub('input')
 export const Button = makeStub('button')
@@ -156,13 +153,11 @@ export const jsxs = jsx
 HARNESS = """\
 import plugin from './plugin.mjs'
 
-const ledger = JSON.parse(process.env.RIEL_TEST_LEDGER || 'null')
-const tool = JSON.parse(process.env.RIEL_TEST_TOOL || 'null')
 let restCalls = 0
 const contributions = []
-const contractCalls = []
-// Path-aware rest stub: /contract answers only when the harness was told a
-// contract exists (RIEL_TEST_CONTRACT=1); /ledger always answers the fixture.
+const runCalls = []
+// Path-aware rest stub: /run answers only when the harness was told a run
+// exists (RIEL_TEST_RUN=1).
 const settingsState = { ok: true, gate: true, tools: true, context: true, harness_note: '' }
 const settingsCalls = []
 const restStub = async (path, options) => {
@@ -174,7 +169,6 @@ const restStub = async (path, options) => {
     }
     return { ...settingsState }
   }
-  if (path.startsWith('/ledger')) globalThis.__RIEL_LAST_LEDGER_URL__ = path
   if (path.startsWith('/session_cwd')) {
     // Resolve the focused session's stored cwd (the DB fallback)
     const m = /session_id=([^&]+)/.exec(path)
@@ -183,14 +177,14 @@ const restStub = async (path, options) => {
     const cwd = known[sid]
     return cwd ? { found: true, cwd } : { found: false, error: 'session has no stored cwd' }
   }
-  if (path.startsWith('/contract')) {
-    contractCalls.push(path)
-    globalThis.__RIEL_LAST_CONTRACT_URL__ = path
-    return process.env.RIEL_TEST_CONTRACT === '1'
-      ? { present: true, markdown: '# Task: x' }
-      : { present: false }
+  if (path.startsWith('/run')) {
+    runCalls.push(path)
+    globalThis.__RIEL_LAST_RUN_URL__ = path
+    return process.env.RIEL_TEST_RUN === '1'
+      ? { present: true, worktree: '/wt', markdown: '# Run: x', status: { active: true } }
+      : { present: false, worktree: '/wt', markdown: '', status: null }
   }
-  return ledger
+  return { present: false }
 }
 
 const ctx = {
@@ -214,9 +208,9 @@ const render = () => {
   globalThis.__RIEL_EFFECT_INDEX__ = 0
   const element = chip.render()
   const tree = instantiate(element)
-  // `button` is null when the chip renders nothing (no contract) — the label
+  // `button` is null when the chip renders nothing (no run) — the label
   // assertions then read null instead of the empty tree's text.
-  return { tree, button: findLedgerButton(tree) }
+  return { tree, button: findChipButton(tree) }
 }
 
 // Minimal React: function components arrive UNINVOKED — call them (depth-capped)
@@ -236,27 +230,26 @@ const instantiate = (node, depth = 0) => {
   return node
 }
 
-// The chips render as nested spans. Walk for the FIRST button that has an
-// onClick handler OR is the ledger trigger (the Popover wraps it now — Radix
-// passes asChild through, but the stub doesn't, so we accept either shape).
-const findLedgerButton = (node) => {
+const findChipButton = (node) => {
   if (!node || typeof node !== 'object') return null
   if (node.type === 'button') return node
   const children = node.props && node.props.children
   if (Array.isArray(children)) {
     for (const child of children) {
-      const found = findLedgerButton(child)
+      const found = findChipButton(child)
       if (found) return found
     }
   } else if (children && typeof children === 'object') {
-    return findLedgerButton(children)
+    return findChipButton(children)
   }
   return null
 }
 
 const first = render()
-await tick()   // let the ledger effect's first fetch land before asserting
+await tick()   // let the run effect's first fetch land before asserting
 const firstAfterFetch = render()
+
+const tool = process.env.RIEL_TEST_TOOL && JSON.parse(process.env.RIEL_TEST_TOOL)
 if (tool) emit('tool.start', { payload: { name: tool, tool_id: 't1' }, session_id: 's1' })
 await tick()
 const withActivity = render()
@@ -264,7 +257,7 @@ const withActivity = render()
 // session.info events: the focused session's own cwd report, then optionally a
 // FOREIGN session reporting a different one — the chip must keep the focused's.
 // Each report is followed by a re-render (the stub's setState does not schedule
-// one) plus a tool.complete to bump the ledger-refetch revision.
+// one) plus a tool.complete to bump the run-refetch revision.
 if (process.env.RIEL_TEST_INFO_CWD) {
   const sid = process.env.RIEL_TEST_INFO_SESSION || 's1'
   emit('session.info', { payload: { cwd: process.env.RIEL_TEST_INFO_CWD }, session_id: sid })
@@ -295,7 +288,6 @@ if (process.env.RIEL_TEST_SWITCH === '1') {
   globalThis.__RIEL_FOCUS__ = 's2'
   const current = globalThis.__RIEL_INDEX__   // preserve state cells across renders
   const cleanups = globalThis.__RIEL_CLEANUPS__ || []
-  // run the focus-change cleanups (the clear effect), then re-render
   for (const cleanup of cleanups) if (typeof cleanup === 'function') cleanup()
   globalThis.__RIEL_CLEANUPS__ = []
   globalThis.__RIEL_INDEX__ = current
@@ -304,10 +296,7 @@ if (process.env.RIEL_TEST_SWITCH === '1') {
 }
 
 const current = switched || afterComplete || withActivity
-// The chip button only exists when a contract is present; without one the bar
-// renders nothing and every label assertion reads `null`.
 
-// The label is now nested spans — flatten to text for the assertions.
 const textOf = (node) => {
   if (node === null || node === undefined || typeof node === 'boolean') return ''
   if (typeof node === 'string' || typeof node === 'number') return String(node)
@@ -315,25 +304,9 @@ const textOf = (node) => {
   if (node && typeof node === 'object' && node.props) return textOf(node.props.children)
   return ''
 }
-// Is there a Riel chip in the bar, and what does its button say?
-const findChipButton = (node) => {
-  if (!node || typeof node !== 'object') return null
-  if (node.type === 'button') return node
-  const children = node.props && node.props.children
-  if (Array.isArray(children)) {
-    for (const child of children) {
-      const found = findChipButton(child)
-      if (found) return found
-    }
-  } else if (children && typeof children === 'object') {
-    return findChipButton(children)
-  }
-  return null
-}
 const chipButton = findChipButton(current.tree)
-const labelOf = (r) => (r && r.button ? textOf(r.button.props.children).replace(/\s+/g, ' ').trim() : null)
-// Is there a Riel chip in the bar? (label is 'Riel', busy adds ● + tool name)
-const contractVisible = (() => {
+const labelOf = (r) => (r && r.button ? textOf(r.button.props.children).replace(/\\s+/g, ' ').trim() : null)
+const runVisible = (() => {
   const walk = (node) => {
     if (!node || typeof node !== 'object' || !node.props) return false
     if (node.type === 'button' && textOf(node).startsWith('Riel')) return true
@@ -352,8 +325,8 @@ console.log(JSON.stringify({
   defaultEnabled: plugin.defaultEnabled,
   order: chip.order,
   session_cwd: (() => {
-    // The cwd the chip resolved to, captured from the last /contract probe
-    const m = /worktree=([^&]+)/.exec(globalThis.__RIEL_LAST_CONTRACT_URL__ || '')
+    // The cwd the chip resolved to, captured from the last /run probe
+    const m = /worktree=([^&]+)/.exec(globalThis.__RIEL_LAST_RUN_URL__ || '')
     return m ? decodeURIComponent(m[1]) : null
   })(),
   first_label: labelOf(firstAfterFetch),
@@ -373,23 +346,20 @@ console.log(JSON.stringify({
     }
     return walk(withActivity.button)
   })(),
-  contract_visible: contractVisible,
+  run_visible: runVisible,
   streamdown_mermaid: (() => {
-    // The stub records Streamdown's props whenever it renders. The dialog's
-    // body (with the contract markdown) renders it via instantiate above when
-    // a contract exists — if the dialog passed the option, it is on record.
-    if (process.env.RIEL_TEST_CONTRACT !== '1') return null
+    if (process.env.RIEL_TEST_RUN !== '1') return null
     return Boolean(globalThis.__RIEL_STREAMDOWN_PROPS__ && 'mermaid' in globalThis.__RIEL_STREAMDOWN_PROPS__)
   })(),
   final_label: labelOf(current),
   final_title: chipButton ? chipButton.props.title : null,
   rest_paths: (() => {
     const seen = new Set()
-    for (const c of contractCalls) seen.add(c.split('?')[0])
+    for (const p of runCalls) seen.add(p.split('?')[0])
     for (const p of settingsCalls) seen.add(p.split('?')[0].replace('POST', ''))
-    return [...seen, ...(globalThis.__RIEL_LAST_LEDGER_URL__ ? ['/ledger'] : [])]
+    return [...seen]
   })(),
-  contract_calls: contractCalls.length,
+  run_calls: runCalls.length,
   rest_calls: restCalls,
   tapped: globalThis.__RIEL_TAPPED__ === true,
   notified: globalThis.__RIEL_NOTIFIED__ || null
@@ -461,13 +431,21 @@ class DesktopWiringTest(unittest.TestCase):
         for banned in ("#000", "#fff", "black", "white", "rgb(", "hsl("):
             self.assertNotIn(banned, source, f"hardcoded color {banned!r} — use theme vars")
 
+    def test_the_desktop_half_polls_run_not_ledger(self):
+        """The old /ledger and /contract routes are gone from the chip."""
+        source = (DESKTOP / "plugin.js").read_text(encoding="utf-8")
+        self.assertNotIn("'/ledger", source)
+        self.assertNotIn("'/contract", source)
+        self.assertIn("'/run?worktree=", source)
 
-class LedgerStatusTest(unittest.TestCase):
-    """`ledger_status` driven through the bundled engine."""
+
+class ReadRunTest(unittest.TestCase):
+    """`ledger_status.read_run` driven through the stub engine."""
 
     @classmethod
     def setUpClass(cls):
         cls.status = load_module("riel_ledger_status", DASHBOARD / "ledger_status.py")
+        stub.install(cls.status.tools)
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="riel-status-")
@@ -475,108 +453,56 @@ class LedgerStatusTest(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def _seed(self, *argv):
-        proc = subprocess.run(
-            [sys.executable, str(BUNDLED_ENGINE), *argv],
-            cwd=self.tmp,
-            capture_output=True,
-            text=True,
-        )
-        self.assertEqual(proc.returncode, 0, proc.stderr)
-        return proc
-
-    def test_absent_ledger_is_reported_not_invented(self):
-        status = self.status.read_status(self.tmp)
-        self.assertFalse(status["present"])
-        self.assertEqual(status["goal"], "")
-        self.assertNotIn("error", status)
+    def test_absent_run_is_reported_not_invented(self):
+        report = self.status.read_run(self.tmp)
+        self.assertFalse(report["present"])
+        self.assertEqual(report["markdown"], "")
+        self.assertIsNone(report["status"])
+        self.assertNotIn("error", report)
 
     def test_directory_that_does_not_exist_reports_an_error(self):
-        status = self.status.read_status(str(Path(self.tmp) / "nope"))
-        self.assertFalse(status["present"])
-        self.assertIn("not a directory", status["error"])
+        report = self.status.read_run(str(Path(self.tmp) / "nope"))
+        self.assertFalse(report["present"])
+        self.assertIn("not a directory", report["error"])
 
-    def test_reads_the_mirror_counters_and_headlines(self):
-        self._seed("note", "--goal", "ship the chip", "--next", "wire the statusbar")
-        self._seed("note", "--check", "ledger parses", "--by", "make test")
-        self._seed("note", "--open", "does it follow the focused tab?", "--settled-by", "manual check")
-        status = self.status.read_status(self.tmp)
-        self.assertTrue(status["present"])
+    def test_reads_the_verbatim_markdown_and_the_status_object(self):
+        stub.seed(self.tmp, goal="ship the chip", next="wire the statusbar",
+                  claims=["P1"], gates=["G1"])
+        payload = json.loads(self.status.tools.riel_note({
+            "gates": ["G1"], "command": "true", "covering": "all",
+            "claims": ["P1"], "worktree": self.tmp}))
+        self.assertEqual(payload["exit_code"], 0, payload)
+        report = self.status.read_run(self.tmp)
+        self.assertTrue(report["present"])
+        self.assertIn("# Run:", report["markdown"])
+        self.assertIn("```riel-state", report["markdown"])
+        self.assertEqual(report["chars"], len(report["markdown"]))
+        status = report["status"]
+        self.assertIsInstance(status, dict, "the engine status is ONE JSON object")
         self.assertEqual(status["goal"], "ship the chip")
-        self.assertEqual(status["next"], "wire the statusbar")
-        self.assertEqual(status["verified"], 1)
-        self.assertEqual(status["open"], 1)
-        self.assertIsInstance(status["updated"], int)
-        self.assertGreaterEqual(status["stale_secs"], 0)
+        self.assertTrue(status["gates"][0]["done"])
+        self.assertIsInstance(report["updated"], int)
+        self.assertGreaterEqual(report["stale_secs"], 0)
 
-    def test_chip_reads_status_not_the_plan(self):
-        """With a contract in the worktree the chip still gets the ledger facts."""
-        Path(self.tmp, ".riel").mkdir()
-        Path(self.tmp, ".riel", "contract.md").write_text(
-            "# Task: probe\n\n## Objective\nWe need x\n", encoding="utf-8")
-        self._seed("note", "--goal", "g", "--phase", "F1", "--next", "n")
-        self._seed("note", "--check", "ok", "--by", "make test")
-        status = self.status.read_status(self.tmp)
-        self.assertTrue(status["present"])
-        self.assertEqual(status["phase"], "F1")
-        self.assertEqual(status["next"], "n")
-        self.assertEqual(status["verified"], 1)
-
-    def test_detail_carries_the_full_content_of_every_item(self):
-        """The popover shows everything: claims with verify-with, ✓ with evidence, opens."""
-        self._seed("note", "--goal", "g", "--next", "n")
-        self._seed("note", "--claim", "P1: la cosa", "--verify-with", "make test")
-        self._seed("note", "--check", "el gate corrio", "--by", "make test, 3 passed")
-        self._seed("note", "--open", "sobrevive el cambio de sesion?", "--settled-by", "probe")
-        status = self.status.read_status(self.tmp)
-        self.assertEqual(len(status["claims_detail"]), 1)
-        self.assertIn("P1: la cosa", status["claims_detail"][0])
-        self.assertIn("make test", status["claims_detail"][0])          # verify-with viaja
-        self.assertEqual(len(status["verified_detail"]), 1)
-        self.assertIn("verified by: make test, 3 passed", status["verified_detail"][0])
-        self.assertEqual(len(status["open_detail"]), 1)
-        self.assertIn("sobrevive", status["open_detail"][0])
-
-    def test_read_contract_returns_verbatim_markdown(self):
-        Path(self.tmp, ".riel").mkdir()
-        Path(self.tmp, ".riel", "contract.md").write_text(
-            "# Task: probe\n\n## Objective\nWe need x\n\n```mermaid\nflowchart TD\n  A[\"B\"]\n```\n",
-            encoding="utf-8",
-        )
-        result = self.status.read_contract(self.tmp)
-        self.assertTrue(result["present"])
-        self.assertIn("# Task: probe", result["markdown"])
-        self.assertIn("```mermaid", result["markdown"])
-        self.assertEqual(result["chars"], len(result["markdown"]))
-
-    def test_read_contract_without_one_says_so(self):
-        result = self.status.read_contract(self.tmp)
-        self.assertFalse(result["present"])
-        self.assertIn("contract", result["error"])
-        self.assertEqual(result["markdown"], "")
-
-    def test_read_contract_junk_inputs_never_raise(self):
-        for value in ("", "   ", "/dev/null", "\x00"):
-            with self.subTest(value=value):
-                result = self.status.read_contract(value)
-                self.assertFalse(result["present"])
-                self.assertIsInstance(result, dict)
-
-    def test_ledger_without_goal_is_present_but_empty(self):
-        ledger = Path(self.tmp) / ".riel" / "ledger.md"
-        ledger.parent.mkdir(parents=True)
-        ledger.write_text("# Riel ledger\n", encoding="utf-8")
-        status = self.status.read_status(self.tmp)
-        self.assertTrue(status["present"])
-        self.assertEqual(status["verified"], 0)
-        self.assertIn("error", status)  # the engine declines to build a mirror
+    def test_a_worktree_is_symlink_resolved_before_reading(self):
+        """The read goes through the REAL worktree, never a raw symlink path."""
+        real = tempfile.mkdtemp(prefix="riel-real-")
+        self.addCleanup(shutil.rmtree, real, ignore_errors=True)
+        stub.seed(real, goal="via symlink")
+        link = Path(self.tmp) / "link"
+        link.symlink_to(real, target_is_directory=True)
+        report = self.status.read_run(str(link))
+        self.assertTrue(report["present"])
+        self.assertEqual(report["worktree"], os.path.realpath(real),
+                         "the report names the resolved worktree")
+        self.assertEqual(report["status"]["goal"], "via symlink")
 
     def test_never_raises_on_a_junk_worktree_argument(self):
         for value in ("", "   ", "/dev/null", "\x00"):
             with self.subTest(value=value):
-                status = self.status.read_status(value)
-                self.assertFalse(status["present"])
-                self.assertIsInstance(status, dict)
+                report = self.status.read_run(value)
+                self.assertFalse(report["present"])
+                self.assertIsInstance(report, dict)
 
 
 @unittest.skipUnless(_fastapi_available(), "fastapi is not installed in this interpreter")
@@ -586,11 +512,29 @@ class PluginApiRouteTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.api = load_module("riel_plugin_api", DASHBOARD / "plugin_api.py")
+        # The route module resolves its own dashboard half (and through it, its
+        # own tools reference) — the stub must be installed THERE, or the /run
+        # route would answer from the real engine while the test seeds the stub.
+        stub.install(cls.api._ledger_status.tools)
 
-    def test_router_exposes_both_routes(self):
+    def test_router_exposes_the_run_route_and_never_the_old_ones(self):
         paths = {getattr(route, "path", None) for route in self.api.router.routes}
-        self.assertIn("/ledger", paths)
+        self.assertIn("/run", paths)
         self.assertIn("/health", paths)
+        self.assertNotIn("/ledger", paths, "the old ledger route is gone")
+        self.assertNotIn("/contract", paths, "the old contract route is gone")
+
+    def test_all_task_routes_are_sync_defs(self):
+        """Sync defs run on FastAPI's threadpool — no blocker on the event loop."""
+        for route in self.api.router.routes:
+            endpoint = getattr(route, "endpoint", None)
+            if endpoint is None:
+                continue
+            import inspect
+            self.assertFalse(
+                inspect.iscoroutinefunction(endpoint),
+                f"{getattr(route, 'path', '?')} is async: a bounded engine call would block the loop",
+            )
 
     def _client(self):
         from fastapi import FastAPI
@@ -600,64 +544,41 @@ class PluginApiRouteTest(unittest.TestCase):
         app.include_router(self.api.router)
         return TestClient(app)
 
-    def test_ledger_route_returns_the_summary(self):
+    def test_run_route_returns_the_object(self):
         with tempfile.TemporaryDirectory(prefix="riel-route-") as tmp:
-            subprocess.run(
-                [sys.executable, str(BUNDLED_ENGINE), "note", "--goal", "route goal"],
-                cwd=tmp,
-                capture_output=True,
-                text=True,
-                check=True,
-            )
+            tools = load_module("riel_route_tools", PLUGIN / "tools.py")
+            stub.install(tools)
+            stub.seed(tmp, goal="route goal")
             client = self._client()
-            ok = client.get("/ledger", params={"worktree": tmp})
+            ok = client.get("/run", params={"worktree": tmp})
             self.assertEqual(ok.status_code, 200)
-            self.assertTrue(ok.json()["present"])
-            self.assertEqual(ok.json()["goal"], "route goal")
+            body = ok.json()
+            self.assertTrue(body["present"])
+            self.assertIn("# Run:", body["markdown"])
+            self.assertEqual(body["status"]["goal"], "route goal")
 
-            missing = client.get("/ledger", params={"worktree": ""})
+            missing = client.get("/run", params={"worktree": ""})
             self.assertEqual(missing.status_code, 200)
             self.assertFalse(missing.json()["present"])
 
-    def test_health_reports_the_bundled_engine(self):
+    def test_health_reports_the_bundled_engine_and_no_cwd(self):
         payload = self._client().get("/health").json()
         self.assertTrue(payload["ok"], payload)
         self.assertTrue(payload["engine"].endswith("run.py"))
-
-    def test_contract_route_returns_verbatim_markdown(self):
-        with tempfile.TemporaryDirectory(prefix="riel-route-") as tmp:
-            contract = Path(tmp) / ".riel" / "contract.md"
-            contract.parent.mkdir(parents=True)
-            contract.write_text("# Task: x\n\n```mermaid\nflowchart TD\n  A[\"B\"]\n```\n", encoding="utf-8")
-            client = self._client()
-            ok = client.get("/contract", params={"worktree": tmp})
-            self.assertEqual(ok.status_code, 200)
-            payload = ok.json()
-            self.assertTrue(payload["present"])
-            self.assertIn("# Task: x", payload["markdown"])
-            self.assertIn("```mermaid", payload["markdown"])
-            self.assertEqual(payload["chars"], len(payload["markdown"]))
-
-    def test_contract_route_reports_missing_not_invented(self):
-        with tempfile.TemporaryDirectory(prefix="riel-route-") as tmp:
-            payload = self._client().get("/contract", params={"worktree": tmp}).json()
-            self.assertFalse(payload["present"])
-            self.assertIn("contract", payload["error"])
-            self.assertEqual(payload["markdown"], "")
+        self.assertNotIn("cwd", payload, "/health must not leak the gateway's cwd")
 
 
 @unittest.skipUnless(_node_available(), "node is not installed")
 class ChipTest(unittest.TestCase):
     """The chip loaded and rendered by a real Node process, with a stubbed SDK."""
 
-    def run_chip(self, ledger=None, busy=False, tool=None, complete=False, extra_env=None):
+    def run_chip(self, busy=False, tool=None, complete=False, extra_env=None):
         with tempfile.TemporaryDirectory(prefix="riel-chip-") as tmp:
             root = Path(tmp)
             harness = _stub_environment(root)
             env = dict(
                 os.environ,
                 RIEL_TEST_CWD=CLIENT_CWD,
-                RIEL_TEST_LEDGER=json.dumps(ledger),
                 RIEL_TEST_TOOL=json.dumps(tool),
                 RIEL_TEST_BUSY="1" if busy else "0",
                 RIEL_TEST_COMPLETE="1" if complete else "0",
@@ -674,69 +595,62 @@ class ChipTest(unittest.TestCase):
             self.assertEqual(proc.returncode, 0, proc.stderr or proc.stdout)
             return json.loads(proc.stdout)
 
-    LEDGER = {"present": True, "goal": "ship the chip", "next": "wire the statusbar", "verified": 3, "open": 1}
-
     def test_registers_a_statusbar_chip(self):
-        result = self.run_chip(ledger=self.LEDGER)
+        result = self.run_chip()
         self.assertEqual(result["id"], "riel")
         self.assertEqual(result["areas"].count("statusBar.right"), 1, result["areas"])
         self.assertFalse(result["defaultEnabled"], "the desktop half ships opt-in")
 
     def test_registers_the_palette_switches(self):
         """⌘K carries the two switches — the bar no longer has room to show them."""
-        result = self.run_chip(ledger=self.LEDGER)
+        result = self.run_chip()
         self.assertEqual(result["areas"].count("palette"), 2, result["areas"])
         self.assertEqual(sorted(result["palette_ids"]), ["riel.toggle-context", "riel.toggle-gate"])
         self.assertTrue(all(call.startswith("/settings") for call in result["settings_calls"]))
 
-    def test_no_contract_no_chip_at_all(self):
-        """The one chip only exists when the backend says there is a contract."""
-        result = self.run_chip(ledger=self.LEDGER)
-        self.assertFalse(result["contract_visible"])
-        self.assertIsNone(result["final_label"], "no ledger chip either — the bar is silent")
+    def test_no_run_no_chip_at_all(self):
+        """The one chip only exists when the backend says there is a run."""
+        result = self.run_chip()
+        self.assertFalse(result["run_visible"])
+        self.assertIsNone(result["final_label"], "the bar is silent without a run")
 
-    def test_contract_chip_appears_when_there_is_one(self):
-        result = self.run_chip(ledger=self.LEDGER, extra_env={"RIEL_TEST_CONTRACT": "1"})
-        self.assertTrue(result["contract_visible"])
+    def test_run_chip_appears_when_there_is_one(self):
+        result = self.run_chip(extra_env={"RIEL_TEST_RUN": "1"})
+        self.assertTrue(result["run_visible"])
         self.assertEqual(result["final_label"], "Riel")
 
-    def test_no_ledger_poll(self):
-        """The bar no longer polls /ledger — the ledger is the model's door, not the bar's."""
-        result = self.run_chip(ledger=self.LEDGER, extra_env={"RIEL_TEST_CONTRACT": "1"})
-        self.assertFalse(any(call.startswith("/ledger") for call in result["rest_paths"]))
+    def test_the_chip_polls_run_only(self):
+        result = self.run_chip(extra_env={"RIEL_TEST_RUN": "1"})
+        self.assertEqual([p for p in result["rest_paths"] if p.startswith("/run")], ["/run"])
+        self.assertNotIn("/ledger", result["rest_paths"])
+        self.assertNotIn("/contract", result["rest_paths"])
 
     def test_running_turn_pulses_and_names_the_tool(self):
-        result = self.run_chip(ledger=self.LEDGER, busy=True, tool="terminal",
-                               extra_env={"RIEL_TEST_CONTRACT": "1"})
+        result = self.run_chip(busy=True, tool="terminal", extra_env={"RIEL_TEST_RUN": "1"})
         self.assertIn("●", result["activity_label"])
         self.assertIn("terminal", result["activity_label"], "the live tool names itself in the bar")
         self.assertIn("animate-pulse", result["activity_running_class"], "the running dot pulses")
         self.assertIn("Turno en curso: terminal", result["activity_title"])
 
-    def test_tool_completion_refetches_the_contract(self):
-        """A finished tool re-probes the contract — one written mid-task appears."""
-        result = self.run_chip(ledger=self.LEDGER, tool="terminal", complete=True,
-                               extra_env={"RIEL_TEST_CONTRACT": "1"})
+    def test_tool_completion_refetches_the_run(self):
+        """A finished tool re-probes the run — one written mid-task appears."""
+        result = self.run_chip(tool="terminal", complete=True, extra_env={"RIEL_TEST_RUN": "1"})
         self.assertGreaterEqual(
-            result["contract_calls"], 2, "a finished tool must trigger an immediate contract re-probe"
+            result["run_calls"], 2, "a finished tool must trigger an immediate run re-probe"
         )
 
     def test_background_session_tools_do_not_move_the_chip(self):
         """A tool in ANOTHER tile must not reach the focused chip's tooltip."""
-        mine = self.run_chip(ledger=self.LEDGER, busy=True, tool="terminal",
-                             extra_env={"RIEL_TEST_CONTRACT": "1"})
+        mine = self.run_chip(busy=True, tool="terminal", extra_env={"RIEL_TEST_RUN": "1"})
         self.assertIn("Turno en curso: terminal", mine["activity_title"])
-        # the harness emits events with session_id 's1'; focus another session
-        # and the same event is ignored: no tool name in the tooltip.
-        other = self.run_chip(ledger=self.LEDGER, busy=True, tool="terminal",
-                              extra_env={"RIEL_TEST_FOCUS": "s2", "RIEL_TEST_CONTRACT": "1"})
+        other = self.run_chip(busy=True, tool="terminal",
+                              extra_env={"RIEL_TEST_FOCUS": "s2", "RIEL_TEST_RUN": "1"})
         self.assertNotIn("terminal", other["activity_title"],
                          "a background tile's tool leaked into the focused chip")
 
     def test_focus_switch_clears_the_stale_tool(self):
         """No leftover tool from the previous conversation after a switch."""
-        result = self.run_chip(ledger=self.LEDGER, extra_env={"RIEL_TEST_SWITCH": "1",
-                                                              "RIEL_TEST_CONTRACT": "1"})
+        result = self.run_chip(extra_env={"RIEL_TEST_SWITCH": "1", "RIEL_TEST_RUN": "1"})
         self.assertNotIn("●", result["final_label"] or "",
                          "the previous session's tool activity survived the focus switch")
 
@@ -744,20 +658,16 @@ class ChipTest(unittest.TestCase):
         """A session that never emitted session.info still gets its REAL
         worktree from the DB fallback — not the stale global cwd."""
         db = json.dumps({"s1": "/wt/from-db"})
-        result = self.run_chip(ledger=self.LEDGER, extra_env={"RIEL_TEST_DB_CWDS": db,
-                                                              "RIEL_TEST_CONTRACT": "1"})
+        result = self.run_chip(extra_env={"RIEL_TEST_DB_CWDS": db, "RIEL_TEST_RUN": "1"})
         self.assertTrue(result["session_cwd"].endswith("/wt/from-db"),
                         "the DB fallback did not override the stale global cwd")
 
     def test_streamdown_renders_mermaid(self):
-        """Streamdown ships with mermaid OFF (context default void 0) — the
-        contract dialog must pass the mermaid option or the graph stays a
-        plain code block. Asserted at the source level: the option is on the
-        Streamdown call inside the contract dialog."""
+        """Streamdown ships with mermaid OFF — the run dialog must pass the option."""
         source = (DESKTOP / "plugin.js").read_text(encoding="utf-8")
-        dialog_body = source.split("function ContractDialog")[1].split("\nfunction ")[0]
+        dialog_body = source.split("function RunDialog")[1].split("\nfunction ")[0]
         self.assertIn("mermaid", dialog_body,
-                      "the contract dialog does not pass the mermaid option to Streamdown")
+                      "the run dialog does not pass the mermaid option to Streamdown")
         self.assertIn("mermaid: {}", dialog_body)
 
     def test_session_info_cwd_is_authoritative_per_session(self):
@@ -766,21 +676,17 @@ class ChipTest(unittest.TestCase):
         A background session reporting a DIFFERENT cwd must not move the
         focused chip's worktree; the focused session's own session.info does.
         """
-        # focused s1 reported /wt/riel -> chip reads that worktree
-        mine = self.run_chip(ledger=self.LEDGER, extra_env={"RIEL_TEST_INFO_CWD": "/wt/riel",
-                                                            "RIEL_TEST_CONTRACT": "1"})
+        mine = self.run_chip(extra_env={"RIEL_TEST_INFO_CWD": "/wt/riel",
+                                        "RIEL_TEST_RUN": "1"})
         self.assertTrue(mine["session_cwd"].endswith("/wt/riel"))
-        # s2 reports /wt/other: stored, but the focused chip keeps /wt/riel
         other = self.run_chip(
-            ledger=self.LEDGER,
             extra_env={"RIEL_TEST_INFO_CWD": "/wt/riel", "RIEL_TEST_FOREIGN_INFO": "/wt/other",
-                       "RIEL_TEST_CONTRACT": "1"},
+                       "RIEL_TEST_RUN": "1"},
         )
         self.assertTrue(other["session_cwd"].endswith("/wt/riel"),
                         "a background session's cwd leaked into the focused chip")
-        # now s1 itself reports a move -> the focused chip follows
-        moved = self.run_chip(ledger=self.LEDGER, extra_env={"RIEL_TEST_INFO_CWD": "/wt/moved",
-                                                             "RIEL_TEST_CONTRACT": "1"})
+        moved = self.run_chip(extra_env={"RIEL_TEST_INFO_CWD": "/wt/moved",
+                                         "RIEL_TEST_RUN": "1"})
         self.assertTrue(moved["session_cwd"].endswith("/wt/moved"))
 
 

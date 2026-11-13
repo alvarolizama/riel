@@ -215,7 +215,7 @@ def read(topic: str, section: Optional[str] = None,
         return None, {
             "error": f"invalid topic: {topic!r}",
             "topics": topics(),
-            "hint": "topics are slugs like 'contract'; call riel_guide() with no arguments",
+            "hint": "topics are slugs like 'run'; call riel_guide() for the index",
         }
     path = GUIDE_DIR / f"{clean}.md"
     if not path.is_file():

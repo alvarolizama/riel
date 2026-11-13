@@ -1,14 +1,14 @@
 // Riel — desktop half: ONE statusbar chip for the focused session's worktree.
 //
-//   Riel ● riel_note   — only when .riel/contract.md exists. Click: modal with
-//                        the contract rendered as Markdown (Streamdown draws
-//                        the sections and the mermaid graph, the chat
-//                        pipeline). While the turn runs: a pulsing dot plus
-//                        the live tool name. No contract: no chip at all.
+//   Riel ● riel_note   — only when an ACTIVE RUN exists (.riel/run.md). Click:
+//                        modal with the run rendered as Markdown (Streamdown
+//                        draws the plan, the sections and the mermaid graph —
+//                        the chat pipeline). While the turn runs: a pulsing
+//                        dot plus the live tool name. No run: no chip at all.
 //
-// The ledger's own state is NOT in the bar anymore: the model re-reads it
-// with riel_seam and the gate enforces it — the bar only says whether this
-// worktree has a plan and whether it is being executed.
+// The run's detailed state is NOT in the bar: the model re-reads it with
+// `riel_run status` and the gate enforces it — the bar only says whether this
+// worktree has a run and whether it is being executed.
 //
 // Style: native statusbar vocabulary — Capitalized label in
 // text-(--ui-text-tertiary) at 0.6875rem, color ONLY on the live mark
@@ -40,24 +40,24 @@ function truncate(text, max) {
   return clean.length > max ? clean.slice(0, max - 1) + '…' : clean
 }
 
-/* --------------------------------------------------------------- contrato */
+/* ------------------------------------------------------------------ run ---- */
 
-function ContractDialog({ open, onOpenChange, ctx, cwd, sessionId }) {
-  const [contract, setContract] = useState(null)
+function RunDialog({ open, onOpenChange, ctx, cwd, sessionId }) {
+  const [run, setRun] = useState(null)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     if (!open) return
     let alive = true
     setLoading(true)
-    setContract(null)
+    setRun(null)
     const load = async () => {
       try {
-        const data = await ctx.rest('/contract?worktree=' + encodeURIComponent(cwd || ''))
-        if (alive) setContract(data)
+        const data = await ctx.rest('/run?worktree=' + encodeURIComponent(cwd || ''))
+        if (alive) setRun(data)
       } catch (error) {
         if (alive) {
-          setContract({ present: false, error: String((error && error.message) || error) })
+          setRun({ present: false, error: String((error && error.message) || error) })
         }
       } finally {
         if (alive) setLoading(false)
@@ -70,12 +70,12 @@ function ContractDialog({ open, onOpenChange, ctx, cwd, sessionId }) {
   }, [open, cwd, sessionId, ctx])
 
   const body = () => {
-    if (loading) return jsx('div', { className: 'py-8 text-center text-sm text-(--ui-text-tertiary)', children: 'Cargando contrato…' })
-    if (!contract) return null
-    if (!contract.present) {
+    if (loading) return jsx('div', { className: 'py-8 text-center text-sm text-(--ui-text-tertiary)', children: 'Cargando run…' })
+    if (!run) return null
+    if (!run.present) {
       return jsx('div', {
         className: 'py-8 text-center text-sm text-(--ui-text-tertiary)',
-        children: contract.error || 'Sin contrato en este worktree'
+        children: run.error || 'Sin run activo en este worktree'
       })
     }
     return jsx('div', {
@@ -85,7 +85,7 @@ function ContractDialog({ open, onOpenChange, ctx, cwd, sessionId }) {
         // the fence then falls through to a plain code block). Passing the
         // options object turns the lazy diagram renderer on.
         mermaid: {},
-        children: contract.markdown
+        children: run.markdown
       })
     })
   }
@@ -99,7 +99,7 @@ function ContractDialog({ open, onOpenChange, ctx, cwd, sessionId }) {
         jsx(DialogHeader, {
           key: 'head',
           children: [
-            jsx(DialogTitle, { key: 't', children: 'Riel · Contract' }),
+            jsx(DialogTitle, { key: 't', children: 'Riel · Run' }),
             jsx(DialogDescription, {
               key: 'd',
               className: 'truncate text-(--ui-text-tertiary)',
@@ -113,32 +113,32 @@ function ContractDialog({ open, onOpenChange, ctx, cwd, sessionId }) {
   })
 }
 
-/** The one chip: it only exists when the worktree has a contract.
+/** The one chip: it only exists when the worktree has an active run.
 
- *  - idle: `Riel` — the plan exists, click reads it.
+ *  - idle: `Riel` — the run exists; a click opens it.
  *  - turn running: `Riel ● <tool>` — the pulsing dot plus the live tool name.
- *  - no contract: nothing at all.
+ *  - no run: nothing at all.
  */
-function ContractChip({ ctx, cwd, sessionId, busy, tool, revision }) {
-  const [hasContract, setHasContract] = useState(null)
+function RunChip({ ctx, cwd, sessionId, busy, tool, revision }) {
+  const [hasRun, setHasRun] = useState(null)
   const [open, setOpen] = useState(false)
 
-  // Probe for the contract once per worktree/session (and again whenever a
-  // tool finishes — a contract may have been written mid-task): the chip only
-  // exists when there is something to show.
+  // Probe for the run once per worktree/session (and again whenever a tool
+  // finishes — a run may have been written mid-task): the chip only exists
+  // when there is something to show.
   useEffect(() => {
     let alive = true
-    setHasContract(null)
+    setHasRun(null)
     if (!cwd) {
-      setHasContract(false)
+      setHasRun(false)
       return
     }
     const probe = async () => {
       try {
-        const data = await ctx.rest('/contract?worktree=' + encodeURIComponent(cwd))
-        if (alive) setHasContract(Boolean(data && data.present))
+        const data = await ctx.rest('/run?worktree=' + encodeURIComponent(cwd))
+        if (alive) setHasRun(Boolean(data && data.present))
       } catch {
-        if (alive) setHasContract(false)
+        if (alive) setHasRun(false)
       }
     }
     probe()
@@ -147,10 +147,10 @@ function ContractChip({ ctx, cwd, sessionId, busy, tool, revision }) {
     }
   }, [cwd, sessionId, revision, ctx])
 
-  if (!hasContract) return null
+  if (!hasRun) return null
 
   const title = () => {
-    const lines = ['Ver el contrato de esta tarea (secciones + grafo)']
+    const lines = ['Ver el run de esta tarea (plan + estado)']
     if (busy) lines.push('Turno en curso' + (tool ? `: ${tool.name}` : ''))
     return lines.join('\n')
   }
@@ -182,7 +182,7 @@ function ContractChip({ ctx, cwd, sessionId, busy, tool, revision }) {
           ]
         })
       }),
-      jsx(ContractDialog, {
+      jsx(RunDialog, {
         key: 'dialog',
         open,
         onOpenChange: setOpen,
@@ -226,8 +226,8 @@ function RielChips({ ctx }) {
   }, [])
 
   // Activity: the app's gateway event tap, FILTERED to the focused session.
-  // A finished tool bumps the revision so the chip re-probes the contract —
-  // one written mid-task shows up without waiting for a focus switch.
+  // A finished tool bumps the revision so the chip re-probes the run — one
+  // written mid-task shows up without waiting for a focus switch.
   useEffect(() => {
     const belongs = event => {
       const sid = event && event.session_id
@@ -283,7 +283,7 @@ function RielChips({ ctx }) {
     }
   }, [focusedStoredId, ctx])
 
-  return jsx(ContractChip, { ctx, cwd, sessionId: focusedId, busy, tool, revision })
+  return jsx(RunChip, { ctx, cwd, sessionId: focusedId, busy, tool, revision })
 }
 
 export default {
@@ -313,7 +313,7 @@ export default {
     }
 
     ctx.register({
-      id: 'contract-chip',
+      id: 'run-chip',
       area: 'statusBar.right',
       order: 120,
       render: () => jsx(RielChips, { ctx })
@@ -324,7 +324,7 @@ export default {
       data: {
         id: 'riel.toggle-gate',
         label: 'Riel: encender/apagar el gate',
-        keywords: ['riel', 'gate', 'ledger', 'verify'],
+        keywords: ['riel', 'gate', 'run', 'verify'],
         run: () => void flip('gate', 'gate')
       }
     })

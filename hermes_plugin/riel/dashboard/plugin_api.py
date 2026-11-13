@@ -1,25 +1,25 @@
 """Backend routes for the Riel desktop half, mounted at `/api/plugins/riel/`.
 
-Three read-only endpoints, answering the statusbar chip:
+Read-only plus the settings writer, answering the statusbar chip:
 
   GET /health            → is the backend up and does it have its bundled engine
-  GET /ledger?worktree=  → the ledger summary for one worktree (the chip's counters)
-  GET /contract?worktree= → the contract.md verbatim (the chip's click dialog)
+  GET /run?worktree=     → the ACTIVE RUN for one worktree: verbatim markdown
+                           (the chip's click dialog) + the engine's `run
+                           status` object (the state the gate folds)
+  GET/POST /settings     → the switch surface (read), validated writes
+  GET /session_cwd       → the FOCUSED session's stored worktree
 
 The mount is the dashboard plugin API, which runs inside the gateway process.
-Bound by construction: the only paths this ever reads are
-`<worktree>/.riel/ledger.md` and `<worktree>/.riel/contract.md` — and of the
-contract, the verbatim markdown leaves (the renderer, Streamdown, draws the
-sections and the mermaid graph; no digest or re-parsing here).
-
-The ledger logic lives beside this file in `ledger_status.py`, loaded by path so
-it works whatever loader the gateway uses for `plugin_api.py`.
+Bound by construction: the only task path this ever reads is
+`<worktree>/.riel/run.md` — resolved against symlinks, capped, and the engine
+reached the safe in-process way. Every route is a SYNC def: FastAPI runs sync
+handlers on its threadpool, so a bounded engine call never blocks the event
+loop (the gateway serves every session from it).
 """
 
 from __future__ import annotations
 
 import importlib.util
-import os
 from pathlib import Path
 
 from fastapi import APIRouter, Query
@@ -33,7 +33,7 @@ def _load_plumbing():
     The dashboard plugin API is loaded by path by the gateway, so the relative
     imports every other module uses are not available here. Loading the one
     plumbing module by path keeps a single loader for the whole package: the
-    three spec dances this file used to carry are now three `sibling()` calls.
+    spec dances this file used to carry are now `sibling()` calls.
     """
     path = _PLUGIN_DIR / "_load.py"
     spec = importlib.util.spec_from_file_location("riel_dashboard_load", path)
@@ -54,35 +54,33 @@ MAX_WORKTREE_CHARS = 4096
 
 
 @router.get("/health")
-async def health() -> dict:
+def health() -> dict:
+    """Up + engine present. No cwd, no paths beyond the bundled engine's."""
     engine = _ledger_status.ENGINE
-    return {"ok": engine.exists(), "engine": str(engine), "cwd": os.getcwd()}
+    return {"ok": engine.exists(), "engine": str(engine)}
 
 
-@router.get("/ledger")
-async def ledger(worktree: str = Query("", max_length=MAX_WORKTREE_CHARS)) -> dict:
-    """Summary of `<worktree>/.riel/ledger.md` — absent, empty and error states included."""
+@router.get("/run")
+def run_state(worktree: str = Query("", max_length=MAX_WORKTREE_CHARS)) -> dict:
+    """The worktree's active run — `{present, worktree, markdown, status}`.
+
+    Absent, empty and error states included; a worktree without `.riel/run.md`
+    is a normal `present: false`, not a failure.
+    """
     if not worktree.strip():
-        return {"present": False, "worktree": "", "error": "worktree query parameter is required"}
-    return _ledger_status.read_status(worktree)
-
-
-@router.get("/contract")
-async def contract(worktree: str = Query("", max_length=MAX_WORKTREE_CHARS)) -> dict:
-    """The verbatim `<worktree>/.riel/contract.md` — the chip's click dialog renders it."""
-    if not worktree.strip():
-        return {"present": False, "worktree": "", "error": "worktree query parameter is required"}
-    return _ledger_status.read_contract(worktree)
+        return {"present": False, "worktree": "", "markdown": "", "status": None,
+                "error": "worktree query parameter is required"}
+    return _ledger_status.read_run(worktree)
 
 
 @router.get("/settings")
-async def read_settings() -> dict:
-    """The switch surface: the three groups plus the operator's note (never the config)."""
+def read_settings() -> dict:
+    """The switch surface: the groups, the operator's note and the attempts."""
     return {"ok": True, **_settings.state()}
 
 
 @router.post("/settings")
-async def write_settings(payload: dict) -> dict:
+def write_settings(payload: dict) -> dict:
     """Flip one or more switches. Validated here; written through Hermes' own writer."""
     try:
         return {"ok": True, **_settings.apply(payload)}
@@ -93,8 +91,8 @@ async def write_settings(payload: dict) -> dict:
 
 
 @router.get("/session_cwd")
-async def session_cwd(session_id: str = Query("", max_length=256)) -> dict:
-    """The FOCUSED session's stored worktree — the chips' authoritative cwd.
+def session_cwd(session_id: str = Query("", max_length=256)) -> dict:
+    """The FOCUSED session's stored worktree — the chip's authoritative cwd.
 
     The app's workspace atoms can still hold the previous conversation's
     folder right after a switch; the session DB has the real one.

@@ -1,109 +1,59 @@
 ---
 topic: shaping
-trigger: "Use when a task explores before it plans — write .riel/shaping.md: findings with sources, alternatives with verdicts, the open questions, and the verdict that seeds the contract."
-version: 1.0.0
+trigger: "Use when research must precede execution: an optional .riel/shaping.md collects sourced findings, alternatives and open questions before it is frozen into a run."
+version: 1.1.0
 ---
+# shaping — Evidence before the Plan
 
-# shaping — The evidence before the plan (Riel)
+Shaping is a separate editable research artifact: `.riel/shaping.md`. It answers
+what we know and how we know it. It is not a Plan, contains no execution cursor
+and never records task progress. A task whose decision is settled skips it.
 
-The **contract** is the plan, the **ledger** is the state, and the **shaping**
-is the EVIDENCE the plan rests on. It is written before the contract, at
-`.riel/shaping.md`; the contract's claims point back into it
-(`— anchor: shaping:F1`), re-read at every seam with `riel_seam(anchors=true)`.
+The final format is `riel-shaping/v1`: Question, Findings, Facts, optional
+Diagrams, Alternatives bounced, Open and Verdict.
 
-A task whose decision is already settled skips it — the shaping is the
-on-ramp, never a second plan. It buys two things the contract cannot:
-rejected alternatives keep a home (the contract's `### Why` holds only the
-surviving one) and every claim can carry its anchor back to its support.
+## Findings and code references
 
-## Role and location
+Every citable finding is one `F#` line under Findings with source and
+confidence. Facts derive constraints from findings and do not create competing
+`F#` identifiers. HTML comments are documentation, never findings; labels in
+Mermaid comments are never execution nodes.
 
-- `.riel/shaping.md` in the task worktree; `.riel/` is gitignored — local
-  state, never a deliverable, never committed.
-- Written **before** the contract: the shaping closes the question, then the
-  contract restates the decision in its closed form.
-- `riel_clean(scope="all")` backs it up (flat, timestamped, inside `.riel/`)
-  and removes it; a plain `riel_clean` leaves it in place.
-- Overwritten per task: working evidence of the task in flight, not a durable
-  record. The engine backs it up before every overwrite.
+Pin repository evidence to its observed commit and symbol:
 
-## Why it is not the contract
+`repo@057dc31:hermes_plugin/riel/engine/run.py:694-718#contract_to_todo_items`
 
-A doc that restates another is a drift source. The contract's `## Context` is
-CLOSED (snippets verified against the repo, paths decided) and its `### Why`
-is the surviving rationale. The shaping is OPEN: findings with sources and a
-confidence, alternatives with verdicts, questions still unsettled.
+The commit fixes what was investigated; path and symbol make later drift
+findable. Before activation, re-read the reference against current HEAD. A
+passed benchmark with command and output belongs here. An execution assertion
+about the future implementation belongs in the run's Claims instead.
 
-| Artifact | Answers | Register |
-|---|---|---|
-| `shaping.md` | what do we know, and how do we know it | open, sourced |
-| `contract.md` | what will be true, and how it is verified | closed, decided |
-| `ledger.md` | where we are | state |
+## Decisions and open questions
 
-## Sections, in order
+Alternatives record kept, discarded and deferred options with reasons. Only the
+winning decision survives into the run's Why; the rejected ones remain here.
 
-1. `# Shaping: <name>` — the name.
-2. `## Question` — one question, the decision this research settles. Empty
-   or missing is an error: no question, no shaping.
-3. `## Findings` — numbered `F#` lines, each with a `— source:` (a file, a
-   commit, a URL, a measurement) and a `confidence`. A finding without a
-   source is a WARN: an unsourced finding reads exactly like a sourced one,
-   and prose that "reads fine" is where hallucination hides.
-4. `## Facts` — short `F#` lines the contract can cite directly, with
-   sources. Optional.
-5. `## Diagrams` — optional, two kinds: the system as it IS vs as it would
-   BE. Mermaid, same vocabulary as the contract.
-6. `## Alternatives` — numbered `A#`, each with its verdict
-   (`discarded: <reason>` or `deferred: <reason>`). The home of the rejected:
-   the contract keeps only the winner.
-7. `## Open` — questions still unsettled, each with the cheapest test that
-   would settle it. The on-ramp's residue: what execution must answer.
-8. `## Verdict` — one line that seeds the contract's Objective, opening with
-   "We need…".
+Each Open item has the cheapest test that settles it. Activation must resolve
+it, explicitly transfer it to the run's Open, or put it out of scope. A research
+question cannot disappear during the handoff.
 
-## The loop
+## Remote shaping
 
-```mermaid
-flowchart TD
-  Q["READ the Question"] --> R["RUN research: read, measure, grep"]
-  R --> F["CREATE findings with sources + confidence"]
-  F --> A{"alternatives to weigh?"}
-  A -->|yes| B["CREATE alternatives with verdicts"]
-  A -->|no| O
-  B --> O{"Open questions left?"}
-  O -->|yes| S["RUN the cheapest settling test"]
-  S --> F
-  O -->|no| V["WRITE the Verdict — one line, 'We need…'"]
-  V --> C([contract.md — the plan seeds from here])
-```
+Remote and local shaping use the same bytes and format. An exchange returns
+`url`, `sha256` and `bytes`; the Markdown body stays outside agent context.
+Materialize with `riel_shape(verb="fetch", url=…, out=".riel/shaping.md", sha256=…)`.
 
-## Tooling
+SHA-256 is mandatory, transport is bounded and TLS-verified, writes are atomic.
+Downloading never executes or activates anything. Validate after download.
+The frozen bytes remain local throughout the run; there is no network at seams.
 
-- `riel_plan(verb="new", kind="shaping", params=[…])` writes the skeleton (refuses to
-  overwrite without `force`); `riel_plan(verb="validate", kind="shaping")` runs the rules
-  — exit 1 on an error, WARNs never fatal.
-- Every engine write over an existing shaping backs it up first
-  (`shaping-<ts>.bak.md`, flat, beside the original).
-- Claims anchored to a finding the shaping does not have are an error at
-  `riel_plan(verb="validate")` time — the anchor is checked against the
-  file, not trusted.
+## Handoff into run
 
-## Pitfalls
+The Verdict supplies one Objective, the kept decision and rationale, claim
+seeds and scope. Authoring the exact Plan remains deliberate: no generator
+invents nodes, paths or gates from prose.
 
-- **A shaping that restates the contract.** If it reads like the plan, it is
-  a second plan — the open/closed split is the point.
-- **Findings without sources.** A WARN, but treat it as a smell: the next
-  reader cannot re-derive your confidence.
-- **Skipping the Verdict.** Without it the contract's Objective is authored
-  from nothing — the shaping must close with the decision.
-- **Shaping after the contract.** The on-ramp behind the plan is a sign the
-  research was decoration.
-
-## Cross-references
-
-- Skeleton: `templates/shaping.md`; long form: `specs/spec-shaping-format.md`
-  (Spec 7)
-- The plan it seeds: `riel_guide(topic="contract")`
-- The anchors that point back here: `riel_plan(verb="validate")`,
-  re-read with `riel_seam(anchors=true)`
-- The delegation flow that starts here: `riel_guide(topic="delegate")`
+At activation Riel hashes shaping, resolves all `shaping:F#` anchors and embeds
+the referenced findings in the run's Basis. Delegated slices receive those
+frozen findings rather than a reference to the parent's mutable workspace.
+Changing shaping later marks the old connection stale and requires rebase.

@@ -91,6 +91,12 @@ def session_cwd(key: Optional[str] = None, preferred: Optional[str] = None,
     whichever session happens to be focused.
     """
     sources = [preferred]
+    if recorded and key:
+        recorded_value = _recorded(key)
+        if not recorded_value:
+            return None
+        text = str(recorded_value).strip()
+        return os.path.abspath(os.path.expanduser(text))
     if recorded:
         sources.append(_recorded(key))
     sources.append(os.environ.get("TERMINAL_CWD"))
@@ -108,7 +114,12 @@ def worktree(kwargs: Optional[dict] = None, explicit: Optional[str] = None,
     if text:
         return os.path.abspath(os.path.expanduser(text))
     key = (kwargs or {}).get("task_id") or (kwargs or {}).get("session_key")
-    return session_cwd(key, preferred=preferred) or os.getcwd()
+    resolved = session_cwd(key, preferred=preferred)
+    if resolved:
+        return resolved
+    if key:
+        return ""  # an explicit session identity without cwd never guesses
+    return os.getcwd()
 
 
 def envelope(tool: str, worktree: str = "", exit_code: int = 0,
@@ -131,8 +142,30 @@ def envelope(tool: str, worktree: str = "", exit_code: int = 0,
     return payload
 
 
-def error(message: str, **fields) -> dict:
-    """The one refusal shape: ``{error, ...}``, with no fake exit code."""
-    payload = {"error": message}
+def error(message: str, tool: str = "", worktree: str = "", **fields) -> dict:
+    """The one refusal shape — the shared envelope at ``exit_code`` 1 + ``error``.
+
+    A negative answer speaks the same six keys as a positive one (a caller
+    folds tools without asking which failure it hit); ``error`` carries the
+    reason for the callers that read only that.
+    """
+    payload = envelope(tool, worktree, exit_code=1, stdout="", stderr=str(message))
+    payload["error"] = message
     payload.update(fields)
     return payload
+
+
+# `riel_note`'s structural rule, shared by the schema (``schemas.py``) and the
+# wrapper (``tools.py``) so the two cannot drift — both derive from
+# ``engine/params.py`` and re-type nothing: a parameter the engine's CLI takes
+# more than once (``repeat: True``) reaches the tool as ONE array under the
+# plural name (``claim`` → ``claims``, ``gate`` → ``gates``) and the wrapper
+# expands it into repeated flags. The engine-owned ``exit_code`` is not a
+# declaration entry at all in 2.0 — the engine records it from the command it
+# actually ran.
+NOTE_FORBIDDEN = ("exit_code",)
+
+
+def note_caller_name(param: dict) -> str:
+    """The tool-parameter name a caller uses for the params.py entry *param*."""
+    return param["name"] + "s" if param.get("repeat") else param["name"]

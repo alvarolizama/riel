@@ -1,94 +1,66 @@
-# Spec 7 — Shaping format (`.riel/shaping.md`)
+# Spec 2 — Shaping format (`riel-shaping/v1`)
 
-Status: draft v1 · Riel — local-first
-Applies to every task that explores before it plans: the on-ramp that
-`spec-contract-format.md` (Spec 2) consumes. A task whose decision is already
-settled needs no shaping; a task whose decision was researched does.
+Shaping is optional research preceding one run. It is editable while researching
+and frozen by revision when execution activates. It never records Plan nodes,
+cursor position, gate results or Evidence. Local task state stays in the
+worktree's gitignored `.riel/`.
 
-The **contract** is the plan, the **ledger** is the state, and the **shaping**
-is the EVIDENCE the plan rests on. It is written before the contract, and the
-contract's claims point back into it (Spec 2, "Claim anchors").
+## Serialization
 
-## Role and location
+Local and remote shaping are the same UTF-8 Markdown bytes. The file opens with
+`# Shaping: <name>`, then the standalone marker `<!-- riel-shaping/v1 -->` before
+any `##` heading. The remote catalog supplies URL, sha256 and bytes separately;
+its download body is this document, not transport credentials or runtime state.
 
-- `.riel/shaping.md` in the task worktree; `.riel/` is in `.gitignore` — local
-  state, never a deliverable, never committed (same hygiene as the ledger and
-  the contract).
-- Written **before** the contract: the shaping closes the question, then the
-  contract restates the decision in its closed form. Same worktree, same task.
-- `riel_clean(scope="all")` backs it up (flat, timestamped, inside `.riel/`) and
-  removes it, exactly like the contract; without `--all` it is left in place.
-- Overwritten per task: it is the working evidence of the task in flight, not a
-  durable record.
+The sections are, in order:
 
-## Why it is not the contract
+1. `## Question` — one decision to close.
+2. `## Findings` — every citable `F#`, with `— source: …, confidence …`.
+3. `## Facts` — established constraints grounded in findings, no new `F#` IDs.
+4. `## Diagrams` — optional current/proposed diagrams, never execution graphs.
+5. `## Alternatives bounced` — numbered alternatives and kept/discarded/deferred verdicts.
+6. `## Open` — questions with `— settled by: <the cheapest test>`.
+7. `## Verdict (→ run)` — We need, Decision+because, Claim seeds and Scope.
 
-A doc that restates another is a drift source. The contract's `## Context` is
-CLOSED (reference snippets verified against the repo, paths decided) and its
-`### Why` is one or two sentences of surviving rationale. The shaping is OPEN:
-findings with their sources and a confidence, alternatives with their verdicts,
-questions still unsettled. It is the on-ramp, never a copy.
+HTML comments never create Findings, Facts, alternatives or questions. Duplicate
+finding IDs and findings without sources are errors. The template demonstrates
+citation syntax in comments without making those examples real evidence.
 
-| Artifact | Answers | Register |
-|---|---|---|
-| `shaping.md` | what do we know, and how do we know it | open, sourced |
-| `contract.md` | what will be true, and how it is verified | closed, decided |
-| `ledger.md` | where we are | state |
+## Code references
 
-## Sections, in order
+Repository evidence should record `repository@observed-commit:path:lines#symbol`.
+URLs include a retrieval date. Benchmarks identify exact command and output.
 
-1. `# Shaping: <name>`
-2. `## Question` — one sentence: the decision this shaping closes
-3. `## Findings` — `- F<n>: <finding> — source: <path:line | URL + date | command>, confidence <high|med|low>`
-4. `## Facts` — what the design must respect (established facts, with where they were verified)
-5. `## Diagrams` — OPTIONAL: the shape of the system as it is and as it would be
-6. `## Alternatives bounced` — `- A<n>: <option> — pro: … / contra: … — verdict: kept|discarded`
-7. `## Open` — questions not settled yet, each with the cheapest test that would settle it: `— settled by: <test>`
-8. `## Verdict (→ contract)` — the seed: `We need …` (the Objective), `Decision: … — because …` (the `### Why`), the claim seeds, and the scope in/out
+The observed commit pins what was investigated; it does not imply current code
+is unchanged. At activation relevant sources are re-read against the current
+working tree when available. A reference being syntactically valid establishes
+location, not truth.
 
-`## Diagrams` is free — the validator pins the required set and does not
-require it. It holds mermaid of the system's CURRENT shape and the proposed
-one (the flow being changed, where the pain is, what moves), so the contract
-is authored with the picture in view. It is never the execution DAG: the
-contract's `## Execution graph` is the only plan graph, and a shaping diagram
-that drifts into it just duplicates what the contract must state.
+## Handoff and freezing
 
-## Validation
+Verdict supplies the run's Objective, Why, claim seeds and scope. Authoring the
+actual graph, gate commands and paths remains deliberate, never automatically
+inferred from prose. Findings supporting Claims use `— anchor: shaping:F#`.
 
-`riel_plan(verb="validate", kind="shaping", file=PATH)` — default `.riel/shaping.md`.
+Activation resolves all shaping anchors as hard requirements and copies the
+selected Findings into a frozen `### Basis` inside run Context. That carries
+source, confidence and shaping hash into subsequently generated slices without
+a dependency on the parent's shaping file.
 
-Errors (exit 1): a missing section, an empty `## Question`, a `## Findings`
-section with no `F#` line.
+Open questions must be resolved, explicitly transferred into run Open, or named
+out of scope. A question cannot disappear at the handoff.
 
-WARNs (non-fatal): a finding without `source:`, a finding without a
-`confidence`, an `## Alternatives bounced` item without a `verdict:`, an
-`## Open` item without `settled by:`, a `## Verdict` that does not open its
-Objective line with `We need`, and a `shaping:F<n>` anchor in the contract that
-names a finding the shaping does not have.
+`plan_sha256` covers the Plan including Basis; `shaping_sha256` pins the original
+research. An edit to either makes the active run stale until explicit `rebase`,
+which advances the run revision. Evidence from older revisions remains present
+for audit but no longer satisfies current claims or gates.
 
-The shipped template carries one placeholder `F#` line with its `source:` and
-`confidence` slots, so a freshly instantiated shaping validates like every
-other shipped fixture: the structure is there, the research is not.
+## Fetch
 
-## Claim anchors
+`riel_shape(verb="fetch")` requires expected SHA-256 and a confined output path.
+Transport bounds the body and time, verifies TLS, applies the scheme policy at
+every redirect, strips Authorization/Cookie on cross-origin redirects and rejects
+incomplete Content-Length bodies. Errors redact URL path and query.
 
-The contract's claims point back into the shaping: `— anchor: shaping:F<n>`
-(Spec 2, "Claim anchors"). That is what keeps provenance: at any seam,
-`riel_seam(anchors=true)` prints the claim beside the finding that supports it, so a
-finding that changed can be noticed while the claim is still refutable —
-instead of after it has been "verified".
-
-## The handoff
-
-`riel_plan(verb="new", kind="shaping")` instantiates `templates/shaping.md`. The
-handoff into the contract is authored, never generated: the Verdict seeds
-`## Objective`, the `### Why` and `## Pre-registered claims`, and each claim
-keeps its provenance anchor.
-
-## Cross-references
-
-- `spec-contract-format.md` (Spec 2) — the plan the shaping seeds; Claim anchors
-- `spec-ledger-format.md` (Spec 1) — the state the plan advances
-- `spec-todo-hermes.md` (Spec 6) — the plan mirror
-- `riel_guide(topic="shaping")` — the operative guide; `riel_guide(topic="delegate")` — the plan it feeds
-- `riel_guide(topic="tools")` — `shaping validate`, `shaping new`, the seam's anchors
+Fetching writes atomically but never activates a Plan. The validated local
+shaping remains available offline throughout execution.
