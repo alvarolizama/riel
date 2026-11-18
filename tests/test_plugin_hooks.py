@@ -9,7 +9,7 @@ real Hermes install.
 The gate reads the ACTIVE run (`.riel/run.md`) through the engine's safe
 in-process path — the suite points `hooks.tools` at the stub engine and drives
 real gate commands (`true` / `false`) through `riel_note`. Claims and gates
-are created by the PLAN (`stub.seed`); the note only ever executes gates and
+are created by the DEFINITION (`stub.seed`); the note only ever executes gates and
 records evidence. A worktree with only a legacy `.riel/ledger.md` is NEVER
 gated.
 
@@ -62,7 +62,7 @@ class GateTestCase(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def seed(self, claims=("P1",), gates=("G1",), **extra):
-        """A planned run: claims and gates exist, none executed yet."""
+        """A prepared run: claims and gates exist, none executed yet."""
         return stub.seed(self.tmp, claims=list(claims), gates=list(gates), **extra)
 
     def run_gate(self, command, worktree=None, gates=("G1",), claims=("P1",)):

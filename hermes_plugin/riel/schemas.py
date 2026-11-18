@@ -1,7 +1,7 @@
 """Tool schemas — what the LLM reads to decide when to call these tools.
 
 Machinery only: every task tool delegates to the bundled engine, which is the
-sole writer of `.riel/run.md` and `.riel/shaping.md`. Descriptions state when
+sole writer of `.riel/run.md`. Descriptions state when
 to use the tool, not how the run is formatted — the format, the rules and the
 recipes live in the package's prose, which `riel_guide` serves.
 """
@@ -74,42 +74,57 @@ RIEL_NOTE = {
     },
 }
 
-RIEL_SHAPE = {
-    "name": "riel_shape",
+RIEL_PROJECT = {
+    "name": "riel_project",
     "description": (
-        "Riel shaping — the evidence before the plan (Spec 7). verb=new RENDERS "
-        ".riel/shaping.md's template to stdout (the editor is the writing path — "
-        "params as [\"key=value\", …] fill the placeholders), validate checks the "
-        "structural rules over file, and fetch materializes a remote shaping into "
-        "the worktree (HTTPS, atomic, sha256-pinned: the hash is mandatory)."
+        "Riel project — the ORDER in which a set of shapings gets executed "
+        "(.riel/project.md). verb=new RENDERS the template to stdout (the editor "
+        "is the writing path), validate checks the graph (every node is one "
+        "shaping in .riel/shapings/, no cycles, no shaping bound twice), status "
+        "derives each shaping's progress from the runs' own evidence and names "
+        "the next one to run. One shaping = one question = one run = one PR. "
+        "Riel explains the format and validates it; it never authors the files."
     ),
     "parameters": {
         "type": "object",
         "properties": {
             "verb": {"type": "string",
-                     "description": "One of: new, validate, fetch."},
+                     "description": "One of: new, validate, status."},
             "params": {
                 "type": "array",
                 "items": {"type": "string"},
                 "description": 'For verb=new: placeholder values as ["key=value", …].',
             },
             "file": {"type": "string",
-                     "description": "For validate: the shaping path (default the canonical .riel/shaping.md)."},
-            "url": {"type": "string",
-                    "description": "For verb=fetch: the source URL (single-use, short-lived token)."},
-            "out": {"type": "string",
-                    "description": "For verb=fetch: destination path (default .riel/shaping.md)."},
-            "sha256": {"type": "string",
-                       "description": "For verb=fetch: the expected sha256 of the body — mandatory, never optional."},
-            "headers": {
+                     "description": "For validate/status: the project path (default .riel/project.md)."},
+            "worktree": _WORKTREE,
+        },
+        "required": ["verb"],
+    },
+}
+
+RIEL_SHAPE = {
+    "name": "riel_shape",
+    "description": (
+        "Riel shaping — ONE question's evidence, in .riel/shapings/<slug>.md. "
+        "verb=new RENDERS the template to stdout with a fresh uid (the editor is "
+        "the writing path — params as [\"key=value\", …] fill the placeholders); "
+        "validate checks the structural rules over file (one question, sourced "
+        "F# findings). Riel explains the format and validates it; it never "
+        "authors a shaping."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "verb": {"type": "string",
+                     "description": "One of: new, validate."},
+            "params": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": 'For verb=fetch: extra headers as ["Name: value", …].',
+                "description": 'For verb=new: placeholder values as ["key=value", …].',
             },
-            "allow_http": {"type": "boolean",
-                           "description": "For verb=fetch: allow plain http (localhost or a trusted VPN)."},
-            "timeout": {"type": "integer", "description": "For verb=fetch: seconds before the fetch gives up."},
-            "max_bytes": {"type": "integer", "description": "For verb=fetch: maximum body size accepted."},
+            "file": {"type": "string",
+                     "description": "For validate: the shaping path (default: the only file in .riel/shapings/; with several, pass one)."},
             "worktree": _WORKTREE,
         },
         "required": ["verb"],
@@ -119,19 +134,19 @@ RIEL_SHAPE = {
 RIEL_RUN = {
     "name": "riel_run",
     "description": (
-        "Riel run — ONE door for the machine-checkable plan (.riel/run.md). verb=new "
+        "Riel run — ONE door for the contract (.riel/run.md). verb=new "
         "PRINTS the draft template (you write .riel/run.md yourself — this tool never "
-        "writes it), validate enforces the strict riel-run/v1 format (hashing plan + "
+        "writes it), validate enforces the strict riel-run/v1 format (hashing definition + "
         "shaping), activate arms the run so the gate enforces it, rebase re-points the "
         "execution state, status returns the state as ONE JSON object, slice extracts "
-        "one phase (pass phase) as a child packet, fetch materializes a remote run "
-        "(HTTPS, atomic, sha256-pinned, never activates)."
+        "one phase (pass phase) as a child packet, archive moves the run to "
+        ".riel/runs/<slug>.md (never pruned) so the next shaping can activate."
     ),
     "parameters": {
         "type": "object",
         "properties": {
             "verb": {"type": "string",
-                     "description": "One of: new, validate, activate, rebase, status, slice, fetch."},
+                     "description": "One of: new, validate, activate, rebase, status, slice, archive."},
             "template": {"type": "string",
                          "description": "For verb=new: the template name (default run)."},
             "params": {
@@ -143,20 +158,7 @@ RIEL_RUN = {
                      "description": "For validate: the run path (default .riel/run.md)."},
             "phase": {"type": "string", "description": "For verb=slice: the phase id to extract."},
             "out": {"type": "string",
-                    "description": "For verb=slice: packet destination; for verb=fetch: destination path (default .riel/run.md)."},
-            "url": {"type": "string",
-                    "description": "For verb=fetch: the source URL (single-use, short-lived token)."},
-            "sha256": {"type": "string",
-                       "description": "For verb=fetch: the expected sha256 of the body — mandatory, never optional."},
-            "headers": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": 'For verb=fetch: extra headers as ["Name: value", …].',
-            },
-            "allow_http": {"type": "boolean",
-                           "description": "For verb=fetch: allow plain http (localhost or a trusted VPN)."},
-            "timeout": {"type": "integer", "description": "For verb=fetch: seconds before the fetch gives up."},
-            "max_bytes": {"type": "integer", "description": "For verb=fetch: maximum body size accepted."},
+                    "description": "For verb=slice: packet destination (optional; the packet always prints to stdout)."},
             "worktree": _WORKTREE,
         },
         "required": ["verb"],
@@ -166,16 +168,23 @@ RIEL_RUN = {
 RIEL_CLEAN = {
     "name": "riel_clean",
     "description": (
-        "Riel housekeeping — archive the worktree's .riel/ state so a new task starts "
-        "clean. scope='run' (default) backs up and removes the run; 'all' also the "
-        "shaping; 'purge' deletes without a backup. The backups are flat, timestamped "
-        "files INSIDE .riel/. Ask the user before cleaning a worktree whose state is "
-        "not yours."
+        "Riel housekeeping — remove EVERYTHING inside the worktree's .riel/ "
+        "(run.md, project.md, shapings/, runs/, legacy state and backups) so a "
+        "new task starts clean. Archiving is OPT-IN: archive=true copies the "
+        "tree outside .riel/ and verifies every sha256 BEFORE removing anything. "
+        "Without it the removal is NOT recoverable (.riel/ is gitignored). Ask "
+        "the user before cleaning a worktree whose state is not yours."
     ),
     "parameters": {
         "type": "object",
         "properties": {
-            "scope": {"type": "string", "description": "One of: run, all, purge (default run)."},
+            "archive": {
+                "type": "boolean",
+                "description": (
+                    "Keep a verified copy outside .riel/ before wiping it "
+                    "(default false: clean removes without a backup)."
+                ),
+            },
             "worktree": _WORKTREE,
         },
     },
@@ -214,9 +223,9 @@ RIEL_GUIDE = {
         "Read Riel's prose on demand — the only door to it. Call it with NO topic for "
         "the index (each topic with when to use it), with a topic for one guide, or with "
         "a topic and a section for just that slice. Read the guide that matches the work "
-        "in front of you: 'run' before authoring or executing a plan, 'shaping' before "
-        "researching the evidence, 'delegate' before delegating, 'tools' for the tool "
-        "surface."
+        "in front of you: 'project' before ordering several shapings, 'run' before "
+        "authoring or executing a contract, 'shaping' before researching one question's "
+        "evidence, 'delegate' before delegating, 'tools' for the tool surface."
     ),
     "parameters": {
         "type": "object",
@@ -224,7 +233,7 @@ RIEL_GUIDE = {
             "topic": {
                 "type": "string",
                 "description": (
-                    "run | shaping | delegate | tools. "
+                    "run | shaping | project | delegate | tools. "
                     "Omit for the index."
                 ),
             },
@@ -247,4 +256,5 @@ RIEL_GUIDE = {
     },
 }
 
-SCHEMAS = (RIEL_GUIDE, RIEL_SHAPE, RIEL_RUN, RIEL_NOTE, RIEL_CLEAN, RIEL_CHECK)
+SCHEMAS = (RIEL_GUIDE, RIEL_PROJECT, RIEL_SHAPE, RIEL_RUN, RIEL_NOTE,
+           RIEL_CLEAN, RIEL_CHECK)

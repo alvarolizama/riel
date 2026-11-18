@@ -2,7 +2,7 @@
 //
 //   Riel ● riel_note   — only when an ACTIVE RUN exists (.riel/run.md). Click:
 //                        modal with the run rendered as Markdown (Streamdown
-//                        draws the plan, the sections and the mermaid graph —
+//                        draws the contract, the sections and the mermaid graph —
 //                        the chat pipeline). While the turn runs: a pulsing
 //                        dot plus the live tool name. No run: no chip at all.
 //
@@ -150,7 +150,7 @@ function RunChip({ ctx, cwd, sessionId, busy, tool, revision }) {
   if (!hasRun) return null
 
   const title = () => {
-    const lines = ['Ver el run de esta tarea (plan + estado)']
+    const lines = ['Ver el run de esta tarea (contrato + estado)']
     if (busy) lines.push('Turno en curso' + (tool ? `: ${tool.name}` : ''))
     return lines.join('\n')
   }

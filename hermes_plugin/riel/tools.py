@@ -14,17 +14,18 @@ per-call. The fast path costs ~1 ms per call instead of ~40 ms; the fallback
 keeps the same `--worktree` subprocess shape for the rare interpreter that
 cannot load the engine.
 
-The surface is SIX typed tools (the run/shaping model, v2 — the old
-plan/seam pair is gone, no compatibility shims):
+The surface is SEVEN typed tools (the project/shaping/run model — the
+old riel_plan/riel_seam pair is gone, no compatibility shims):
 
   * `riel_guide` — the prose (no engine call);
-  * `riel_shape` — new | validate | fetch, the evidence before the plan;
-  * `riel_run`   — new | validate | activate | rebase | status | slice | fetch;
+  * `riel_project` — new | validate | status, the ordering of shapings;
+  * `riel_shape` — new | validate, one question's evidence;
+  * `riel_run`   — new | validate | activate | rebase | status | slice | archive;
     activation and every later mutation also refresh the session's checks;
   * `riel_note`  — run-state writes, gates included (the engine executes the
     gate's command and records the evidence E#; a caller never passes an
     exit code);
-  * `riel_clean` — archive the worktree's `.riel/` state;
+  * `riel_clean` — wipe the worktree's `.riel/` (archiving is opt-in);
   * `riel_check` — the delivery check on one file.
 
 Rules this module follows by construction (see `_load.py`):
@@ -68,12 +69,10 @@ ENGINE = _load.ENGINE
 TIMEOUT_SECS = 60
 ENGINE_MISSING_HINT = "reinstall the plugin: hermes plugins update riel"
 
-SHAPE_VERBS = ("new", "validate", "fetch")
-RUN_VERBS = ("new", "validate", "activate", "rebase", "status", "slice", "fetch")
-CLEAN_SCOPES = ("run", "all", "purge")
+PROJECT_VERBS = ("new", "validate", "status")
+SHAPE_VERBS = ("new", "validate")
+RUN_VERBS = ("new", "validate", "activate", "rebase", "status", "slice", "archive")
 MAX_PARAMS = 24
-# Fetch never moves without its pin: the body is hashed, never trusted.
-FETCH_DEFAULT_OUT = {"riel_shape": ".riel/shaping.md", "riel_run": ".riel/run.md"}
 
 
 def _params():
@@ -217,15 +216,6 @@ def _engine():
     return module
 
 
-def _str_list(raw, field: str) -> "list | str":
-    """A typed list of strings from the caller, or an error string."""
-    if raw is None:
-        return []
-    if not isinstance(raw, list) or any(not isinstance(item, str) for item in raw):
-        return _error(f"{field} must be an array of strings")
-    return raw
-
-
 def _params_arg(raw, tool: str) -> "list | str":
     """`[\"key=value\", …]` from the caller as the engine's `--param` pairs."""
     if raw is None:
@@ -239,51 +229,6 @@ def _params_arg(raw, tool: str) -> "list | str":
     return argv
 
 
-def _int_flag(args: dict, name: str, flag: str, argv: list, tool: str) -> "str | None":
-    """Append `--name N` to *argv* when the caller sent it; an error string on junk."""
-    raw = args.get(name)
-    if raw is None:
-        return None
-    try:
-        argv += [flag, str(int(raw))]
-    except (TypeError, ValueError):
-        return _error(f"{name} must be an integer, got {raw!r}", tool=tool)
-    return None
-
-
-def _fetch_args(args: dict, tool: str) -> "list | str":
-    """The fetch ARGUMENTS (URL -o FILE --sha256 H …) — the verb prefix is the
-    caller's (`shape fetch …` / `run fetch …`), since the engine nests fetch
-    under both. HTTPS, atomic, sha256-pinned: the pin is MANDATORY at this
-    layer too, and the engine never activates what a fetch wrote.
-    """
-    url = str(args.get("url") or "").strip()
-    if not url:
-        return _error(f"{tool} verb='fetch' needs 'url'", tool=tool)
-    sha = str(args.get("sha256") or "").strip()
-    if not sha:
-        return _error(
-            f"{tool} verb='fetch' needs 'sha256' — the body is pinned, never trusted",
-            tool=tool,
-        )
-    out = str(args.get("out") or FETCH_DEFAULT_OUT.get(tool) or "").strip()
-    if not out:
-        return _error(f"{tool} verb='fetch' needs 'out' (the destination path)", tool=tool)
-    argv = [url, "-o", os.path.expanduser(out), "--sha256", sha]
-    headers = _str_list(args.get("headers"), "headers")
-    if isinstance(headers, str):
-        return headers
-    for header in headers:
-        argv += ["--header", header]
-    if args.get("allow_http"):
-        argv.append("--allow-http")
-    for name, flag in (("timeout", "--timeout"), ("max_bytes", "--max-bytes")):
-        error = _int_flag(args, name, flag, argv, tool)
-        if error:
-            return error
-    return argv
-
-
 def _verb_args(args: dict, verbs: tuple, tool: str) -> str:
     verb = str(args.get("verb") or "").strip().lower()
     if verb not in verbs:
@@ -291,26 +236,46 @@ def _verb_args(args: dict, verbs: tuple, tool: str) -> str:
     return verb
 
 
+# --------------------------------------------------------------- project ---
+def riel_project(args: dict, **kwargs) -> str:
+    """The project — the ORDER in which a set of shapings gets executed.
+
+    `new` RENDERS the project template to stdout (the editor is the writing
+    path — the tool never writes `.riel/project.md`), `validate` checks the
+    graph of shapings, `status` derives each shaping's progress from the runs'
+    own evidence (the live run plus `.riel/runs/`). Nothing here authors a
+    shaping or writes state.
+    """
+    verb = _verb_args(args, PROJECT_VERBS, "riel_project")
+    if verb not in PROJECT_VERBS:
+        return _error("unsupported verb for riel_project", tool="riel_project",
+                      verb=verb, allowed=list(PROJECT_VERBS))
+    argv = ["project", verb]
+    if verb == "new":
+        params = _params_arg(args.get("params"), "riel_project")
+        if isinstance(params, str):
+            return params
+        argv += params
+    else:
+        target = str(args.get("file") or "").strip()
+        if target:
+            argv.append(os.path.expanduser(target))
+    return _dump(_run(argv, args, kwargs, tool="riel_project", verb=verb))
+
+
 # ---------------------------------------------------------------- shaping ---
 def riel_shape(args: dict, **kwargs) -> str:
     """The shaping — the evidence (Spec 7) before any run is authored.
 
     `new` RENDERS the shaping template to stdout (the editor is the writing
-    path — the tool never writes `.riel/shaping.md`), `params` as
+    path — the tool never writes a shaping file), `params` as
     `[\"key=value\", …]` fill the placeholders; `validate` checks the
-    structural rules over `file`; `fetch` materializes a remote shaping into
-    the worktree (sha256-pinned).
+    structural rules over `file`.
     """
     verb = _verb_args(args, SHAPE_VERBS, "riel_shape")
     if verb not in SHAPE_VERBS:
         return _error("unsupported verb for riel_shape", tool="riel_shape",
                       verb=verb, allowed=list(SHAPE_VERBS))
-    if verb == "fetch":
-        argv = _fetch_args(args, "riel_shape")
-        if isinstance(argv, str):
-            return argv
-        return _dump(_run(["shape", "fetch", *argv], args, kwargs,
-                          tool="riel_shape", verb="fetch"))
     argv = ["shape", verb]
     if verb == "new":
         params = _params_arg(args.get("params"), "riel_shape")
@@ -326,27 +291,22 @@ def riel_shape(args: dict, **kwargs) -> str:
 
 # ------------------------------------------------------------------- run ----
 def riel_run(args: dict, **kwargs) -> str:
-    """The run — ONE door for the machine-checkable plan (`.riel/run.md`).
+    """The run — ONE door for the contract (`.riel/run.md`).
 
     `new` PRINTS the draft template — the agent writes `.riel/run.md` itself,
-    then `validate` (the strict riel-run/v1 rules, hashing plan+shaping; the
+    then `validate` (the strict riel-run/v1 rules, hashing definition+shaping; the
     file is optional, the worktree's run is the default) and `activate`
-    (freezes the plan, computes the hashes, opens r1 — no file argument: it
+    (freezes the definition, computes the hashes, opens r1 — no file argument: it
     always answers for the worktree's run). `rebase` re-freezes the hashes
-    after a plan/shaping edit, `status` answers the state as ONE JSON object,
-    `slice` extracts one phase (`phase` required) as a child packet, `fetch`
-    materializes a remote run (sha256-pinned, never activates).
+    after a definition/shaping edit, `status` answers the state as ONE JSON object,
+    `slice` extracts one phase (`phase` required) as a child packet, `archive`
+    moves the finished run to `.riel/runs/<slug>.md` so the next shaping can
+    activate (the project derives its progress from those files).
     """
     verb = _verb_args(args, RUN_VERBS, "riel_run")
     if verb not in RUN_VERBS:
         return _error("unsupported verb for riel_run", tool="riel_run",
                       verb=verb, allowed=list(RUN_VERBS))
-    if verb == "fetch":
-        argv = _fetch_args(args, "riel_run")
-        if isinstance(argv, str):
-            return argv
-        return _dump(_run(["run", "fetch", *argv], args, kwargs,
-                          tool="riel_run", verb="fetch"))
 
     argv = ["run", verb]
     if verb == "new":
@@ -449,18 +409,19 @@ def riel_note(args: dict, **kwargs) -> str:
 
 
 def riel_clean(args: dict, **kwargs) -> str:
-    """Archive the worktree's Riel state so a new task starts clean.
-
-    `scope='run'` (default) backs up and removes the run; `'all'` also the
-    shaping; `'purge'` deletes without a backup. The backups are flat,
-    timestamped files INSIDE `.riel/`. Ask the user before cleaning a
-    worktree whose state is not yours.
+    """Remove EVERYTHING inside the worktree's `.riel/`: the run, project.md,
+    shapings/, the archived runs and any legacy state. Archiving is OPT-IN
+    (`archive=true`) and lands OUTSIDE `.riel/`, verified by sha256 before
+    anything is removed. Without it the removal is not recoverable — `.riel/`
+    is gitignored local state. Ask the user before cleaning a worktree whose
+    state is not yours.
     """
-    scope = str(args.get("scope") or "run").strip().lower()
-    if scope not in CLEAN_SCOPES:
-        return _error("unsupported scope for riel_clean", tool="riel_clean",
-                      scope=scope, allowed=list(CLEAN_SCOPES))
-    argv = ["clean"] + {"all": ["--all"], "purge": ["--purge"]}.get(scope, [])
+    if "scope" in args:
+        return _error(
+            "riel_clean no longer takes 'scope' — it cleans all of .riel/; "
+            "pass archive=true to keep a verified copy first",
+            tool="riel_clean")
+    argv = ["clean"] + (["--archive"] if args.get("archive") else [])
     return _run(argv, args, kwargs, tool="riel_clean")
 
 
@@ -582,6 +543,7 @@ def _guard(fn):
 
 HANDLERS = {
     "riel_guide": _guard(riel_guide),
+    "riel_project": _guard(riel_project),
     "riel_shape": _guard(riel_shape),
     "riel_run": _guard(riel_run),
     "riel_note": _guard(riel_note),

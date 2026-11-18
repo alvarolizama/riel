@@ -157,11 +157,11 @@ class GuideHandlerTest(unittest.TestCase):
 
     def test_a_section_returns_just_that_slice(self):
         whole = self.payload({"topic": RUN, "full": True})
-        slice_ = self.payload({"topic": RUN, "section": "Plan"})
+        slice_ = self.payload({"topic": RUN, "section": "Definition"})
         self.assertTrue(slice_["passed"], slice_)
         self.assertLess(slice_["bytes"], whole["bytes"])
-        self.assertEqual(slice_["section"], "Plan")
-        self.assertIn("## Plan", slice_["content"])
+        self.assertEqual(slice_["section"], "Definition")
+        self.assertIn("## Definition", slice_["content"])
 
     def test_unknown_topic_is_a_structured_error(self):
         result = self.payload({"topic": "no-such-topic"})

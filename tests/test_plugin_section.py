@@ -58,12 +58,12 @@ class SectionTest(unittest.TestCase):
 
     # -- the index ---------------------------------------------------------
 
-    def test_names_the_one_door_and_the_six_tools(self):
+    def test_names_the_one_door_and_the_seven_tools(self):
         block = self.block()
         self.assertIn("riel_guide()", block)
         self.assertIn("everything Riel does is a tool", block)
-        for tool in ("riel_guide", "riel_shape", "riel_run", "riel_note",
-                     "riel_clean", "riel_check"):
+        for tool in ("riel_guide", "riel_project", "riel_shape", "riel_run",
+                     "riel_note", "riel_clean", "riel_check"):
             self.assertIn(tool, block, block)
         self.assertNotIn("riel_todo", block, "the run owns the checks now")
         self.assertNotIn("skill_view", block)
@@ -73,8 +73,9 @@ class SectionTest(unittest.TestCase):
 
     def test_the_run_verbs_travel_in_the_door_line(self):
         block = self.block()
-        self.assertIn("new|validate|activate|rebase|status|slice|fetch", block)
-        self.assertIn("new|validate|fetch", block)
+        self.assertIn("new|validate|activate|rebase|status|slice|archive", block)
+        self.assertIn("riel_project (new|validate|status)", block)
+        self.assertIn("riel_shape (new|validate)", block)
 
     def test_stays_within_the_section_budget(self):
         block = self.block()

@@ -43,7 +43,7 @@ NOTE_PARAMS = (
         "section": "## Evidence",
         "help": (
             "Existing claim id (P#) the evidence covers; repeatable. Claims "
-            "are created in the plan, never by note."
+            "are created in the definition, never by note."
         ),
     },
     {

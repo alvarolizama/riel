@@ -1,43 +1,70 @@
-# Riel — plugin de Hermes (v2.0.0)
+# Riel — plugin de Hermes (v3.0.0)
 
 El paquete ES el producto: la prosa, el motor, las tools, el gate y el chip.
-v2.0.0 es un **clean break**: el estado vive en `.riel/run.md` (riel-run/v1) y
-no hay conversor ni compatibilidad con las tools v1 (`riel_plan`, `riel_seam`).
+El estado vive en `.riel/run.md` (riel-run/v1), la evidencia de una pregunta en
+`.riel/shapings/<slug>.md` (riel-shaping/v2) y el orden de varias preguntas en
+`.riel/project.md` (riel-project/v1). No hay conversor ni compatibilidad con las
+tools v1 (`riel_plan`, `riel_seam`).
 
 **La superficie son tools, nunca una línea de comandos.** Siete tools tipadas —
-`riel_guide` (la prosa), `riel_shape` (`new|validate|fetch`, la evidencia antes
-del plan), `riel_run` (`new|validate|activate|rebase|status|slice|fetch`, una
-sola puerta para `.riel/run.md`), `riel_note` (el estado y sus gates),
-`riel_clean`, `riel_check` — sobre el motor (stdlib, sin deps, que
-viaja dentro del paquete y decide nada: el formato tiene un solo dueño). Ninguna
-tool recibe argv; el campo `tool` de la respuesta es provenance (qué tool
-contestó) y el `verb` cuando la tool lo lleva, nunca una interfaz. Toda
-respuesta — positivas y negativas — habla el mismo sobre de seis llaves
-(`tool, worktree, exit_code, passed, stdout, stderr`).
+`riel_guide` (la prosa), `riel_project` (`new|validate|status`, el orden de los
+shapings), `riel_shape` (`new|validate`, una pregunta), `riel_run`
+(`new|validate|activate|rebase|status|slice|archive`, una sola puerta para
+`.riel/run.md`), `riel_note` (el estado y sus gates), `riel_clean`, `riel_check`
+— sobre el motor (stdlib, sin deps, que viaja dentro del paquete y decide nada:
+el formato tiene un solo dueño). Ninguna tool recibe argv; el campo `tool` de la
+respuesta es provenance (qué tool contestó) y el `verb` cuando la tool lo lleva,
+nunca una interfaz. Toda respuesta — positivas y negativas — habla el mismo
+sobre de seis llaves (`tool, worktree, exit_code, passed, stdout, stderr`).
 
-## El modelo run/shaping
+## El modelo project / shaping / run
 
-- **`shape new` y `run new` IMPRIMEN** sus plantillas (el editor es el camino de
-  escritura): el agente escribe `.riel/run.md` (plan + Metadata + Execution
-  state + Core + Open + Evidence, formato estricto `riel-run/v1` que hashea
-  plan+shaping) y `.riel/shaping.md` a mano, luego `run validate` y
-  `run activate`.
-- **`fetch` exige sha256** — el body va pineado, nunca confiado; HTTPS,
-  atómico, acotado, y jamás activa lo que escribe.
+- **Riel explica y valida; no authora.** `project new`, `shape new` y `run new`
+  IMPRIMEN sus plantillas (el editor es el camino de escritura). Un sistema de
+  proyectos, un MCP, una API o un copy-paste escribe los bytes; `validate`
+  decide si están bien formados. No hay fetch: el transporte es asunto del
+  productor, el Markdown es el contrato.
+- **Un shaping = una pregunta.** `.riel/shapings/<slug>.md` con marker
+  `<!-- riel-shaping/v2 id:shp_xxxxxxxx -->`. El uid es la identidad (sobrevive
+  un rename), el slug la ubicación y el sha256 la revisión. `## Question` es UNA
+  línea con UN `?`: dos preguntas son dos shapings, y el validador las rechaza.
+- **Un run ejecuta un shaping.** La Definition lo declara en `### Shaping` (path o
+  uid); `activate` valida ese shaping, resuelve los anchors `shaping:F#` contra
+  él, congela los findings en `### Basis` y registra path + uid + sha256 en
+  Metadata. Editar el shaping ligado marca stale (exit 3) y pide `rebase`;
+  editar un shaping hermano no.
+- **Un project ordena los shapings.** `.riel/project.md` con `## Objective` y
+  `## Graph` (nodos `S#` que son shapings, lista lineal o mermaid con ramas).
+  `project status` DERIVA el progreso: un nodo está done cuando el run archivado
+  en `.riel/runs/<slug>.md` está done. No escribe estado, no tiene gates propios.
+- **`run archive`** mueve el run terminado a `.riel/runs/<slug>.md` (verificado,
+  sin poda) y libera el worktree para el siguiente shaping. Un worktree sostiene
+  un solo run activo: los tracks paralelos van en worktrees aparte, un PR cada uno.
 - **`riel_note` ejecuta gates**: `gates: ["G1"], command: "<comando real>",
   covering: "<alcance>", claims: ["P1"]` — el MOTOR corre el comando, captura
   el exit code real y registra la evidencia `E#`. Nadie pasa un exit code.
-- **`run status`** responde UN objeto JSON del estado del run.
+- **`run status`** responde UN objeto JSON del estado del run, incluido el
+  shaping ligado (`path`, `id`, `sha256`).
+- **`riel_clean`** borra TODO lo que está dentro de `.riel/` (run, project,
+  shapings, runs, estado legacy y backups); solo queda el lock. El archivado es
+  opt-in: `archive=true` copia el árbol fuera de `.riel/`
+  (`~/.hermes/riel/archive/<worktree>/<ts>/`) y verifica cada sha256 ANTES de
+  borrar. Sin eso no hay vuelta: `.riel/` está gitignored. Ya no hay `scope`.
+- **Migración**: un `.riel/shaping.md` suelto (v1) se sigue leyendo para que un
+  run activo no se rompa al actualizar; `activate`/`rebase` lo migran a
+  `shapings/`, le acuñan uid, rotan el original a `.bak.md` y re-ligan el run en
+  la misma transacción.
 
 ## La prosa viaja acá, y se lee por una sola puerta, por secciones
 
-`guide/` trae los topics que el índice lista: sin argumento `riel_guide()`
-devuelve el índice; con `topic` devuelve el **índice de secciones** de esa
-guía; con `section` sólo esa rebanada, y `full=true` el cuerpo entero. La
-sección `riel` del prompt publica lo que el catálogo de tools no puede —que la
-prosa existe— más el estado del worktree. **No se registra ningún skill**:
-un skill de plugin nunca entra en `<available_skills>`, así que habría dos
-puertas y dos formas de que la prosa se desincronice.
+`guide/` trae los topics que el índice lista (`project`, `run`, `shaping`,
+`delegate`, `tools`): sin argumento `riel_guide()` devuelve el índice; con
+`topic` devuelve el **índice de secciones** de esa guía; con `section` sólo esa
+rebanada, y `full=true` el cuerpo entero. La sección `riel` del prompt publica
+lo que el catálogo de tools no puede —que la prosa existe— más el estado del
+worktree. **No se registra ningún skill**: un skill de plugin nunca entra en
+`<available_skills>`, así que habría dos puertas y dos formas de que la prosa se
+desincronice.
 
 ## Instalación (usuario)
 
@@ -51,7 +78,7 @@ El instalador clona el repo y **mueve solo este subdirectorio** a
 autocontenido: `guide/`, `engine/` y `templates/` viajan adentro y **son la
 fuente** — no hay copia ni paso de build. Se editan acá y el suite
 (`tests/test_plugin_vendor.py`) verifica que no reaparezca un árbol duplicado,
-y que manifiesto, README y motor digan todos `2.0.0`.
+y que manifiesto, README y motor digan todos `3.0.0`.
 
 ## Instalación (desarrollo)
 
@@ -132,5 +159,7 @@ editar otro repo), y si ninguno es un worktree con run, el cwd de la sesión.
 
 ```bash
 make test          # incluye tests/test_plugin_*.py (paquete + handlers + chip)
+make lint          # byte-compile de motor, paquete, scripts y tests
+make validate      # dense-register + grafo + mmdc sobre README, specs, guides y templates
 hermes plugins validate hermes_plugin/riel   # mismo discovery/registro que usa Hermes
 ```

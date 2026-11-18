@@ -9,8 +9,8 @@ Stdlib-only and Hermes-free on purpose. Two kinds of tests live here:
     is the sole writer of the formats and has its own suite; pinning the
     plugin layer to it would couple two suites two workers move at once.
 
-Version contract (v2.0.0, the clean break): the manifest, the package README
-and the engine's VERSION all say 2.0.0 — asserted here so the three cannot
+Version contract (v3.0.0, the project/shaping/run model): the manifest, the
+package README and the engine's VERSION all say 3.0.0 — asserted here so the three cannot
 drift apart.
 
 Run:
@@ -38,7 +38,7 @@ sys.path.insert(0, str(HERE))
 import _stub_engine as stub  # noqa: E402
 
 MANIFEST = PLUGIN / "plugin.yaml"
-VERSION = "2.0.0"
+VERSION = "3.0.0"
 
 # The package's own tree: the prose (`guide/`), the engine the tools run
 # (`engine/`) and the run/shaping templates (`templates/`). They live here and
@@ -170,13 +170,13 @@ class PackageTest(unittest.TestCase):
 
 
 class VersionContractTest(unittest.TestCase):
-    """2.0.0 — the clean break, said identically by manifest, README and engine."""
+    """3.0.0 — said identically by manifest, README and engine."""
 
-    def test_the_manifest_is_2_0_0(self):
+    def test_the_manifest_is_3_0_0(self):
         self.assertEqual(_manifest_field("version"), VERSION, MANIFEST)
 
     def test_the_package_readme_says_the_same_version(self):
-        """The package's own README (the installed user's doc) names v2.0.0."""
+        """The package's own README (the installed user's doc) names v3.0.0."""
         readme = (PLUGIN / "README.md").read_text(encoding="utf-8")
         self.assertIn(f"v{VERSION}", readme,
                       f"hermes_plugin/riel/README.md does not say v{VERSION}")
@@ -200,11 +200,11 @@ class WiringTest(unittest.TestCase):
         cls.tools = load_module("riel_plugin_tools", PLUGIN / "tools.py")
         cls.schemas = load_module("riel_plugin_schemas", PLUGIN / "schemas.py")
 
-    def test_the_surface_is_the_six_tools_of_the_run_model(self):
+    def test_the_surface_is_the_seven_tools_of_the_project_model(self):
         self.assertEqual(
             sorted(self.tools.HANDLERS),
-            sorted(["riel_guide", "riel_shape", "riel_run", "riel_note",
-                    "riel_clean", "riel_check"]),
+            sorted(["riel_guide", "riel_project", "riel_shape", "riel_run",
+                    "riel_note", "riel_clean", "riel_check"]),
         )
         self.assertEqual(sorted(_manifest_tools()), sorted(self.tools.HANDLERS))
 
@@ -253,7 +253,7 @@ class HandlerTest(unittest.TestCase):
             (self.tools.riel_note, {"worktree": self.tmp}),
             (self.tools.riel_run, {"verb": "nope", "worktree": self.tmp}),
             (self.tools.riel_shape, {"verb": "nope", "worktree": self.tmp}),
-            (self.tools.riel_run, {"verb": "fetch", "url": "https://x.test/r", "worktree": self.tmp}),
+            (self.tools.riel_run, {"verb": "slice", "worktree": self.tmp}),
             (self.tools.riel_check, {"worktree": self.tmp}),
         ):
             with self.subTest(args=args):
@@ -340,14 +340,14 @@ class HandlerTest(unittest.TestCase):
                                         {"verb": "status", "worktree": self.tmp})["stdout"])
         self.assertTrue(state["active"])
 
-    def test_clean_archives_and_the_next_run_starts_fresh(self):
+    def test_clean_wipes_the_state_and_does_not_archive_by_default(self):
         stub.seed(self.tmp, goal="old task")
         payload = self.payload(self.tools.riel_clean, {"worktree": self.tmp})
         self.assertEqual(payload["tool"], "riel_clean")
         self.assertNotIn("verb", payload, "clean takes no verb — the envelope says the tool")
         self.assertFalse((Path(self.tmp) / ".riel" / "run.md").exists())
-        backups = list((Path(self.tmp) / ".riel").glob("*.bak.md"))
-        self.assertTrue(backups, "clean archives before it removes")
+        self.assertEqual(list((Path(self.tmp) / ".riel").glob("*.bak.md")), [],
+                         "archiving is opt-in: the default leaves no backup")
 
     def test_check_folds_the_halves_into_the_shared_envelope(self):
         target = Path(self.tmp, "doc.md")
@@ -472,10 +472,21 @@ class EngineIntegrationTest(unittest.TestCase):
         self.assertFalse(payload["passed"])
         self.assertIn("run state", payload["stderr"])
 
-    def test_clean_scopes_reach_the_engine(self):
-        for scope in ("run", "all", "purge"):
-            payload = self.payload(self.tools.riel_clean, {"scope": scope, "worktree": self.tmp})
-            self.assertTrue(payload["passed"], payload)
+    def test_clean_archive_flag_reaches_the_engine(self):
+        stub.seed(self.tmp, goal="old task")
+        # The real engine archives under ~/.hermes/riel/archive — point HOME at
+        # the temp dir so a test never writes into the operator's home.
+        home = os.environ.get("HOME")
+        os.environ["HOME"] = self.tmp
+        self.addCleanup(lambda: os.environ.__setitem__("HOME", home)
+                        if home else os.environ.pop("HOME", None))
+        payload = self.payload(self.tools.riel_clean,
+                               {"archive": True, "worktree": self.tmp})
+        self.assertTrue(payload["passed"], payload)
+        self.assertIn("archived", payload["stdout"])
+        self.assertFalse((Path(self.tmp) / ".riel" / "run.md").exists())
+        self.assertTrue(list(Path(self.tmp).glob(".hermes/riel/archive/**/run.md")),
+                        "the archive lands OUTSIDE .riel/, which clean wipes")
 
     def test_check_answers_the_engine_json_through_the_envelope(self):
         doc = Path(self.tmp) / "doc.md"

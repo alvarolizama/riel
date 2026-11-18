@@ -20,6 +20,12 @@
      context-fetch keywords: what to pull from memory before executing. -->
 - {{term}} → {{source}}
 
+### Shaping
+<!-- The ONE shaping this run executes: a path under .riel/shapings/ or its
+     uid (shp_xxxxxxxx). One run = one shaping = one question = one PR.
+     Delete this subsection only when no claim anchors into a shaping. -->
+- shaping: {{shaping}}
+
 ## Constraints
 <!-- Hard rules the execution may not break. -->
 - {{constraint}}

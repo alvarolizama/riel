@@ -75,8 +75,8 @@ def main():
         loaded = manager._plugins.get(manifests[0].key or manifests[0].name)
         assert loaded is not None and not loaded.error, getattr(loaded, "error", "missing")
         assert loaded.tools_registered == [
-            "riel_guide", "riel_shape", "riel_run", "riel_note", "riel_clean",
-            "riel_check"]
+            "riel_guide", "riel_project", "riel_shape", "riel_run", "riel_note",
+            "riel_clean", "riel_check"]
         print(f"registered: {loaded.tools_registered}")
 
         for task, worktree in zip(("probe-a", "probe-b"), sessions):

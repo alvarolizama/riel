@@ -146,15 +146,6 @@ class WorktreeIsExplicitTest(unittest.TestCase):
                                              "worktree": os.path.join(self.tmp, "nope")}))
         self.assertIn("not a directory", payload["error"])
 
-    def test_a_relative_fetch_destination_lands_in_the_worktree(self):
-        elsewhere = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, elsewhere, True)
-        payload = json.loads(tools.riel_shape({
-            "verb": "fetch", "url": "https://example.test/s.md", "sha256": "a" * 64,
-            "out": ".riel/shaping.md", "worktree": elsewhere}))
-        self.assertEqual(payload["exit_code"], 0, payload)
-        self.assertTrue((Path(elsewhere) / ".riel" / "shaping.md").is_file())
-
 
 class OneEnvelopeTest(unittest.TestCase):
     """Every tool answers with the same six keys — a caller folds without asking."""
@@ -175,6 +166,8 @@ class OneEnvelopeTest(unittest.TestCase):
             if name == "riel_run":
                 args["verb"] = "status"
             if name == "riel_shape":
+                args["verb"] = "new"
+            if name == "riel_project":
                 args["verb"] = "new"
             if name == "riel_check":
                 args["file"] = doc

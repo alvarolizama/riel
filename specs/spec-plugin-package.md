@@ -9,12 +9,13 @@ symlinks, root skills, PATH entries or generated build copies.
 
 Only the package is installed. Task-local `.riel/` remains in its worktree and
 outside the package. The engine exclusively writes `.riel/run.md` and new
-`.riel/shaping.md`. The previous contract and ledger files are unsupported as
+`.riel/shapings/<slug>.md`, optionally ordered by `.riel/project.md`. The
+previous contract and ledger files are unsupported as
 inputs or state, without migration; state resolution cannot silently fall back
 to them or to another session's cwd.
 
-Six tools are registered: `riel_guide`, `riel_shape`, `riel_run`, `riel_note`,
-`riel_clean` and `riel_check`. Every tool returns the common
+Seven tools are registered: `riel_guide`, `riel_project`, `riel_shape`,
+`riel_run`, `riel_note`, `riel_clean` and `riel_check`. Every tool returns the common
 `{tool, worktree, exit_code, passed, stdout, stderr}` envelope, including invalid
 input and disabled-group refusals. Internal engine argv never reaches callers.
 
@@ -34,7 +35,7 @@ truncate-then-write state.
 
 ## Prose and prompt
 
-`guide.py` is the one prose reader. Each of run, shaping, delegate and tools
+`guide.py` is the one prose reader. Each of project, run, shaping, delegate and tools
 has frontmatter `topic`, `trigger` and `version`; `riel_guide` serves topic
 outlines by default and sections/full content on demand. No Hermes skill is
 registered beside these sources.

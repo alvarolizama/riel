@@ -13,10 +13,12 @@ The contract (v2 — run/shaping model, clean break):
 
   * one runner, explicit per-call sinks (never a global redirect), the
     worktree by parameter (no chdir);
-  * verbs: `shape new|validate|fetch`, `run new|validate|activate|rebase|`
-    `status|slice|fetch`, `note`, `todo`, `clean`, `check`;
+  * verbs: `project new|validate|status`, `shape new|validate`,
+    `run new|validate|activate|rebase|`
+    `status|slice|archive`, `note`, `todo`, `clean`, `check`;
+  * `clean` wipes ALL of .riel/ (archiving opt-in, outside .riel/);
   * `run new` PRINTS the draft (never writes); `run status` answers ONE JSON
-    OBJECT; `fetch` demands a sha256 pin and never activates;
+    OBJECT;
   * `note --gate G --command CMD --claim P …`: the ENGINE executes the command
     and records the evidence E# — a caller never passes an exit code. The
     note surface is `engine/params.py` (the real, packaged declaration — the
@@ -32,6 +34,8 @@ engine), so the note derivation is exercised against the packaged
 
 import json
 import os
+import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -94,9 +98,9 @@ def _save_state(worktree, state):
 
 
 def seed(worktree, claims=(), gates=(), **extra):
-    """Write a run state directly — what `run new` + a hand-edited plan produces.
+    """Write a run state directly — what `run new` + a hand-edited definition produces.
 
-    Claims and gates are created HERE (in the plan), never by `note`: the note
+    Claims and gates are created HERE (in the definition), never by `note`: the note
     only ever executes gates and records evidence against existing ids.
     """
     state = {**_empty_state(), "active": True, **extra,
@@ -108,42 +112,6 @@ def seed(worktree, claims=(), gates=(), **extra):
 
 
 # ----------------------------------------------------------------- verbs ----
-
-def _fetch(argv, worktree, out, err):
-    """`fetch URL -o FILE --sha256 H …` — the pin is mandatory; writes, never activates."""
-    url = sha = dest = None
-    headers = []
-    i = 1
-    while i < len(argv):
-        arg = argv[i]
-        if arg == "-o":
-            i += 1
-            dest = argv[i]
-        elif arg == "--sha256":
-            i += 1
-            sha = argv[i]
-        elif arg == "--header":
-            i += 1
-            headers.append(argv[i])
-        elif arg in ("--allow-http", "--timeout", "--max-bytes"):
-            if arg != "--allow-http":
-                i += 1  # consume the value
-        else:
-            url = arg
-        i += 1
-    if not url or not dest:
-        err.write("fetch needs a URL and -o FILE\n")
-        return 2
-    if not sha:
-        err.write("fetch needs --sha256 — the body is pinned, never trusted\n")
-        return 2
-    path = dest if os.path.isabs(dest) else os.path.join(worktree, dest)
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    with open(path, "w", encoding="utf-8") as fh:
-        fh.write("# fetched from the stub\n")
-    out.write("fetched {} bytes into {}\n".format(24, dest))
-    return 0
-
 
 def _note(argv, worktree, out, err):
     flags = {}
@@ -252,6 +220,44 @@ def run_verb(argv, worktree=None, out=None, err=None):
         argv = argv[2:]
     verb = argv[0] if argv else ""
 
+    if verb == "project":
+        sub = argv[1] if len(argv) > 1 else ""
+        if sub == "new":
+            out.write("# Project: draft\n\n<!-- riel-project/v1 -->\n\n"
+                      "## Objective\n{{objective}}\n\n## Graph\n"
+                      "- S1: .riel/shapings/demo.md\n")
+            return 0  # RENDERS — never writes
+        if sub in ("validate", "status"):
+            target = argv[2] if len(argv) > 2 else os.path.join(
+                worktree, ".riel", "project.md")
+            target = target if os.path.isabs(target) else os.path.join(worktree, target)
+            if not os.path.isfile(target):
+                err.write("no project file at {}\n".format(target))
+                return 2
+            with open(target, encoding="utf-8") as fh:
+                text = fh.read()
+            nodes = re.findall(r"^- (S\d+):\s*(.+)$", text, re.M)
+            ok = "<!-- riel-project/v1 -->" in text and bool(nodes)
+            if sub == "validate":
+                if ok:
+                    out.write("project ok\n")
+                    return 0
+                err.write("project is not valid: {}\n".format(target))
+                return 1
+            rows = {}
+            for nid, ref in nodes:
+                slug = os.path.basename(ref.strip())[:-3]
+                archived = os.path.join(worktree, ".riel", "runs", slug + ".md")
+                rows[nid] = {"shaping": ref.strip(), "slug": slug,
+                             "status": "done" if os.path.isfile(archived) else "pending"}
+            out.write(json.dumps({
+                "format": "riel-project/v1", "nodes": rows,
+                "done": bool(rows) and all(r["status"] == "done" for r in rows.values()),
+            }) + "\n")
+            return 0
+        err.write("unknown project verb: {}\n".format(sub))
+        return 2
+
     if verb == "shape":
         sub = argv[1] if len(argv) > 1 else ""
         if sub == "new":
@@ -273,8 +279,6 @@ def run_verb(argv, worktree=None, out=None, err=None):
                 return 0
             err.write("shaping is not valid: {}\n".format(target))
             return 1
-        if sub == "fetch":
-            return _fetch(["fetch"] + argv[2:], worktree, out, err)
         err.write("unknown shape verb: {}\n".format(sub))
         return 2
 
@@ -283,7 +287,7 @@ def run_verb(argv, worktree=None, out=None, err=None):
         if sub == "new":
             template = argv[argv.index("--template") + 1] if "--template" in argv else "run"
             params = [argv[i + 1] for i, a in enumerate(argv) if a == "--param"]
-            out.write("# Run: {{{{title}}}} (template {})\n\n```riel-run/v1\n```\n\n## Plan\n".format(template))
+            out.write("# Run: {{{{title}}}} (template {})\n\n```riel-run/v1\n```\n\n## Objective\n".format(template))
             return 0  # PRINTS the draft — never writes
         if sub == "validate":
             state = _load_state(worktree)
@@ -316,14 +320,27 @@ def run_verb(argv, worktree=None, out=None, err=None):
                 return 1
             out.write(json.dumps(_load_state(worktree) or _empty_state()) + "\n")
             return 0
+        if sub == "archive":
+            state = _load_state(worktree)
+            if state is None or not state.get("active"):
+                err.write("nothing to archive: no active .riel/run.md\n")
+                return 1
+            runs = os.path.join(worktree, ".riel", "runs")
+            os.makedirs(runs, exist_ok=True)
+            slug = state.get("shaping_slug") or "run"
+            target = os.path.join(runs, slug + ".md")
+            if os.path.exists(target):
+                err.write("{} already exists\n".format(target))
+                return 2
+            os.replace(_state_path(worktree), target)
+            out.write("archived .riel/run.md -> .riel/runs/{}.md\n".format(slug))
+            return 0
         if sub == "slice":
             if len(argv) < 3:
                 err.write("slice needs a phase id\n")
                 return 2
             out.write("# Run slice: {}\n".format(argv[2]))
             return 0
-        if sub == "fetch":
-            return _fetch(argv, worktree, out, err)
         err.write("unknown run verb: {}\n".format(sub))
         return 2
 
@@ -351,20 +368,34 @@ def run_verb(argv, worktree=None, out=None, err=None):
         return 0
 
     if verb == "clean":
-        removed = []
-        targets = [_state_path(worktree)]
-        if "--all" in argv[1:]:
-            targets.append(_shaping_path(worktree))
-        for path in targets:
-            if os.path.isfile(path):
-                if "--purge" not in argv[1:]:
-                    backup = path + ".bak.md"
-                    os.replace(path, backup)
-                    removed.append(os.path.basename(backup))
-                else:
-                    os.unlink(path)
-                    removed.append(os.path.basename(path))
-        out.write("cleaned: {}\n".format(", ".join(removed) or "nothing to clean"))
+        # The contract: EVERYTHING inside .riel/ goes; archiving is opt-in and
+        # lands outside .riel/ (the stub keeps it beside the worktree).
+        riel = os.path.join(worktree, ".riel")
+        if not os.path.isdir(riel):
+            out.write("nothing to clean\n")
+            return 0
+        entries = [e for e in sorted(os.listdir(riel)) if e != ".run.lock"]
+        if "--archive" in argv[1:]:
+            dest = os.path.join(worktree, ".riel-archive", "stub")
+            n = 1
+            while os.path.exists(dest):
+                dest = os.path.join(worktree, ".riel-archive", "stub-%d" % n)
+                n += 1
+            for root, _dirs, files in os.walk(riel):
+                for name in files:
+                    src = os.path.join(root, name)
+                    dst = os.path.join(dest, os.path.relpath(src, riel))
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                    shutil.copy2(src, dst)
+            out.write("cleaned {} entry(ies) — archived to {}\n".format(len(entries), dest))
+        else:
+            out.write("cleaned {} entry(ies) — no archive\n".format(len(entries)))
+        for name in entries:
+            path = os.path.join(riel, name)
+            if os.path.islink(path) or os.path.isfile(path):
+                os.unlink(path)
+            elif os.path.isdir(path):
+                shutil.rmtree(path)
         return 0
 
     if verb == "check":

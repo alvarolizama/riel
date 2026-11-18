@@ -1,8 +1,9 @@
 """Riel — Hermes plugin registration.
 
 The package is the whole product: the prose (`guide/`, which lives here — the
-tree IS the source, no build step), the engine it documents, the SIX typed
-tools (the run/shaping model), the `pre_verify` gate and the desktop chip. No
+tree IS the source, no build step), the engine it documents, the SEVEN typed
+tools (the project/shaping/run model), the `pre_verify` gate and the desktop
+chip. No
 command line and no skills.
 
 The prose reaches the agent through ONE door: the `riel_guide` tool reads

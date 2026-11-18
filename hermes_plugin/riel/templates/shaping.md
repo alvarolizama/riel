@@ -1,18 +1,21 @@
 # Shaping: {{name}}
 
-<!-- riel-shaping/v1 -->
+<!-- riel-shaping/v2 id:{{id}} -->
 
 ## Question
 {{question}}
-<!-- ONE sentence: the decision this shaping closes. If it takes two, you
-     have two shapings. Everything below exists to close this line. -->
+<!-- ONE line with ONE question mark: the single question this shaping closes.
+     Two questions are two shapings — split them, because a run binds one
+     shaping and a PR delivers one answer. Everything below exists to close
+     this line. The uid in the marker identifies the shaping across renames:
+     a run binds it by id, path and sha256. -->
 
 ## Findings
-<!-- What was actually learned, and how we know it. One F# per line, ids
-     unique, each with its source; confidence is optional but a finding
+<!-- What was actually learned, and how we know it. One F# per PHYSICAL line,
+     ids unique, each with its source; confidence is optional but a finding
      that a run activates gets copied with it. A finding without a source
-     is a hypothesis: `shape` fails on it and nothing downstream should
-     rest on it.
+     is a hypothesis: `shape validate` fails on it and nothing downstream
+     should rest on it.
        - F1: <finding> — source: path/to/file.py:120, confidence high
        - F2: <finding> — source: https://… (2026-01-15), confidence med -->
 - F1: {{finding}} — source: {{path:line | URL + date | command}}, confidence {{high|med|low}}

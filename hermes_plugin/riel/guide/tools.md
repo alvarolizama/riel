@@ -1,9 +1,9 @@
 ---
 topic: tools
-trigger: "Use for Riel's six-tool surface: guide, shape, run, note, clean and check, all operating explicitly on the session worktree."
-version: 2.0.0
+trigger: "Use for Riel's seven-tool surface: guide, project, shape, run, note, clean and check, all operating explicitly on the session worktree."
+version: 3.0.0
 ---
-# tools — Six doors, one worktree
+# tools — Seven doors, one worktree
 
 The public interface is typed tools, not command construction. Every operation
 runs against explicit session worktree storage; outputs use sinks local to the
@@ -14,15 +14,19 @@ call rather than diverting process-wide stdout or stderr.
 | Tool | Operations |
 |---|---|
 | `riel_guide` | prose index, topic outline, one section or full body |
-| `riel_shape` | shaping `new`, `validate`, `fetch` |
-| `riel_run` | Plan lifecycle AND synchronized session checks (gates + step subchecks) |
+| `riel_project` | project `new`, `validate`, `status` (derived from the runs) |
+| `riel_shape` | shaping `new`, `validate` |
+| `riel_run` | Contract lifecycle AND synchronized session checks (gates + step subchecks) |
 | `riel_note` | execute gate evidence and manage Core/Open State |
-| `riel_clean` | archived removal of `run`, `all`, or explicit `purge` |
+| `riel_clean` | remove everything inside `.riel/`; `archive=true` keeps a verified copy |
 | `riel_check` | dense-register and graph checks; optional Mermaid parsing |
 
-`run new` prints the draft; writing and activation stay distinct. `shape new`
-also prints the research template. Both `fetch` operations require sha256
-and materialize a file only; no fetch mutates an active run.
+`run new`, `shape new` and `project new` print their templates; writing and
+activation stay distinct. Riel explains the formats and validates them — it
+never authors a shaping or a project, and it fetches nothing.
+
+`run archive` moves the finished run to `.riel/runs/<slug>.md`, which is where
+`project status` reads a shaping's proof. Those files are never pruned.
 
 ## Evidence call
 
@@ -42,9 +46,12 @@ Tool calls answer `{tool, worktree, exit_code, passed, stdout, stderr}`, with
 `verb` when applicable and operation-specific fields such as keywords. Errors
 use the same base envelope. `tool` is provenance, not an argument to type.
 
-`clean` removes only the named new artifacts. `purge` is explicitly destructive;
-archived scopes back up the state first. Old `contract.md` and `ledger.md` are
-never implicitly selected or deleted as run state.
+`clean` removes EVERY entry inside `.riel/` — run, project, shapings, archived
+runs, legacy state and backups — and keeps only the lock file. Archiving is
+opt-in: `archive=true` copies the tree outside `.riel/`
+(`~/.hermes/riel/archive/<worktree>/<timestamp>/`) and verifies every sha256
+before removing anything. Without it the removal is not recoverable, because
+`.riel/` is gitignored. There is no `scope` parameter.
 
 ## Verification
 

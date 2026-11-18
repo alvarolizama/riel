@@ -37,12 +37,12 @@ from hermes_plugin.riel import schemas, tools  # noqa: E402
 stub.install(tools)
 
 # The window the deferred `tool_search` catalog shows for a tool (measured on a
-# live prompt: `- riel_run: Riel run — ONE door for the machine-checkable plan`).
+# live prompt: `- riel_run: Riel run — ONE door for the contract`).
 CATALOG_WINDOW = 60
 DESC_MAX_CHARS = 1_200
 
-SIX_TOOLS = frozenset({
-    "riel_guide", "riel_shape", "riel_run", "riel_note",
+SEVEN_TOOLS = frozenset({
+    "riel_guide", "riel_project", "riel_shape", "riel_run", "riel_note",
     "riel_clean", "riel_check",
 })
 
@@ -97,10 +97,19 @@ class TypedToolsTest(unittest.TestCase):
             for banned in ("args", "argv", "flags"):
                 self.assertNotIn(banned, props, f"{schema['name']} smuggles a command line ({banned})")
 
-    def test_the_surface_is_the_six_tools_the_prose_calls(self):
-        self.assertEqual(set(tools.HANDLERS), set(SIX_TOOLS))
+    def test_the_surface_is_the_seven_tools_the_prose_calls(self):
+        self.assertEqual(set(tools.HANDLERS), set(SEVEN_TOOLS))
+        self.assertEqual({s["name"] for s in schemas.SCHEMAS}, set(SEVEN_TOOLS))
 
-    def test_run_declares_and_refuses_its_seven_verbs(self):
+    def test_project_declares_and_refuses_its_verbs(self):
+        spelled = self.schema("riel_project")["parameters"]["properties"]["verb"]["description"]
+        for verb in tools.PROJECT_VERBS:
+            self.assertIn(verb, spelled)
+        payload = self.call("riel_project", {"verb": "activate"})
+        self.assertIn("unsupported verb", payload["error"])
+        self.assertEqual(payload["allowed"], list(tools.PROJECT_VERBS))
+
+    def test_run_declares_and_refuses_its_verbs(self):
         spelled = self.schema("riel_run")["parameters"]["properties"]["verb"]["description"]
         for verb in tools.RUN_VERBS:
             self.assertIn(verb, spelled)
@@ -108,7 +117,7 @@ class TypedToolsTest(unittest.TestCase):
         self.assertIn("unsupported verb", payload["error"])
         self.assertEqual(payload["allowed"], list(tools.RUN_VERBS))
 
-    def test_shape_declares_and_refuses_its_three_verbs(self):
+    def test_shape_declares_and_refuses_its_verbs(self):
         spelled = self.schema("riel_shape")["parameters"]["properties"]["verb"]["description"]
         for verb in tools.SHAPE_VERBS:
             self.assertIn(verb, spelled)
@@ -154,37 +163,18 @@ class TypedToolsTest(unittest.TestCase):
             self.assertIn(key, payload)
         self.assertIn("error", payload)
 
-    def test_a_scope_is_not_a_verb_and_the_argv_stays_inside(self):
+    def test_clean_takes_an_archive_flag_and_no_scope(self):
         """The envelope reports the TOOL; the engine's flags are implementation."""
-        for scope in ("run", "all", "purge"):
-            payload = self.call("riel_clean", {"scope": scope})
-            self.assertEqual(payload["tool"], "riel_clean", scope)
-            self.assertNotIn("verb", payload, scope)
-            self.assertNotIn("command", payload, scope)
-        self.assertIn("unsupported scope", self.call("riel_clean", {"scope": "everything"})["error"])
-
-    def test_fetch_requires_url_and_pin_and_never_echoes_the_token(self):
-        payload = self.call("riel_run", {"verb": "fetch"})
-        self.assertIn("needs 'url'", payload["error"])
-        payload = self.call("riel_run", {"verb": "fetch", "url": "https://example.test/r.md?token=secret"})
-        self.assertIn("sha256", payload["error"], "the pin is mandatory")
-        self.assertNotIn("token", payload.get("error", ""))
-        payload = self.call("riel_shape", {"verb": "fetch", "url": "https://example.test/s.md"})
-        self.assertIn("sha256", payload["error"])
-
-    def test_fetch_passes_the_pin_and_the_bounds(self):
-        payload = self.call("riel_run", {
-            "verb": "fetch", "url": "https://example.test/run.md",
-            "sha256": "a" * 64, "out": ".riel/run.md", "timeout": 30, "max_bytes": 1024,
-        })
-        # No network in the suite: the stub writes the file and reports success.
-        self.assertTrue(payload["passed"], payload)
-        self.assertTrue((Path(self.tmp) / ".riel" / "run.md").exists())
-
-    def test_fetch_refuses_a_junk_bound(self):
-        payload = self.call("riel_run", {"verb": "fetch", "url": "https://x.test/r",
-                                         "sha256": "a" * 64, "timeout": "soon"})
-        self.assertIn("timeout must be an integer", payload["error"])
+        described = self.schema("riel_clean")["parameters"]["properties"]
+        self.assertIn("archive", described)
+        self.assertEqual(described["archive"]["type"], "boolean")
+        self.assertNotIn("scope", described, "clean wipes all of .riel/ — there is no scope")
+        payload = self.call("riel_clean", {})
+        self.assertEqual(payload["tool"], "riel_clean")
+        self.assertNotIn("verb", payload)
+        self.assertNotIn("command", payload)
+        self.assertIn("no longer takes 'scope'",
+                      self.call("riel_clean", {"scope": "all"})["error"])
 
     def test_note_declares_the_gate_surface(self):
         described = self.schema("riel_note")["parameters"]["properties"]

@@ -51,7 +51,7 @@ settings = _load.settings()
 PLUGIN_DIR = Path(__file__).resolve().parent
 
 HEAD = (
-    "Riel — steering for long tasks: externalized state (.riel/run.md: plan, "
+    "Riel — steering for long tasks: externalized state (.riel/run.md: the contract's definition, "
     "execution state, typed gate evidence) fed by the shaping. The prose ships "
     "with this plugin and is read through the riel_guide tool."
 )
@@ -77,9 +77,10 @@ def index_line() -> str:
 
 def _door_line() -> str:
     return (
-        "Door: everything Riel does is a tool — riel_guide, riel_shape "
-        "(new|validate|fetch), riel_run (new|validate|activate|rebase|status|"
-        "slice|fetch), riel_note, riel_clean, riel_check (deferred: "
+        "Door: everything Riel does is a tool — riel_guide, riel_project "
+        "(new|validate|status), riel_shape "
+        "(new|validate), riel_run (new|validate|activate|rebase|status|"
+        "slice|archive), riel_note, riel_clean, riel_check (deferred: "
         "reach them with tool_search \"riel\"). No command line, no PATH."
     )
 
