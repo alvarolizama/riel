@@ -85,8 +85,10 @@ MARKER_LINE = "<!-- {} -->".format(RUN_FORMAT)
 # The Definition: the level-1 title plus these eight level-2 sections, in order.
 # Activation appends five more (Metadata, Execution state, Core, Open,
 # Evidence).
+# The frame first, the execution last: a reader (or a delegated child) must know
+# the target and the boundary BEFORE reading how the work is carried out.
 DEFINITION_TITLES = (
-    "Objective", "Context", "Constraints", "Phases", "Deliverable", "DO NOT",
+    "Objective", "Context", "Deliverable", "Constraints", "DO NOT", "Phases",
 )
 CLOSED_VERBS = ("READ", "EDIT", "CREATE", "RUN", "VERIFY", "ASK")
 DENSE_RE = re.compile(r"[✓?]\d+|↔|⇒|⊕|λ|Σ")
@@ -1908,7 +1910,7 @@ def _run_slice(args, out, err):
 
     parts = ["# Run: {} — {}".format(parent_title, title or phase),
              MARKER_LINE, ""]
-    for name in ("Objective", "Context", "Constraints"):
+    for name in ("Objective", "Context", "Deliverable", "Constraints", "DO NOT"):
         parts.append("## " + name)
         if name == "Context":
             parts.append("")
@@ -1928,8 +1930,6 @@ def _run_slice(args, out, err):
             content = _section(definition, name)
             parts += ["", content, ""] if content else [""]
     parts += ["## Phases", "", "### {}: {}".format(phase, title), "", body, ""]
-    for name in ("Deliverable", "DO NOT"):
-        parts += ["## " + name, "", _section(definition, name), ""]
     packet = "\n".join(parts).rstrip("\n") + "\n"
 
     # self-validating: the packet passes the same validator as a draft

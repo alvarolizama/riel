@@ -28,6 +28,14 @@ packaged guides carry their own versions.
   freeze, and a shaping with 18 raw placeholders validate clean: non-empty
   sections were mistaken for authoring. Placeholders inside HTML comments do
   not count.
+- The Definition's frame comes before its execution: Objective · Context ·
+  Deliverable · Constraints · DO NOT · Phases. Deliverable and DO NOT used to sit
+  AFTER the phases, so a reader learned the target and the boundary only after
+  reading all the steps. `run slice` emits the packet in the same order.
+- Objective and Deliverable are deliberately distinct: the Objective is the
+  RESULT in one sentence, the Deliverable is the CONCRETE artifacts (paths,
+  files, endpoints). Each phase also carries its own `#### Deliverable` — its
+  step of the staircase, not the run's final artifact.
 - The Definition is restructured around phases: `## Claims`, `## Graph` and
   `## Gates` are gone, replaced by `## Phases` — the general DAG in its
   preamble, then one `### F#: <title>` per phase carrying its own steps and its

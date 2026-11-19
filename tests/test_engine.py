@@ -39,9 +39,14 @@ The v1 contract/ledger pair made seams expensive.
 ### Context keywords
 - riel → repo
 
+## Deliverable
+engine/run.py rewired.
+
 ## Constraints
 - stdlib only.
 
+## DO NOT
+- touch tools.py.
 ## Phases
 
 ### F1: build parser
@@ -70,11 +75,6 @@ The v1 contract/ledger pair made seams expensive.
 #### Deliverable
 - tools.py rewired
 
-## Deliverable
-engine/run.py rewired.
-
-## DO NOT
-- touch tools.py.
 """
 
 MERMAID_RUN = LIST_RUN.replace(
@@ -531,9 +531,14 @@ o.
 ### Why
 w.
 
+## Deliverable
+d.
+
 ## Constraints
 - c.
 
+## DO NOT
+- n.
 ## Claims
 - P1: x — anchor: §Graph
 
@@ -544,11 +549,6 @@ w.
 ## Gates
 - G1: g — phase: F1
 
-## Deliverable
-d.
-
-## DO NOT
-- n.
 """
         rc, out, _err = self.validate(old)
         self.assertEqual(rc, 1)

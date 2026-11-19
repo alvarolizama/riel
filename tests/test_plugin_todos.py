@@ -25,9 +25,14 @@ The checklist is a projection, never a second source of truth.
 ### Context keywords
 - run → this repo
 
+## Deliverable
+A nested checklist with step subchecks.
+
 ## Constraints
 - one TodoStore per session.
 
+## DO NOT
+- edit another session's todos.
 ## Phases
 
 ### F1: implement checks
@@ -55,11 +60,6 @@ The checklist is a projection, never a second source of truth.
 #### Deliverable
 - the nested checklist
 
-## Deliverable
-A nested checklist with step subchecks.
-
-## DO NOT
-- edit another session's todos.
 """
 
 

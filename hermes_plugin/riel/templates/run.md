@@ -3,7 +3,8 @@
 <!-- riel-run/v1 -->
 
 ## Objective
-<!-- ONE sentence: what "done" produces. Rationale belongs in ### Why. -->
+<!-- ONE sentence: the RESULT "done" produces. Not the artifacts — those go in
+     ## Deliverable. Rationale belongs in ### Why. -->
 
 {{objective}}
 
@@ -26,9 +27,21 @@
      Delete this subsection only when no claim anchors into a shaping. -->
 - shaping: {{shaping}}
 
+## Deliverable
+<!-- The CONCRETE artifacts that exist when the whole run is done: paths,
+     files, endpoints. The Objective says what result they add up to; this
+     says what a reviewer can point at. -->
+
+{{deliverable}}
+
 ## Constraints
 <!-- Hard rules the execution may not break. Global: they bind every phase. -->
 - {{constraint}}
+
+## DO NOT
+<!-- Scope enforcement for the whole PR. Global: no phase may relax it.
+     Declared BEFORE the phases so the boundary is known before the how. -->
+- {{do_not}}
 
 ## Phases
 <!-- The general DAG goes HERE, before the first phase: a ```mermaid flowchart
@@ -56,7 +69,7 @@
 - G1: {{gate}}
 
 #### Deliverable
-<!-- What exists when THIS phase is done. -->
+<!-- What exists when THIS phase is done — its own step of the staircase. -->
 - {{phase_deliverable}}
 
 ### F2: {{next_phase}}
@@ -70,12 +83,3 @@
 
 #### Deliverable
 - {{next_phase_deliverable}}
-
-## Deliverable
-<!-- What exists when the whole run is done. -->
-
-{{deliverable}}
-
-## DO NOT
-<!-- Scope enforcement for the whole PR. Global: no phase may relax it. -->
-- {{do_not}}

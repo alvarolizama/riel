@@ -28,13 +28,13 @@ Definition, everything from it down is engine-written.
     <!-- riel-run/v1 -->
 
     DEFINITION — authored by hand, frozen and hashed at activation
-    ## Objective
+    ## Objective        the RESULT, one sentence
     ## Context          (### Why, ### Context keywords, ### Shaping, ### Basis — frozen)
-    ## Constraints
+    ## Deliverable      the concrete artifacts of the whole run
+    ## Constraints      hard rules, global
+    ## DO NOT           the PR's boundary, global
     ## Phases           (general DAG, then ### F#: <title> per phase,
                          each with #### Claims, #### Gates, #### Deliverable)
-    ## Deliverable
-    ## DO NOT
     ---------- activation line (## Metadata) ----------
     STATE — written only by the engine
     ## Metadata
@@ -62,19 +62,26 @@ makes the format strict: a file without the marker is not a Contract.
 
 ### The Definition (seven headings, frozen at activation)
 
+The FRAME comes first and the EXECUTION last: a reader — or a delegated child —
+must know the target and the boundary before reading how the work is carried out.
+
 1. `# Run: <title>` — the level-1 title.
-2. `## Objective` — one sentence: what "done" produces.
+2. `## Objective` — one sentence: the RESULT "done" produces. Not the artifacts.
 3. `## Context` — carries `### Why` (surviving rationale), `### Context
    keywords` (`- term → source`, the context-fetch index), `### Shaping`
    (`- shaping: <path or uid>`, the one shaping this run executes), and, after
    activation, the frozen `### Basis`.
-4. `## Constraints` — hard rules, at least one bullet. GLOBAL: they bind every
+4. `## Deliverable` — the CONCRETE artifacts that exist when the whole run is
+   done: paths, files, endpoints. The Objective says what result they add up to;
+   this says what a reviewer can point at. The two are deliberately distinct.
+5. `## Constraints` — hard rules, at least one bullet. GLOBAL: they bind every
    phase.
-5. `## Phases` — the execution structure, in two levels (below).
-6. `## Deliverable` — what exists when the whole run is done.
-7. `## DO NOT` — scope enforcement for the whole PR, at least one bullet.
+6. `## DO NOT` — scope enforcement for the whole PR, at least one bullet.
    GLOBAL: no phase may relax it. One run is one shaping is one PR, so the
    boundary is reviewed as a whole, not per phase.
+7. `## Phases` — the execution structure, in two levels (below). Each phase
+   carries its own `#### Deliverable`: its step of the staircase, distinct from
+   the run's final artifact.
 
 The flat `## Claims`, `## Graph` and `## Gates` sections are REFUSED, not read:
 claims, gates and the DAG live inside `## Phases`. There is no converter.

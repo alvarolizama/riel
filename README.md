@@ -279,8 +279,14 @@ Two files drift; one file with a cut cannot.
 ### Shaping
 - shaping: .riel/shapings/storage.md
 
+## Deliverable
+The engine reads one contract file.
+
 ## Constraints
 - stdlib only
+
+## DO NOT
+- touch the ui
 
 ## Phases
 <!-- general DAG here: mermaid between phases, `- F1 → F2`, or the heading order -->
@@ -311,12 +317,6 @@ Two files drift; one file with a cut cannot.
 #### Deliverable
 - tools.py without the old register
 
-## Deliverable
-The engine reads one contract file.
-
-## DO NOT
-- touch the ui
-
 ## Metadata            ← the cut: below here, only the engine writes
 ## Execution state
 ## Core
@@ -326,15 +326,15 @@ The engine reads one contract file.
 
 | Part | Why it exists |
 |---|---|
-| `Objective` | One sentence: what "done" produces. The rationale lives in `### Why`, not here |
+| `Objective` | One sentence: the RESULT "done" produces. Not the artifacts — those are the Deliverable. The rationale lives in `### Why` |
 | `### Why` | The **surviving** rationale. The alternatives that lost stay in the shaping |
 | `### Context keywords` | `term → source`: what to pull from memory before executing. An index, not prose |
 | `### Shaping` | The binding: one path or uid. One run, one shaping, one question, one PR |
 | `### Basis` | Engine-frozen at activation: the cited findings, with source and confidence. This is why a delegated slice needs no external file |
+| `Deliverable` | The CONCRETE artifacts of the whole run: paths, files, endpoints. What a reviewer can point at |
 | `Constraints` | Hard rules, **global**. They bind every phase |
-| `Phases` | The execution structure, in two levels (below) |
-| `Deliverable` | What exists when the whole run is done |
 | `DO NOT` | Scope enforcement for the whole PR, **global**. No phase may relax it — the diff is reviewed as a whole |
+| `Phases` | The execution structure, in two levels (below). Each phase carries its own `#### Deliverable` — its step of the staircase |
 | `Metadata` | `format`, `revision`, `activated`, `definition_sha256`, `shaping`, `shaping_id`, `shaping_sha256`. The hashes are what make drift detectable |
 | `Execution state` | `current_phase`, derived — never asserted |
 | `Core` | At most two load-bearing working facts, 1-based slots. A small working memory, not a dump |

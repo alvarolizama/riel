@@ -55,6 +55,10 @@ never reaches the model, and a repeatable parameter reaches it as ONE array (`cl
   reason) · `What we want` (We need · Claim seeds · Scope) · `Open` LAST (the residue,
   each item with its cheapest settling test). The Basis freezes heading + source +
   confidence, never the body.
+- **The frame precedes the execution.** The Definition runs Objective · Context ·
+  Deliverable · Constraints · DO NOT · Phases: the target and the boundary are
+  declared before the how. `Objective` is the result in one sentence; `Deliverable`
+  is the concrete artifacts (paths, files) a reviewer can point at.
 - **Phases are sections.** `## Phases` carries the general DAG in its preamble (mermaid
   between phases, an arrow list `- F1 → F2`, or the authored heading order), then one
   `### F#: <title>` per phase with its steps and its OWN `#### Claims`, `#### Gates` and

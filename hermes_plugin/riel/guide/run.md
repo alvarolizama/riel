@@ -52,7 +52,10 @@ are documentation and do not count.
 ## Definition
 
 The Definition carries Run, Objective, Context (`### Why`, `### Context keywords`
-and `### Shaping`), Constraints, Phases, Deliverable and DO NOT.
+and `### Shaping`), Deliverable, Constraints, DO NOT and Phases — the frame first,
+the execution last, so the target and the boundary are known before the how.
+`Objective` is the result in one sentence; `Deliverable` is the concrete artifacts
+(paths, files) a reviewer can point at.
 Findings prove design choices in a shaping; Claims prove the implemented
 behavior. Neither replaces the other.
 
