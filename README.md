@@ -128,8 +128,21 @@ hermes plugins install "file://$(pwd)#hermes_plugin/riel" --enable
 ## Use
 
 The full cycle, with the real calls. Every `new` verb **renders a skeleton to stdout and
-writes nothing** — you save the bytes, because Riel explains formats and validates them
-but never authors them.
+writes nothing** — Riel explains formats and validates them but never authors them.
+
+### Who writes what
+
+| step | who |
+|---|---|
+| `new` → the skeleton | **the tool** — renders to stdout, writes no file |
+| saving the file under `.riel/` | **the agent, you in an editor, or your project system** (MCP, API, copy-paste) |
+| filling the sections | whoever authors — from the shaping's evidence and the owner's decisions |
+| `validate` · `activate` | **the tool** — refuses or accepts, then freezes and hashes |
+| State and Evidence below `## Metadata` | **the engine alone**, through `riel_note` |
+
+The uid is minted at RENDER time (`shape new` puts it in the marker); an external
+system may supply its own with `params=["id=shp_…"]`. That is what makes the format
+usable from a project manager that has never heard of Riel.
 
 ### Shape the question
 
@@ -204,7 +217,7 @@ and re-runs the gate before accepting evidence.
 | `riel_project` | `new` · `validate` · `status` | Order several shapings and derive their progress |
 | `riel_shape` | `new` · `validate` | Render and validate one question's evidence |
 | `riel_run` | `new` · `validate` · `activate` · `rebase` · `status` · `list` · `slice` | The contract's whole lifecycle |
-| `riel_note` | `gates[]`, `claims[]`, `command`, `covering`, `confidence`, `core[]`, `core_slot`, `open[]`, `settled_by[]`, `close`, `evidence` | The only writer of State. Runs gates, records evidence |
+| `riel_note` | `run`, `gates[]`, `claims[]`, `command`, `covering`, `confidence`, `core[]`, `core_slot`, `open[]`, `settled_by[]`, `close`, `evidence` | The only writer of State. Runs gates, records evidence. `run` picks the contract when several are active |
 | `riel_clean` | `archive` | Wipe `.riel/`. With `archive=true`, keep a sha256-verified copy outside it first |
 | `riel_check` | `file`, `mermaid` | Check any Markdown for dense-register markers and graph validity |
 
