@@ -1,7 +1,7 @@
 ---
 topic: run
 trigger: "Use when authoring and executing a contract with Riel: one .riel/runs/<slug>.md holds the Contract — its immutable Definition plus the engine-managed State and Evidence."
-version: 1.2.0
+version: 1.3.0
 ---
 # run — A contract and its evidence
 
@@ -73,9 +73,10 @@ GLOBAL: one run is one shaping is one PR, so no phase may relax the boundary.
 `### Shaping` names the one shaping this run executes — a path under
 `.riel/shapings/` or its uid. One run, one shaping, one question, one PR.
 
-Use `P#` for claims, `F#`/`W#` for phases and `G#` for gates. Steps are numbered
-PER PHASE (`F1S1`, `F1S2`, …) so inserting a step never renumbers another
-phase's anchors. A claim closes as:
+Use `P#` for claims, `F#`/`W#` for phases and `G#` for gates. A step bullet
+STARTS with its closed verb (`- READ the spec`) — you do not write its id: the
+engine numbers steps PER PHASE (`F1S1`, `F1S2`, …) in authored order, so
+inserting a step never renumbers another phase's anchors. A claim closes as:
 
 `- P1: what must hold — anchor: shaping:F1`
 

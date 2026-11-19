@@ -420,12 +420,12 @@ class ProjectionTests(TempDirTest):
         self.assertEqual(rc, 0, err)
         items = json.loads(output)
         self.assertEqual(items[0]["status"], "pending")
-        self.assertEqual(items[1]["id"], "riel-phase-F1")
+        self.assertEqual(items[1]["id"], "riel-engine-phase-F1")
         self.assertEqual(items[1]["status"], "in_progress")
-        self.assertEqual(items[2]["id"], "riel-gate-G1")
+        self.assertEqual(items[2]["id"], "riel-engine-gate-G1")
         self.assertEqual(items[2]["status"], "in_progress")
         self.assertEqual(items[3]["status"], "in_progress")
-        self.assertEqual(items[3]["parent"], "riel-gate-G1")
+        self.assertEqual(items[3]["parent"], "riel-engine-gate-G1")
         self.assertIn(items[3]["status"], ("pending", "in_progress", "completed"))
 
         shape_path = os.path.join(self.tmp, "shape.md")
@@ -448,8 +448,8 @@ class ProjectionTests(TempDirTest):
         rc, output, err = run("todo", cwd=self.tmp)
         self.assertEqual(rc, 0, err)
         states = {row["id"]: row["status"] for row in json.loads(output)}
-        self.assertEqual(states["riel-phase-F1"], "in_progress")
-        self.assertEqual(states["riel-phase-F2"], "pending")
+        self.assertEqual(states["riel-engine-phase-F1"], "in_progress")
+        self.assertEqual(states["riel-engine-phase-F2"], "pending")
 
 
     def test_a_later_phases_gate_does_not_complete_an_earlier_phase(self):
@@ -462,9 +462,9 @@ class ProjectionTests(TempDirTest):
         rc, output, err = run("todo", cwd=self.tmp)
         self.assertEqual(rc, 0, err)
         rows = {row["id"]: row["status"] for row in json.loads(output)}
-        self.assertEqual(rows["riel-phase-F1"], "in_progress")
-        self.assertEqual(rows["riel-step-F1S1"], "in_progress")
-        self.assertEqual(rows["riel-phase-F2"], "pending")
+        self.assertEqual(rows["riel-engine-phase-F1"], "in_progress")
+        self.assertEqual(rows["riel-engine-step-F1S1"], "in_progress")
+        self.assertEqual(rows["riel-engine-phase-F2"], "pending")
 
 
 class PhasesTests(TempDirTest):
@@ -629,9 +629,9 @@ d.
         rc, out, err = run("todo", cwd=self.tmp)
         self.assertEqual(rc, 0, err)
         rows = {row["id"] for row in json.loads(out)}
-        self.assertIn("riel-step-F1S1", rows)
-        self.assertIn("riel-step-F2S1", rows)
-        self.assertNotIn("riel-step-F1-S1", rows)
+        self.assertIn("riel-engine-step-F1S1", rows)
+        self.assertIn("riel-engine-step-F2S1", rows)
+        self.assertNotIn("riel-engine-step-F1-S1", rows)
 
 
 class PlaceholderGuardTests(TempDirTest):

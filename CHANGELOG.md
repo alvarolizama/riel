@@ -3,7 +3,7 @@
 Notable changes to Riel. Version numbers refer to `hermes_plugin/riel/plugin.yaml`;
 packaged guides carry their own versions.
 
-## Unreleased
+## 4.0.0
 
 ### Changed
 - **Contracts are executed in place.** `.riel/run.md` is gone: a contract is
@@ -29,6 +29,26 @@ packaged guides carry their own versions.
   that cannot be read is reported WITH its error, never skipped.
 - `run` selector on `riel_run` (validate/activate/rebase/status/slice) and on
   `riel_note`; `title` in the status object.
+
+### Fixed
+- **The session checklist froze with several active contracts.** The refresh read
+  one contract's status without forwarding the selector, so with two tracks it hit
+  the ambiguity refusal and wrote NOTHING — no rows, no `todo_sync`, no warning,
+  while the work advanced. It now reads `run list` and aggregates every activated
+  contract. Ids are namespaced by slug (`riel-<slug>-goal`) because two contracts
+  used to collide on `riel-goal`; the goal row reads `GOAL [<slug>]: …`. An
+  unreadable contract is reported in `todo_sync.unreadable`.
+- `scripts/bench-engine.py` could not run at all: its fixture used the refused flat
+  format (`## Claims`/`## Graph`/`## Gates`) and wrote `.riel/run.md`. Rebuilt as a
+  real contract with a bound shaping and one phase, executed in place.
+- Prose that contradicted the engine: the project guide still said one active run
+  per worktree (contradicting itself two lines later), the todo spec described a
+  phase without a gate (every phase must declare `#### Gates`), a docstring and a
+  schema example pointed at a guide section that does not exist, and comments
+  still called the engine "v2".
+- Step ids are ASSIGNED, not authored: a step bullet starts with its closed verb
+  (`- READ the spec`). The template and the run guide said "numbered per phase",
+  which read as an instruction to write `F1S1:` by hand — the engine refuses that.
 
 ### Removed
 - `run archive` — there is nothing to move. Contracts are never pruned.

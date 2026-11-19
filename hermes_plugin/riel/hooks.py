@@ -1,6 +1,6 @@
 """`pre_verify` — the Riel gate on the ACTIVE run, enforced by the runtime.
 
-Riel's rule (v2): while a run is ACTIVE in the worktree, the turn does not
+Riel's rule: while a contract is ACTIVE in the worktree, the turn does not
 close with pending claims or gates. The contracts (`.riel/runs/<slug>.md`) carry the
 claims and the gates; the engine's `run status` knows which ones are done.
 This hook asks the engine — IN-PROCESS, through the same safe path the tools
@@ -12,7 +12,7 @@ Bounds that keep it honest:
 
   * **Opt-in per worktree.** No contract in `.riel/runs/` anywhere above the
     edited files → never nudge. A worktree with no `.riel/runs/` contract
-    is NOT gated: the v2 gate reads the run state, nothing else.
+    is NOT gated: the gate reads contract state, nothing else.
   * **Only an ACTIVE run.** A run that exists but is not activated (draft,
     written by hand, awaiting validate) is the agent's business, not the gate's.
   * **Self-throttled.** At most `gate_attempts` nudges per turn (default 1),

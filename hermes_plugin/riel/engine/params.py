@@ -13,7 +13,7 @@ Each record is:
     help    — the schema description AND the argparse help, one text
     section — the run.md `## section` the entry lands in
 
-The v2 surface is deliberately SMALL: `note` is the only state writer, and
+The surface is deliberately SMALL: `note` is the only state writer, and
 it can NOT create goals, nexts, phases or claims; it can not self-supply an
 exit code (the engine runs `--command` and captures the real one); there is
 no verify_with, check, by, from_contract or source — those were v1 concepts

@@ -1,7 +1,7 @@
 # Spec 8 — The Contract and its run format (`riel-run/v1`)
 
 This document specifies the Contract: the artifact a run executes. The format
-tag is `riel-run/v1`; the engine version that implements it is riel 3.0.0. Any
+tag is `riel-run/v1`; the engine version that implements it is riel 4.0.0. Any
 future incompatible change bumps the tag (and this spec gets a new version
 section). There is **no converter** and no legacy machinery: `.riel/runs/<slug>.md` is the only
 state file, so any other file in `.riel/` is simply invisible to the engine.
@@ -66,7 +66,7 @@ The second element of the file is the standalone line `<!-- riel-run/v1 -->`
 `run validate` and every state read refuse a file without it — this is what
 makes the format strict: a file without the marker is not a Contract.
 
-### The Definition (seven headings, frozen at activation)
+### The Definition (the title plus six sections, frozen at activation)
 
 The FRAME comes first and the EXECUTION last: a reader — or a delegated child —
 must know the target and the boundary before reading how the work is carried out.
@@ -250,9 +250,9 @@ rebase says so and changes nothing.
 ## Slice
 
 `run slice F1` emits a self-validating packet: a DRAFT Contract (format
-marker, the seven Definition headings, no State or Evidence) carrying the
+marker, the title plus the six Definition sections, no State or Evidence) carrying the
 parent's Objective, Context (with the frozen Basis, Why and keywords),
-Constraints, Deliverable and DO NOT — all global — plus ONE `### F1: <title>`
+Deliverable, Constraints and DO NOT — all global — plus ONE `### F1: <title>`
 block copied VERBATIM: its steps, its `#### Claims`, its `#### Gates` and its
 `#### Deliverable`. No other phase travels, so the child never sees another
 track's claims or findings.
@@ -283,8 +283,8 @@ limit.
   a silent omission would let the gate believe the work is finished.
 - `todo` — JSON mirror: goal, phases with nested steps and statuses, next,
   claims, open questions.
-- `clean [--archive]` — remove EVERY entry inside `.riel/` (run, project,
-  shapings, contracts, backups, any other file); only the lock file stays.
+- `clean [--archive]` — remove EVERY entry inside `.riel/` (contracts, project,
+  shapings, backups, any other file); only the lock file stays.
   `--archive` first copies the tree to `~/.hermes/riel/archive/<worktree>/<ts>/`
   and verifies every sha256. Without it there is no backup and no way back.
 - `check FILE [--mermaid]` — dense-register markers + graph digest (+mmdc)

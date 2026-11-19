@@ -1,4 +1,4 @@
-"""The Riel v2 engine — one stdlib file behind the public verbs.
+"""The Riel engine — one stdlib file behind the public verbs.
 
 Public surface (nothing else exists; there is NO converter from riel v1):
 
@@ -61,7 +61,7 @@ try:
 except ImportError:  # pragma: no cover - non-POSIX fallback
     fcntl = None
 
-VERSION = "3.0.0"
+VERSION = "4.0.0"
 RUN_FORMAT = "riel-run/v1"
 
 RIEL_DIR = ".riel"
@@ -1279,6 +1279,10 @@ def load_state(worktree, require_active=False, require_exists=True, path=None,
         shaping_hash = meta["shaping_sha256"]
     st = {
         "path": run_path,
+        # The contract's identity is its filename, the same slug `run=<slug>`
+        # selects by. Projections namespace their rows with it so several
+        # active contracts never collide in one session checklist.
+        "slug": os.path.basename(run_path)[:-3],
         "text": text,
         "definition_text": definition_text,
         "active": active,
@@ -2227,16 +2231,23 @@ def cmd_note(args, out, err):
 def todo_projection(st):
     """Project Definition+Evidence as Hermes checks with their step subchecks.
 
-    A phase is a check; each gate mapped to it is a nested check; each work
-    step hangs under the gate that verifies it (or directly under the phase
-    when the phase has no explicit gate). Only passing current-revision
-    evidence completes a check. A global gate is a top-level check.
+    A phase is a check; each of its gates is a nested check; each work step
+    hangs under the gate that verifies it. Only passing current-revision
+    evidence completes a check.
+
+    Every id is namespaced by the contract's slug (`riel-<slug>-goal`), because
+    several contracts may be active at once and the session checklist holds
+    them all: without the namespace two tracks would collide on `riel-goal`.
     """
     nodes, edges = st["nodes"], st["edges"]
+    slug = st.get("slug") or "run"
+    prefix = "riel-{}-".format(slug)
+    goal_row = prefix + "goal"
     phase_ids = _phase_order(nodes)
     objective = _first_line(_section(st["definition_text"], "Objective"))
     items = [{
-        "id": "riel-goal", "content": "GOAL: " + (objective or "<empty>"),
+        "id": goal_row,
+        "content": "GOAL [{}]: {}".format(slug, objective or "<empty>"),
         "status": "completed" if st["done"] else "pending",
     }]
     completed_phases = set()
@@ -2252,25 +2263,26 @@ def todo_projection(st):
         phase_gates = [g for g in st["gates"] if g.get("phase") == phase_id]
         complete = phase_id in completed_phases
         current = phase_id == st["current_phase"] and not complete
-        phase_row = "riel-phase-" + phase_id
+        phase_row = prefix + "phase-" + phase_id
         items.append({
             "id": phase_row,
             "content": "PHASE {}: {}".format(phase_id, nodes[phase_id][1]),
             "status": "completed" if complete else (
                 "in_progress" if current else "pending"),
-            "parent": "riel-goal",
+            "parent": goal_row,
         })
         gate_rows = {}
         for gate in phase_gates:
             passed = gate["id"] in st["passed_gates"]
+            gate_row = prefix + "gate-" + gate["id"]
             items.append({
-                "id": "riel-gate-" + gate["id"],
+                "id": gate_row,
                 "content": "CHECK {}: {}".format(gate["id"], gate["label"]),
                 "status": "completed" if passed else (
                     "in_progress" if current and not work_started else "pending"),
                 "parent": phase_row,
             })
-            gate_rows[gate["id"]] = "riel-gate-" + gate["id"]
+            gate_rows[gate["id"]] = gate_row
         step_parent = next(iter(gate_rows.values()), phase_row)
         for step_id in steps:
             status = "completed" if complete else "pending"
@@ -2278,21 +2290,24 @@ def todo_projection(st):
                 status = "in_progress"
                 work_started = True
             items.append({
-                "id": "riel-step-" + step_id,
+                "id": prefix + "step-" + step_id,
                 "content": "{}: {}".format(step_id, nodes[step_id][1] or step_id),
                 "status": status,
                 "parent": step_parent,
             })
-    # A gate with no phase is a run-global check: keep it at contract level.
+    # Defensive: a gate with no phase would be a contract-level check. Every
+    # phase declares its own #### Gates, so structural membership makes this
+    # unreachable for a valid Contract — it is kept so a malformed one still
+    # projects instead of dropping the gate silently.
     mapped = {g["id"] for g in st["gates"] if g.get("phase")}
     for gate in st["gates"]:
         if gate["id"] in mapped:
             continue
         items.append({
-            "id": "riel-gate-" + gate["id"],
+            "id": prefix + "gate-" + gate["id"],
             "content": "GLOBAL CHECK {}: {}".format(gate["id"], gate["label"]),
             "status": "completed" if gate["id"] in st["passed_gates"] else "pending",
-            "parent": "riel-goal",
+            "parent": goal_row,
         })
     if st["done"]:
         for row in items:

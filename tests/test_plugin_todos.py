@@ -111,25 +111,61 @@ class RunOwnsTodoTest(unittest.TestCase):
         self.assertEqual(payload["todo_sync"]["status"], "synced")
         rows = self.rows()
         self.assertIn("mine", rows, "a non-Riel item survives the sync")
-        self.assertEqual(rows["riel-phase-F1"]["status"], "in_progress")
-        self.assertEqual(rows["riel-gate-G1"]["parent"], "riel-phase-F1")
-        self.assertEqual(rows["riel-step-F1S1"]["parent"], "riel-gate-G1")
-        self.assertEqual(rows["riel-step-F1S1"]["status"], "in_progress")
+        self.assertEqual(rows["riel-engine-phase-F1"]["status"], "in_progress")
+        self.assertEqual(rows["riel-engine-gate-G1"]["parent"], "riel-engine-phase-F1")
+        self.assertEqual(rows["riel-engine-step-F1S1"]["parent"], "riel-engine-gate-G1")
+        self.assertEqual(rows["riel-engine-step-F1S1"]["status"], "in_progress")
 
     def test_passing_evidence_closes_checks_and_failed_evidence_does_not(self):
         self.call(tools.riel_run, verb="activate")
         self.call(tools.riel_note, gates=["G1"], claims=["P1"],
                   command="true", covering="phase one")
         rows = self.rows()
-        self.assertEqual(rows["riel-gate-G1"]["status"], "completed")
-        self.assertEqual(rows["riel-step-F1S1"]["status"], "completed")
+        self.assertEqual(rows["riel-engine-gate-G1"]["status"], "completed")
+        self.assertEqual(rows["riel-engine-step-F1S1"]["status"], "completed")
         self.call(tools.riel_note, gates=["G2"], claims=["P2"],
                   command="false", covering="phase two")
         rows = self.rows()
-        self.assertEqual(rows["riel-gate-G2"]["status"], "in_progress")
-        self.assertEqual(rows["riel-step-F2S1"]["status"], "in_progress")
+        self.assertEqual(rows["riel-engine-gate-G2"]["status"], "in_progress")
+        self.assertEqual(rows["riel-engine-step-F2S1"]["status"], "in_progress")
         self.assertFalse(json.loads(
             self.call(tools.riel_run, verb="status")["stdout"])["done"])
+
+    def test_two_active_contracts_both_reach_the_checklist(self):
+        """Regression: reading one contract froze the other tracks' checks."""
+        second = LIST_RUN.replace(
+            "Keep the session checklist in sync with run evidence.",
+            "The second track keeps its own checks.")
+        with open(os.path.join(self.tmp, ".riel", "runs", "other.md"),
+                  "w", encoding="utf-8") as fh:
+            fh.write(second)
+        self.call(tools.riel_run, verb="activate", run="engine")
+        payload = self.call(tools.riel_run, verb="activate", run="other")
+        self.assertEqual(payload["todo_sync"]["status"], "synced")
+        rows = self.rows()
+        self.assertIn("riel-engine-goal", rows)
+        self.assertIn("riel-other-goal", rows)
+        self.assertIn("GOAL [engine]", rows["riel-engine-goal"]["content"])
+        self.assertIn("GOAL [other]", rows["riel-other-goal"]["content"])
+        self.assertEqual(len(rows), len(self.store.snapshot()["todos"]),
+                         "slug namespaces keep every id unique")
+        self.call(tools.riel_note, run="other", gates=["G1"], claims=["P1"],
+                  command="true", covering="other phase one")
+        rows = self.rows()
+        self.assertEqual(rows["riel-other-gate-G1"]["status"], "completed")
+        self.assertEqual(rows["riel-engine-gate-G1"]["status"], "in_progress",
+                         "evidence for one track never completes another")
+
+    def test_an_unreadable_contract_is_reported_not_silently_dropped(self):
+        self.call(tools.riel_run, verb="activate")
+        with open(os.path.join(self.tmp, ".riel", "runs", "broken.md"),
+                  "w", encoding="utf-8") as fh:
+            fh.write("# Run: broken\n\nno format marker here\n")
+        payload = self.call(tools.riel_run, verb="status", run="engine")
+        self.assertEqual(payload["todo_sync"]["status"], "synced")
+        unreadable = payload["todo_sync"]["unreadable"]
+        self.assertTrue(any(u.startswith("broken:") for u in unreadable))
+        self.assertIn("riel-engine-goal", self.rows())
 
     def test_clean_removes_only_riel_rows(self):
         self.call(tools.riel_run, verb="activate")

@@ -97,7 +97,7 @@ def slice_section(text: str, name: str) -> Optional[str]:
     name beats one that merely contains it — so `section="DISPATCH"` opens
     `## DISPATCH — the operational rules…`, never `## Step 6: Write the dispatch
     prompt`. Every other case stays a case-insensitive substring, so
-    `section="Claim anchors"` still finds `## Claim anchors (Spec 2 + Spec 7)`.
+    `section="Evidence"` still finds `## State and Evidence`.
     """
     lines = text.splitlines()
     wanted = name.strip().lower()

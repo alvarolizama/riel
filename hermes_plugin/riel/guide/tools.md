@@ -1,7 +1,7 @@
 ---
 topic: tools
 trigger: "Use for Riel's seven-tool surface: guide, project, shape, run, note, clean and check, all operating explicitly on the session worktree."
-version: 3.0.0
+version: 3.1.0
 ---
 # tools — Seven doors, one worktree
 
@@ -14,7 +14,7 @@ call rather than diverting process-wide stdout or stderr.
 | Tool | Operations |
 |---|---|
 | `riel_guide` | prose index, topic outline, one section or full body |
-| `riel_project` | project `new`, `validate`, `status` (derived from the runs) |
+| `riel_project` | project `new`, `validate`, `status` (derived from the contracts) |
 | `riel_shape` | shaping `new`, `validate` |
 | `riel_run` | Contract lifecycle AND synchronized session checks (gates + step subchecks) |
 | `riel_note` | execute gate evidence and manage Core/Open State |
@@ -46,8 +46,8 @@ Tool calls answer `{tool, worktree, exit_code, passed, stdout, stderr}`, with
 `verb` when applicable and operation-specific fields such as keywords. Errors
 use the same base envelope. `tool` is provenance, not an argument to type.
 
-`clean` removes EVERY entry inside `.riel/` — run, project, shapings, archived
-runs, backups and any other file — and keeps only the lock file. Archiving is
+`clean` removes EVERY entry inside `.riel/` — contracts, project, shapings,
+backups and any other file — and keeps only the lock file. Archiving is
 opt-in: `archive=true` copies the tree outside `.riel/`
 (`~/.hermes/riel/archive/<worktree>/<timestamp>/`) and verifies every sha256
 before removing anything. Without it the removal is not recoverable, because

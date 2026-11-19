@@ -1,7 +1,7 @@
 ---
 topic: shaping
 trigger: "Use when research must precede execution: .riel/shapings/<slug>.md asks ONE question and answers it with sourced findings, and a run binds exactly one shaping."
-version: 3.0.0
+version: 3.0.1
 ---
 # shaping — One question, one answer
 
@@ -71,7 +71,7 @@ evidence. A finding may carry its own `#### Diagram`.
     #### Diagram
     ```mermaid
     flowchart TD
-      A["run.md"] --> B["Definition"]
+      A["runs/slug.md"] --> B["Definition"]
       A --> C["State + Evidence"]
     ```
 

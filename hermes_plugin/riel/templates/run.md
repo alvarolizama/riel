@@ -48,9 +48,10 @@
      between phases (decisions `{...}` with labeled outgoing edges, loops with
      a `< 3` counter guard), or an arrow list `- F1 → F2 → F3`. With neither,
      the authored order of the ### headings is the execution order.
-     Then ONE `### F#: <title>` per phase. Its steps are bullets with closed
-     verbs (READ/EDIT/CREATE/RUN/VERIFY/ASK), numbered PER PHASE as F1S1, F1S2…
-     so inserting a step never renumbers another phase's anchors.
+     Then ONE `### F#: <title>` per phase. Its steps are bullets STARTING with a
+     closed verb (READ/EDIT/CREATE/RUN/VERIFY/ASK) — write the verb, NOT an id:
+     the engine numbers them PER PHASE as F1S1, F1S2… in authored order, so
+     inserting a step never renumbers another phase's anchors.
      Each phase carries its OWN #### Claims, #### Gates and #### Deliverable.
      Gate membership is structural: there is no `— phase:` suffix. -->
 

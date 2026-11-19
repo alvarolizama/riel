@@ -1,4 +1,4 @@
-# Riel — Hermes plugin (v3.0.0)
+# Riel — Hermes plugin (v4.0.0)
 
 The package **is** the product: the prose, the engine, the tools, the gate and the
 desktop chip. State lives in `.riel/runs/<slug>.md` (`riel-run/v1`), one question's evidence in
@@ -117,7 +117,7 @@ The installer clones the repo and **moves only this subdirectory** to
 self-contained: `guide/`, `engine/` and `templates/` travel inside and **are the source**.
 There is no copy and no build step. Edit them here; `tests/test_plugin_vendor.py`
 verifies that no duplicate tree reappears and that manifest, README and engine all say
-`3.0.0`.
+`4.0.0`.
 
 ## Install (development)
 

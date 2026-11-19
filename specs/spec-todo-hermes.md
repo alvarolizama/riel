@@ -6,23 +6,31 @@ from the run and never re-imported as evidence.
 
 ## Session checklist
 
-Activating a run materializes the Definition in the calling session's Hermes
+Activating a contract materializes its Definition in the calling session's Hermes
 checklist. `riel_run` refreshes it after every successful `activate`, `rebase`,
-`status` and `riel_note`; `riel_clean` removes only `riel-*` rows.
+`status`, `list` and `riel_note`; `riel_clean` removes only `riel-*` rows.
+
+Several contracts may be active at once, and the checklist holds ALL of them: the
+refresh reads `run list` (one call, every contract's status) and concatenates the
+rows of every activated contract. Every id is namespaced by the contract's slug —
+`riel-<slug>-goal`, `riel-<slug>-phase-F1`, `riel-<slug>-gate-G1`,
+`riel-<slug>-step-F1S1` — and the goal row reads `GOAL [<slug>]: …`, so two tracks
+never collide and the reader can tell them apart. A contract that cannot be read is
+reported in `todo_sync.unreadable`, never dropped in silence.
 
 Rows use `{id, content, status, parent}` and nest as:
-`GOAL → PHASE → CHECK (gate) → step subcheck`. A phase without an explicit
-gate holds its steps directly. Only passing current-revision Evidence
-completes a gate and its steps; a failed command never completes either. Rows
-belonging to the user or another tool are preserved.
+`GOAL → PHASE → CHECK (gate) → step subcheck`. Every phase declares its own
+`#### Gates`, so a phase always has at least one check row. Only passing
+current-revision Evidence completes a gate and its steps; a failed command never
+completes either. Rows belonging to the user or another tool are preserved.
 
 The write goes to the live TodoStore of the session id on the tool call, never
 a process-global store. If that session exposes no store, the envelope reports
 `todo_sync: {status: "unavailable", reason: …}`; `.riel/runs/<slug>.md` remains the
 source of truth. A checklist checkbox never writes back to the run.
 
-`riel_run(verb="status")` includes the same `todos` array, so a resumed session
-can reconcile without a second tool.
+`riel_run(verb="status")` includes that contract's own `todos` array (slug-namespaced),
+so a resumed session can reconcile without a second tool.
 
 ## Run status
 

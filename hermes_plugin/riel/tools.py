@@ -94,7 +94,12 @@ def _worktree(args: dict, kwargs: dict) -> str:
 
 
 def _todo_sync(payload: dict, engine, args: dict, kwargs: dict, tool: str, verb: str) -> dict:
-    """Refresh the calling session's checks after a successful run mutation."""
+    """Refresh the calling session's checks after a successful run mutation.
+
+    Several contracts may be active at once, so the checklist holds ALL of them:
+    `run list` answers every contract's status (each with its own slug-namespaced
+    rows) in one call. Reading only one would freeze the other tracks' checks.
+    """
     if payload.get("exit_code") != 0:
         return payload
     worktree = payload.get("worktree") or _worktree(args, kwargs)
@@ -102,32 +107,47 @@ def _todo_sync(payload: dict, engine, args: dict, kwargs: dict, tool: str, verb:
     if tool == "riel_clean":
         return _todos.attach(payload, items=[], clear=True, session_id=session_id)
     mutating = tool == "riel_note" or (
-        tool == "riel_run" and verb in ("activate", "rebase", "status"))
+        tool == "riel_run" and verb in ("activate", "rebase", "status", "list"))
     if not mutating:
         return payload
     if engine is None:
         try:
             proc = subprocess.run(
                 [sys.executable, str(ENGINE), "--worktree", worktree,
-                 "run", "status"],
+                 "run", "list"],
                 cwd=worktree, capture_output=True, text=True, timeout=TIMEOUT_SECS)
-            state = json.loads(proc.stdout or "{}") if proc.returncode == 0 else {}
+            listing = json.loads(proc.stdout or "{}") if proc.returncode == 0 else {}
         except Exception:
-            state = {}
-        rows = state.get("todos")
+            listing = {}
     else:
         out, err = io.StringIO(), io.StringIO()
         try:
-            code = engine.run_verb(["run", "status"], worktree=worktree,
+            code = engine.run_verb(["run", "list"], worktree=worktree,
                                    out=out, err=err)
-            state = json.loads(out.getvalue() or "{}") if code == 0 else {}
+            listing = json.loads(out.getvalue() or "{}") if code == 0 else {}
         except Exception:
-            state = {}
-        rows = state.get("todos")
-    if not isinstance(rows, list) or state.get("status") != "active":
+            listing = {}
+    contracts = listing.get("contracts")
+    if not isinstance(contracts, list):
+        return payload
+    rows, broken = [], []
+    for contract in contracts:
+        if contract.get("error"):
+            broken.append("{}: {}".format(contract.get("slug", "?"),
+                                          contract["error"]))
+            continue
+        if contract.get("status") != "active":
+            continue
+        items = contract.get("todos")
+        if isinstance(items, list):
+            rows.extend(items)
+    if not rows and not broken:
         return payload
     payload["todos"] = rows
-    return _todos.attach(payload, items=rows, session_id=session_id)
+    synced = _todos.attach(payload, items=rows, session_id=session_id)
+    if broken and isinstance(synced.get("todo_sync"), dict):
+        synced["todo_sync"]["unreadable"] = broken
+    return synced
 
 
 def _run(argv: list, args: dict, kwargs: dict, tool: str, verb: str = "") -> str:
@@ -243,7 +263,7 @@ def riel_project(args: dict, **kwargs) -> str:
     `new` RENDERS the project template to stdout (the editor is the writing
     path — the tool never writes `.riel/project.md`), `validate` checks the
     graph of shapings, `status` derives each shaping's progress from the runs'
-    own evidence (the live run plus `.riel/runs/`). Nothing here authors a
+    own evidence (every contract in `.riel/runs/`). Nothing here authors a
     shaping or writes state.
     """
     verb = _verb_args(args, PROJECT_VERBS, "riel_project")
@@ -412,7 +432,7 @@ def riel_note(args: dict, **kwargs) -> str:
 
 def riel_clean(args: dict, **kwargs) -> str:
     """Remove EVERYTHING inside the worktree's `.riel/`: the run, project.md,
-    shapings/, the archived runs and any other file. Archiving is OPT-IN
+    shapings/, the contracts and any other file. Archiving is OPT-IN
     (`archive=true`) and lands OUTSIDE `.riel/`, verified by sha256 before
     anything is removed. Without it the removal is not recoverable — `.riel/`
     is gitignored local state. Ask the user before cleaning a worktree whose

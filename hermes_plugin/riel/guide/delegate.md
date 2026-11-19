@@ -1,13 +1,13 @@
 ---
 topic: delegate
 trigger: "Use when splitting a Riel run into subagents: immutable run slices, isolated worktrees, candidate JSON results and parent-side re-verification before Evidence."
-version: 2.1.0
+version: 2.2.0
 ---
 # delegate — One run, several workers
 
 The parent owns `.riel/runs/<slug>.md` and is its only writer. Children receive `run
-slices`: immutable packets carrying the global sections (Objective, Why,
-Constraints, Deliverable, DO NOT) plus ONE `### F#: <title>` block copied
+slices`: immutable packets carrying the global sections (Objective, Context with
+Why, Deliverable, Constraints, DO NOT) plus ONE `### F#: <title>` block copied
 verbatim — its steps, its `#### Claims`, its `#### Gates`, its
 `#### Deliverable` — and the frozen Basis those claims reference. No other
 phase travels. They do not receive mutable State or the whole shaping.
@@ -19,8 +19,8 @@ each child its own git worktree, an exact file allowlist and one structured
 return schema. The parent re-checks the current contract revision before dispatch;
 work outside those constraints is escalated instead of reinterpreted.
 
-A slice is generated with `riel_run(verb="slice", phase="W2")` after its
-predecessors pass. The child must know the `run_revision`, gate and claim IDs,
+A slice is generated with `riel_run(verb="slice", phase="F2", run="<slug>")` after
+its predecessors pass; `run` is required when several contracts are active. The child must know the `run_revision`, gate and claim IDs,
 command runner and expected output. Inherited slices do not activate new runs.
 
 ## Return

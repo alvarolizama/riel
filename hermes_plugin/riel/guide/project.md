@@ -1,7 +1,7 @@
 ---
 topic: project
 trigger: "Use when a project is several questions: .riel/project.md orders the shapings, and each shaping runs once and delivers one PR."
-version: 1.0.0
+version: 1.1.0
 ---
 # project — The order of the questions
 
@@ -56,15 +56,17 @@ reopens: the progress was never a declaration.
 
 ## Executing a project
 
-One worktree holds one active run, so a project executes as a sequence:
+Several contracts may be active at once in one worktree, so independent tracks
+can run in parallel; `run=<slug>` selects one on every verb:
 
-1. `project status` names the next shaping.
+1. `project status` names the next shaping (or several, when they are independent).
 2. Write `.riel/runs/<slug>.md` declaring that shaping under `### Shaping`.
    The contract is matched to its node by that binding, not by filename.
-3. `run validate`, `run activate`, work the graph, record gates with `note`.
+3. `run validate`, `run activate`, work the phase DAG, record gates with `note`.
 4. The contract stays in `.riel/runs/`; when its evidence makes it done, the
-   node is done. Several tracks may be active at once.
-5. Repeat. Parallel tracks run in separate worktrees, one PR each.
+   node is done. Nothing is moved and nothing is pruned.
+5. Repeat until every node is done. One shaping is still one PR: parallel tracks
+   share a worktree, not a deliverable.
 
 Contracts are never pruned: they are the project's proof, and deleting one
 would silently reopen a finished track.

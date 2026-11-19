@@ -5,7 +5,7 @@
 ### The rail a coding agent runs on. Steering, not horsepower.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-3.0.0-FF6B00.svg)](./hermes_plugin/riel/plugin.yaml)
+[![Version](https://img.shields.io/badge/version-4.0.0-FF6B00.svg)](./hermes_plugin/riel/plugin.yaml)
 [![Python](https://img.shields.io/badge/Python-3-3776AB?logo=python&logoColor=white)](https://www.python.org)
 [![Hermes](https://img.shields.io/badge/Hermes-plugin-5B8DEF)](https://www.nousresearch.com)
 
@@ -524,15 +524,20 @@ declaration, not by filename — you name the contract freely.
 ## Around the contract
 
 **The gate hook.** `pre_verify` fires after a turn that edited code in a worktree with an
-active run. While claims or gates lack evidence, it keeps the agent going. A worktree
-without `.riel/runs/<slug>.md` is never gated, and a draft is never gated — only an active run.
+active contract. It aggregates across ALL of them: while any track owes claims or gates,
+it keeps the agent going and names the pending slugs. A worktree with no contract is never
+gated, and a draft is never gated — only activated contracts.
 
 **The session checklist.** Riel owns its rows in the session todo list: the goal, phases
 as checks, steps as subchecks, gates as checks. Only passing evidence completes them.
-Your own todos are untouched.
+With several active contracts the checklist holds them all, each namespaced by slug
+(`riel-<slug>-goal`, `riel-<slug>-gate-G1`) and labelled `GOAL [<slug>]: …`, so two tracks
+never collide. A contract that cannot be read is reported, not dropped. Your own todos
+are untouched.
 
-**The prompt section.** A small `riel` section points at the prose and the worktree's
-active run, so a new session starts oriented instead of guessing.
+**The prompt section.** A small `riel` section points at the prose and lists every active
+contract with its cursor and pending counts, one line each, so a new session starts
+oriented instead of guessing.
 
 **The desktop chip and `/riel`.** Three switches — `gate`, `tools`, `context` — plus an
 operator note. A switch written now applies to the **next** session: the prompt and tool
