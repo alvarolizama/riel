@@ -169,7 +169,7 @@ RIEL_CLEAN = {
     "name": "riel_clean",
     "description": (
         "Riel housekeeping — remove EVERYTHING inside the worktree's .riel/ "
-        "(run.md, project.md, shapings/, runs/, legacy state and backups) so a "
+        "(run.md, project.md, shapings/, runs/, backups and any other file) so a "
         "new task starts clean. Archiving is OPT-IN: archive=true copies the "
         "tree outside .riel/ and verifies every sha256 BEFORE removing anything. "
         "Without it the removal is NOT recoverable (.riel/ is gitignored). Ask "

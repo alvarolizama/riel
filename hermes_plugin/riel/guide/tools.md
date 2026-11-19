@@ -37,7 +37,7 @@ supplied by the model as a substitute for execution.
 
 `core` accepts at most two facts, replaced by a one-based `core_slot`. `close` and
 `evidence` take the numbers N of Q<N> and E<N> respectively.
-Legacy `goal`, `next`, `phase`, ad hoc claim creation, `check/by`,
+Removed: `goal`, `next`, `phase`, ad hoc claim creation, `check/by`,
 `from_contract` and `verify_with` are not parameters.
 
 ## Envelope and scope
@@ -47,7 +47,7 @@ Tool calls answer `{tool, worktree, exit_code, passed, stdout, stderr}`, with
 use the same base envelope. `tool` is provenance, not an argument to type.
 
 `clean` removes EVERY entry inside `.riel/` — run, project, shapings, archived
-runs, legacy state and backups — and keeps only the lock file. Archiving is
+runs, backups and any other file — and keeps only the lock file. Archiving is
 opt-in: `archive=true` copies the tree outside `.riel/`
 (`~/.hermes/riel/archive/<worktree>/<timestamp>/`) and verifies every sha256
 before removing anything. Without it the removal is not recoverable, because

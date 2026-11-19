@@ -153,18 +153,17 @@ class FormatTests(TempDirTest):
         self.assertIn("# Run: demo", out)
         self.assertFalse(os.path.exists(os.path.join(self.tmp, ".riel")))
 
-    def test_legacy_state_is_refused(self):
+    def test_old_state_files_are_invisible(self):
+        """No legacy machinery: without run.md there is simply no run state."""
         os.makedirs(os.path.join(self.tmp, ".riel"))
-        for legacy in ("contract.md", "ledger.md"):
-            with open(os.path.join(self.tmp, ".riel", legacy), "w") as fh:
-                fh.write("# legacy\n")
-        rc, out, err = run("run", "status", cwd=self.tmp)
+        for name in ("contract.md", "ledger.md"):
+            with open(os.path.join(self.tmp, ".riel", name), "w") as fh:
+                fh.write("# old state\n")
+        rc, _out, err = run("run", "status", cwd=self.tmp)
         self.assertEqual(rc, 2)
-        self.assertIn("legacy riel v1 state", err)
-        self.assertIn("no converter", err)
+        self.assertNotIn("legacy", err)
         rc, _out, err = run("note", "--core", "x — y", cwd=self.tmp)
         self.assertEqual(rc, 2)
-        self.assertIn("legacy", err)
         rc, _out, err = run("run", "validate",
                             os.path.join(self.tmp, ".riel", "contract.md"),
                             cwd=self.tmp)
@@ -1229,8 +1228,8 @@ class CleanAndArchiveTests(TempDirTest):
             "shapings/sibling.md": shaping_text(name="sibling", uid="shp_0000000f"),
             "runs/old.md": "# Run: an older proof\n",
             "shaping.md": shaping_text(name="loose", uid="shp_0000000e"),
-            "contract.md": "# legacy v1\n",
-            "ledger.md": "# legacy v1\n",
+            "contract.md": "# old state\n",
+            "ledger.md": "# old state\n",
             "run-20260101-000000.bak.md": "# an old backup\n",
             "templates/mine.md": "# a user template\n",
         }
@@ -1249,7 +1248,7 @@ class CleanAndArchiveTests(TempDirTest):
         rc, out, err = run("clean", cwd=self.tmp)
         self.assertEqual(rc, 0, out + err)
         self.assertEqual(self.entries(), [".run.lock"],
-                         "clean wipes run, project, shapings/, runs/, legacy and backups")
+                         "clean wipes run, project, shapings/, runs/, old files and backups")
         self.assertIn("no archive", out)
 
     def test_clean_leaves_no_backup_by_default(self):
@@ -1290,7 +1289,7 @@ class CleanAndArchiveTests(TempDirTest):
         self.assertEqual(self.entries(), [".run.lock"])
         shutil.copytree(str(archive), os.path.join(self.tmp, ".riel"),
                         dirs_exist_ok=True)
-        # the restore is byte-complete, legacy files included — and v1 state
+        # the restore is byte-complete, old files included — and state
         # still refuses v2 reads, so archive those two before reading the run
         for legacy in ("contract.md", "ledger.md"):
             os.unlink(os.path.join(self.tmp, ".riel", legacy))

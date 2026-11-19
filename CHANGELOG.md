@@ -80,7 +80,7 @@ packaged guides carry their own versions.
 - The stale check watches the BOUND shaping. Editing a sibling shaping no longer
   makes a run stale.
 - `clean` removes EVERY entry inside `.riel/` (run, project, shapings, archived
-  runs, legacy state, backups); only the lock file stays. Archiving is opt-in,
+  runs, backups, any other file); only the lock file stays. Archiving is opt-in,
   never the default.
 - Riel explains the formats and validates them; it never authors a shaping or a
   project. `new` renders to stdout for every artifact.

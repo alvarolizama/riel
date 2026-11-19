@@ -34,11 +34,6 @@ USAGE = (
 NEXT_SESSION = "Applies to the NEXT session (this one keeps the prompt and tools it started with)."
 
 
-def plugin_settings():
-    """Deprecated alias: the one loader lives in `_load.py`."""
-    return _load.settings()
-
-
 def _render(snapshot: dict) -> str:
     lines: List[str] = []
     for key in ("gate", "tools", "context"):

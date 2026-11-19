@@ -15,11 +15,11 @@ holds it. The Contract has three parts:
 - **Evidence** — what was done: one `E#` per gate execution, with the real
   command and its exit code. Append-only, written only by the engine.
 
-They are not peer copies: Objective, Claims and graph are authored once in the
-Definition, and status, phase, Next and done are derived from Evidence.
+They are not peer copies: Objective, Phases and their claims are authored once
+in the Definition, and status, phase, Next and done are derived from Evidence.
 
-Old `contract.md` and `ledger.md` are unsupported. There is no migration and
-no automatic merge of old state.
+`.riel/run.md` is the only state file. Any other file in `.riel/` is invisible
+to the engine — there is no migration and no automatic merge of old state.
 
 ## Lifecycle
 

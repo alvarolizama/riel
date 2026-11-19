@@ -15,7 +15,7 @@ keeps the same `--worktree` subprocess shape for the rare interpreter that
 cannot load the engine.
 
 The surface is SEVEN typed tools (the project/shaping/run model — the
-old riel_plan/riel_seam pair is gone, no compatibility shims):
+seven doors, no compatibility shims):
 
   * `riel_guide` — the prose (no engine call);
   * `riel_project` — new | validate | status, the ordering of shapings;
@@ -410,7 +410,7 @@ def riel_note(args: dict, **kwargs) -> str:
 
 def riel_clean(args: dict, **kwargs) -> str:
     """Remove EVERYTHING inside the worktree's `.riel/`: the run, project.md,
-    shapings/, the archived runs and any legacy state. Archiving is OPT-IN
+    shapings/, the archived runs and any other file. Archiving is OPT-IN
     (`archive=true`) and lands OUTSIDE `.riel/`, verified by sha256 before
     anything is removed. Without it the removal is not recoverable — `.riel/`
     is gitignored local state. Ask the user before cleaning a worktree whose

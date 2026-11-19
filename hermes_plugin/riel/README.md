@@ -58,7 +58,7 @@ sobre de seis llaves (`tool, worktree, exit_code, passed, stdout, stderr`).
 - **`run status`** responde UN objeto JSON del estado del run, incluido el
   shaping ligado (`path`, `id`, `sha256`).
 - **`riel_clean`** borra TODO lo que está dentro de `.riel/` (run, project,
-  shapings, runs, estado legacy y backups); solo queda el lock. El archivado es
+  shapings, runs, backups y cualquier otro archivo); solo queda el lock. El archivado es
   opt-in: `archive=true` copia el árbol fuera de `.riel/`
   (`~/.hermes/riel/archive/<worktree>/<ts>/`) y verifica cada sha256 ANTES de
   borrar. Sin eso no hay vuelta: `.riel/` está gitignored. Ya no hay `scope`.

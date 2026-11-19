@@ -3,9 +3,8 @@
 This document specifies the Contract: the artifact a run executes. The format
 tag is `riel-run/v1`; the engine version that implements it is riel 3.0.0. Any
 future incompatible change bumps the tag (and this spec gets a new version
-section). There is **no converter**: riel v1's `.riel/contract.md` and
-`.riel/ledger.md` are never read as state — the engine refuses when they are
-present in `.riel/` and tells you to archive or delete them.
+section). There is **no converter** and no legacy machinery: `.riel/run.md` is the only
+state file, so any other file in `.riel/` is simply invisible to the engine.
 
 ## Role and location
 
@@ -59,7 +58,7 @@ count; they are documentation, never data.
 The second element of the file is the standalone line `<!-- riel-run/v1 -->`
 (allowing surrounding blank lines), placed before the first `## ` heading.
 `run validate` and every state read refuse a file without it — this is what
-makes the format strict and keeps legacy files out.
+makes the format strict: a file without the marker is not a Contract.
 
 ### The Definition (seven headings, frozen at activation)
 
@@ -271,7 +270,7 @@ limit.
 - `todo` — JSON mirror: goal, phases with nested steps and statuses, next,
   claims, open questions.
 - `clean [--archive]` — remove EVERY entry inside `.riel/` (run, project,
-  shapings, archived runs, legacy state, backups); only the lock file stays.
+  shapings, archived runs, backups, any other file); only the lock file stays.
   `--archive` first copies the tree to `~/.hermes/riel/archive/<worktree>/<ts>/`
   and verifies every sha256. Without it there is no backup and no way back.
 - `check FILE [--mermaid]` — dense-register markers + graph digest (+mmdc)

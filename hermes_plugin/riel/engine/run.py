@@ -80,7 +80,6 @@ SHAPING_SECTIONS = ("Question", "Answer", "Findings", "Facts",
                     "Not wanted", "What we want", "Open")
 ANSWER_SUPPORT_RE = re.compile(r"supported by\s+(F\d+)", re.I)
 ANSWER_OWNER_RE = re.compile(r"decided by:\s*owner", re.I)
-LEGACY_STATE_FILES = ("contract.md", "ledger.md")
 MARKER_LINE = "<!-- {} -->".format(RUN_FORMAT)
 
 # The Definition: the level-1 title plus these eight level-2 sections, in order.
@@ -1043,18 +1042,6 @@ def _bound_shaping(worktree, definition_text=None, meta=None):
     return rel, uid, abs_path
 
 
-def _refuse_legacy(worktree):
-    """riel v1 state files are never read as state — refuse, loudly."""
-    found = [name for name in LEGACY_STATE_FILES
-             if os.path.exists(os.path.join(worktree, RIEL_DIR, name))]
-    if found:
-        raise EngineError(
-            "legacy riel v1 state found in .riel/ ({}) — riel {} reads only "
-            ".riel/run.md (format {}); archive or delete the legacy files "
-            "(there is no converter)".format(
-                ", ".join(".riel/" + f for f in found), VERSION, RUN_FORMAT))
-
-
 def _read_file(path):
     try:
         with open(path, encoding="utf-8") as fh:
@@ -1190,7 +1177,6 @@ def load_state(worktree, require_active=False, require_exists=True, path=None):
     """
     paths = _worktree_paths(worktree)
     run_path = path or paths["run"]
-    _refuse_legacy(worktree)
     if not os.path.exists(run_path):
         if require_exists:
             raise EngineError(
@@ -1671,9 +1657,8 @@ def _run_validate(args, out, err):
     text = _read_file(path)
     if not marker_present(text):
         raise EngineError(
-            "{} is not a {} file (missing {} after the title); riel {} "
-            "does not read legacy formats".format(
-                path, RUN_FORMAT, MARKER_LINE, VERSION))
+            "{} is not a {} file — missing {} after the title".format(
+                path, RUN_FORMAT, MARKER_LINE))
     definition_text, _ = _split_definition(text)
     meta = _parse_metadata(text)
     active = bool(meta.get("revision"))
@@ -1755,7 +1740,6 @@ def _freeze_from_shaping(worktree, paths, definition_text, err, meta=None):
 
 def _run_activate(args, out, err):
     paths = _worktree_paths(args.worktree)
-    _refuse_legacy(args.worktree)
     with _Locked(paths["lock"]):
         if not os.path.exists(paths["run"]):
             raise EngineError(
@@ -2212,7 +2196,7 @@ def todo_projection(st):
 
 
 def cmd_todo(args, out, err):
-    """Compatibility projection for callers that still read `riel todo`."""
+    """The session-checklist mirror as JSON — the same projection `status` embeds."""
     st = load_state(args.worktree)
     assert st is not None  # require_exists=True rejects the missing run above
     print(json.dumps(todo_projection(st), ensure_ascii=False), file=out)
@@ -2466,7 +2450,7 @@ def _copy_verified(src_dir, dest_dir):
 def cmd_clean(args, out, err):
     """Remove EVERYTHING inside .riel/. Archiving is opt-in, never the default.
 
-    run.md, project.md, shapings/, runs/, v1 state
+    run.md, project.md, shapings/, runs/, any other file
     and every backup go. The lock file stays (it is coordination, not state,
     and unlinking a held flock would let two writers in). Without --archive
     there is no way back: .riel/ is gitignored local state.

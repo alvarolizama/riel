@@ -11,7 +11,7 @@ the agent keeps going instead of closing the turn.
 Bounds that keep it honest:
 
   * **Opt-in per worktree.** No active `.riel/run.md` anywhere above the
-    edited files → never nudge. A worktree with only a legacy `.riel/ledger.md`
+    edited files → never nudge. A worktree with no `.riel/run.md`
     is NOT gated: the v2 gate reads the run state, nothing else.
   * **Only an ACTIVE run.** A run that exists but is not activated (draft,
     written by hand, awaiting validate) is the agent's business, not the gate's.
@@ -118,8 +118,8 @@ def find_worktree(changed_paths, session_cwd=None, max_depth: int = MAX_ANCESTOR
     a tracked worktree.
 
     Both are guesses that only count when an ACTIVE RUN is actually there —
-    "no run.md" means "not a Riel v2 task", never "use the gateway's cwd",
-    and a legacy ledger-only worktree is left alone. Blanks and relative
+    "no run.md" means "not a Riel task", never "use the gateway's cwd",
+    and a worktree without one is left alone. Blanks and relative
     paths are skipped for the same reason: `Path("")` is `.`, which would
     silently answer about whatever directory the process runs in.
     """

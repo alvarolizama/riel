@@ -10,7 +10,7 @@ The gate reads the ACTIVE run (`.riel/run.md`) through the engine's safe
 in-process path — the suite points `hooks.tools` at the stub engine and drives
 real gate commands (`true` / `false`) through `riel_note`. Claims and gates
 are created by the DEFINITION (`stub.seed`); the note only ever executes gates and
-records evidence. A worktree with only a legacy `.riel/ledger.md` is NEVER
+records evidence. A worktree with no `.riel/run.md` is NEVER
 gated.
 
 Run:
@@ -88,8 +88,8 @@ class FindWorktreeTest(GateTestCase):
         self.addCleanup(shutil.rmtree, other, ignore_errors=True)
         self.assertIsNone(self.hooks.find_worktree([str(Path(other) / "a.py")]))
 
-    def test_a_legacy_ledger_is_never_gated(self):
-        """v1 state (.riel/ledger.md, no run) is invisible to the v2 gate."""
+    def test_a_worktree_without_a_run_is_never_gated(self):
+        """An old .riel/ledger.md with no run.md is invisible to the gate."""
         ledger = Path(self.tmp) / ".riel" / "ledger.md"
         ledger.parent.mkdir(parents=True)
         ledger.write_text("# Riel ledger\n\n## Goal\nold world\n", encoding="utf-8")
@@ -295,7 +295,7 @@ class PreVerifyCallbackTest(GateTestCase):
         )
         self.assertEqual(result["action"], "continue")
 
-    def test_a_legacy_ledger_never_gates_the_turn(self):
+    def test_an_old_ledger_never_gates_the_turn(self):
         ledger = Path(self.tmp) / ".riel" / "ledger.md"
         ledger.parent.mkdir(parents=True)
         ledger.write_text("# Riel ledger\n", encoding="utf-8")
