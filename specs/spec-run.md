@@ -32,9 +32,8 @@ Definition, everything from it down is engine-written.
     ## Objective
     ## Context          (### Why, ### Context keywords, ### Shaping, ### Basis — frozen)
     ## Constraints
-    ## Claims
-    ## Graph
-    ## Gates
+    ## Phases           (general DAG, then ### F#: <title> per phase,
+                         each with #### Claims, #### Gates, #### Deliverable)
     ## Deliverable
     ## DO NOT
     ---------- activation line (## Metadata) ----------
@@ -46,6 +45,15 @@ Definition, everything from it down is engine-written.
     EVIDENCE — append-only, written only by the engine
     ## Evidence
 
+### Authoring guard
+
+A Definition that still carries `{{placeholder}}` text is a SKELETON, not a
+Contract: `run validate` and `run activate` refuse it and list every unfilled
+field by name. Non-empty sections are not authoring — `{{objective}}` is
+non-empty text, and without this guard `definition_sha256` would freeze the
+template as if it were a decision. Placeholders inside HTML comments do not
+count; they are documentation, never data.
+
 ### Format marker
 
 The second element of the file is the standalone line `<!-- riel-run/v1 -->`
@@ -53,7 +61,7 @@ The second element of the file is the standalone line `<!-- riel-run/v1 -->`
 `run validate` and every state read refuse a file without it — this is what
 makes the format strict and keeps legacy files out.
 
-### The Definition (nine headings, frozen at activation)
+### The Definition (seven headings, frozen at activation)
 
 1. `# Run: <title>` — the level-1 title.
 2. `## Objective` — one sentence: what "done" produces.
@@ -61,33 +69,74 @@ makes the format strict and keeps legacy files out.
    keywords` (`- term → source`, the context-fetch index), `### Shaping`
    (`- shaping: <path or uid>`, the one shaping this run executes), and, after
    activation, the frozen `### Basis`.
-4. `## Constraints` — hard rules, at least one bullet.
-5. `## Claims` — `- P1: <what must be true> — anchor: …`; anchors are
-   `§<Section>[#<n>]`, a graph node id, or `shaping:F#`. At least one P#.
-6. `## Graph` — the execution DAG, in either register (below).
-7. `## Gates` — `- G1: <label> — phase: F1`; the `— phase:` clause is
-   optional (a gate without one applies to the whole run).
-8. `## Deliverable` — what exists when done.
-9. `## DO NOT` — scope enforcement, at least one bullet.
+4. `## Constraints` — hard rules, at least one bullet. GLOBAL: they bind every
+   phase.
+5. `## Phases` — the execution structure, in two levels (below).
+6. `## Deliverable` — what exists when the whole run is done.
+7. `## DO NOT` — scope enforcement for the whole PR, at least one bullet.
+   GLOBAL: no phase may relax it. One run is one shaping is one PR, so the
+   boundary is reviewed as a whole, not per phase.
 
-### Graph registers
+The flat `## Claims`, `## Graph` and `## Gates` sections are REFUSED, not read:
+claims, gates and the DAG live inside `## Phases`. There is no converter.
 
-`## Graph` holds either a ` ```mermaid ` flowchart (phases `F#`/`W#`, steps
-starting with the closed verbs READ/EDIT/CREATE/RUN/VERIFY/ASK, decision
-nodes `{...}` whose outgoing edges all carry labels, loops with a bounded
-counter guard) or the plain list register:
+### The Phases outline
 
-    - F1: build the parser
-      - READ the spec
-      - RUN make test
-    - F2: wire the verbs
-      - EDIT tools.py
-      - RUN make test
+`## Phases` holds the general DAG in its preamble, then one `### F#: <title>`
+per phase. Each phase block carries its own steps and its own `#### Claims`,
+`#### Gates` and `#### Deliverable` — all three required, all non-empty.
 
-In the list register a phase has exactly ONE outgoing edge — to its first
-step; steps chain linearly; the last step of a phase edges to the next
-phase. `-`, `*` and `1.` are all accepted as bullets; HTML comments are
-stripped before parsing, so a commented-out example never becomes data.
+    ## Phases
+    <!-- general DAG here: mermaid between phases, or `- F1 → F2 → F3` -->
+
+    ### F1: build the parser
+    - READ the spec
+    - EDIT engine/run.py
+    - RUN make test
+
+    #### Claims
+    - P1: the parser cuts at Metadata — anchor: §F1#2
+
+    #### Gates
+    - G1: make test
+
+    #### Deliverable
+    - engine/run.py reads one file
+
+    ### F2: wire the verbs
+    - VERIFY make lint
+
+    #### Claims
+    - P2: the verbs resolve — anchor: §F2#1
+
+    #### Gates
+    - G2: make lint
+
+    #### Deliverable
+    - tools.py rewired
+
+**Level 1 — the general DAG.** A ` ```mermaid ` flowchart between phases
+(decision nodes `{...}` whose outgoing edges all carry labels, loops with a
+bounded counter guard `< 3` / `>= 3`), or an arrow list `- F1 → F2 → F3`, or
+nothing: then the authored order of the `### F#` headings IS the order.
+Decisions and loops belong to this level.
+
+**Level 2 — a phase's steps.** Bullets starting with the closed verbs
+READ/EDIT/CREATE/RUN/VERIFY/ASK, chained linearly. They are numbered PER PHASE
+(`F1S1`, `F1S2`, …, `F2S1`, …), so inserting a step in one phase never
+renumbers another phase's anchors. A phase has exactly ONE outgoing edge — to
+its first step; the last step edges to the next phase per the general DAG.
+
+**Membership is structural.** A gate belongs to the phase whose block holds
+it; there is no `— phase:` suffix and no run-global gate. A leftover suffix
+that disagrees with its block is an error. `P#` and `G#` ids stay globally
+unique because Evidence rows reference them.
+
+**Anchors.** `§F1#2` names step 2 of phase F1 and is stable against edits in
+other phases. `§<Section>#n`, a node id, and `shaping:F#` work as before.
+
+`-`, `*` and `1.` are all accepted as bullets; HTML comments are stripped
+before parsing, so a commented-out example never becomes data.
 
 ### Activation
 
@@ -95,8 +144,7 @@ stripped before parsing, so a commented-out example never becomes data.
 Definition declares under `### Shaping`, validates the Definition (strictly) and that
 shaping, then:
 
-- A loose legacy `.riel/shaping.md` is migrated into `.riel/shapings/` first
-  (Spec 2), and the declaration is written into the Definition.
+- The shaping declaration is written into the Definition (Spec 2).
 - If claims anchor `shaping:F#` findings, it copies each referenced finding
   — text, `— source:` and `— confidence:` — into a frozen `### Basis`
   subsection inside `## Context`, naming the shaping and its uid. After this,
@@ -113,9 +161,9 @@ shaping, then:
 
 - `## Metadata` — the activated hashes, the revision, and the shaping binding
   (`shaping` path, `shaping_id` uid, `shaping_sha256`). The Definition hash is
-  `definition_sha256`; a run activated before the Contract vocabulary carries
-  the old `plan_sha256` key, which is still READ so a live run does not break.
-  Its next rebase writes `definition_sha256` and drops the old key.
+  `definition_sha256` and it is REQUIRED: a run carrying the pre-rename
+  `plan_sha256` key, or no Definition hash at all, is refused as stale. There
+  is no upgrade path — re-author the Definition and activate again.
 - `## Execution state` — `current_phase: F1` (derived; see Derivation).
 - `## Core` — `- 1. name — fact`; slots are 1-BASED.
 - `## Open` — `- Q1: <question> — settled-by: <test>`; closing appends
@@ -167,11 +215,11 @@ Rules:
 
 - Evidence counts only when its `revision:` equals the current revision.
   Evidence with exit 0 AND (no confidence or confidence >= 12) is passed.
-- A phase is complete when every gate mapped to it has passing, counted
-  evidence AND all earlier phases are complete. A phase with no mapped gate
-  completes automatically once its predecessors do. `current_phase` is the
-  first incomplete phase; `next` is the first work step of that phase (its
-  label), or the phase label if it has no steps.
+- A phase is complete when every gate INSIDE its block has passing, counted
+  evidence AND all earlier phases are complete. Membership is structural, so
+  every valid phase has at least one gate. `current_phase` is the first
+  incomplete phase; `next` is the first work step of that phase (its label),
+  or the phase label if it has no steps.
 - Gate completion drives the phase — never counts of evidence lines.
 - done is true when ALL claims are covered by PASSING, counted evidence AND all
   gates have passing evidence. With no gates at all, done is all claims
@@ -182,31 +230,37 @@ Rules:
 ## Rebase
 
 `run rebase` is for after activation: it re-validates the current Definition,
-re-freezes the Basis from the bound shaping (migrating a loose legacy file if
-that is what the run still binds), recomputes both hashes, and bumps the
+re-freezes the Basis from the bound shaping, recomputes both hashes, and bumps the
 revision (`r2`, `r3`, …). Evidence recorded under an older
 revision is RETAINED verbatim but no longer counted. If nothing changed,
 rebase says so and changes nothing.
 
 ## Slice
 
-`run slice F1` emits a self-validating packet: a DRAFT run file (format
-marker, nine Definition headings, no State or Evidence) carrying the parent's Objective,
-Context (with the frozen Basis), Constraints, Claims, Deliverable and
-DO NOT, the phase's subgraph as a mermaid block, and the gates mapped to
-that phase. Claims anchored to nodes inside the subgraph are kept; if none
-map, all claims are kept. `run validate` on the packet passes — the slice
-validates itself and needs no external shaping (the Basis is frozen inside
-it). The packet works from either graph register and iteratively, so deep
-or cyclic graphs never hit a recursion limit.
+`run slice F1` emits a self-validating packet: a DRAFT Contract (format
+marker, the seven Definition headings, no State or Evidence) carrying the
+parent's Objective, Context (with the frozen Basis, Why and keywords),
+Constraints, Deliverable and DO NOT — all global — plus ONE `### F1: <title>`
+block copied VERBATIM: its steps, its `#### Claims`, its `#### Gates` and its
+`#### Deliverable`. No other phase travels, so the child never sees another
+track's claims or findings.
+
+Because the block is verbatim, its anchors resolve exactly as in the parent:
+`§F1#2` names the same step, and `shaping:F#` resolves against the frozen
+Basis inside the packet — no external shaping file is needed. `run validate`
+on the packet passes; the slice validates itself before it is emitted.
+Graph walks are iterative, so deep or cyclic graphs never hit a recursion
+limit.
 
 ## Other public verbs
 
 - `shape [PATH]` — validate a shaping (Spec 2): title, marker with uid, ONE
-  question on ONE line, Findings with UNIQUE F# ids and a `— source:` on each
-  (a finding without a source is a hypothesis, a hard error), non-empty
-  Verdict (warning only). With no PATH it answers for the only file in
-  `.riel/shapings/`; with several, the caller must choose.
+  question on ONE line, ONE answer on ONE line with no `?` and cited backing
+  (`— supported by F#` or `— decided by: owner`), Findings with UNIQUE F# ids
+  and a `— source:` on each (a finding without a source is a hypothesis, a hard
+  error), and the seven sections in order with Open last. Only v3 is read.
+  With no PATH it answers for
+  the only file in `.riel/shapings/`; with several, the caller must choose.
 - `shape new` / `run new` / `project new` — render the template to STDOUT with
   `--param k=v`; they never write state. An editor, a project system or a
   copy-paste is the writing path. `shape new` mints the shaping's uid.

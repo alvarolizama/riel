@@ -21,10 +21,31 @@ packaged guides carry their own versions.
 - `clean archive=true`: copies `.riel/` outside the worktree
   (`~/.hermes/riel/archive/<worktree>/<timestamp>/`) and verifies every sha256
   before removing anything, then prints the restore command.
-- Migration of a loose `.riel/shaping.md`: `activate`/`rebase` move it into
-  `shapings/`, mint its uid, rotate the original to a timestamped `.bak.md` and
-  rebind the run in one transaction. An already-active pre-v2 run keeps working
-  until its next rebase.
+- Authoring guard on BOTH artifacts: `run validate`/`run activate` refuse a
+  Definition, and `shape validate` refuses a shaping, that still carries
+  `{{placeholder}}` text — listing every unfilled field by name. Before this,
+  filling only the anchor let a Contract with 21 raw placeholders activate and
+  freeze, and a shaping with 18 raw placeholders validate clean: non-empty
+  sections were mistaken for authoring. Placeholders inside HTML comments do
+  not count.
+- The Definition is restructured around phases: `## Claims`, `## Graph` and
+  `## Gates` are gone, replaced by `## Phases` — the general DAG in its
+  preamble, then one `### F#: <title>` per phase carrying its own steps and its
+  own `#### Claims`, `#### Gates` and `#### Deliverable`. Seven Definition
+  headings instead of nine. The flat sections are REFUSED, not converted.
+- Gate membership is STRUCTURAL: a gate belongs to the phase whose block holds
+  it. The `— phase:` suffix and the run-global gate fallback are gone; a
+  leftover suffix that disagrees with its block is an error.
+- Steps are numbered PER PHASE (`F1S1`, `F1S2`, …) instead of one global
+  counter. Inserting a step in one phase no longer renumbers another phase's
+  anchors, and `§F1#2` resolves to a phase's step — stable, addressable sections
+  instead of fragile positional node ids. Checklist rows are `riel-step-F1S1`.
+- `run slice F1` copies the phase block VERBATIM with the global sections and
+  the frozen Basis, so the packet's anchors resolve exactly as in the parent
+  and no other phase's claims or findings travel.
+- No legacy support: only `riel-shaping/v3` is read. v1/v2 shapings are refused,
+  not converted, and a loose `.riel/shaping.md` is not read at all. There is no
+  migration verb and no converter.
 - Guides and specs for the new model: `guide/project.md`, `specs/spec-project.md`,
   and an "Authoring outside Riel" section in the shaping guide.
 
@@ -35,12 +56,25 @@ packaged guides carry their own versions.
   execution of a Contract; `.riel/run.md` holds it. The word "plan" is gone from
   the model, the identifiers (`DEFINITION_TITLES`, `_split_definition`,
   `_check_definition`, `definition_sha256`) and every guide and spec.
-- Metadata's Definition hash is `definition_sha256`. The pre-rename `plan_sha256`
-  key is still read, so an already-active run keeps working; its next rebase
-  writes the new key and drops the old one.
-- Shaping format is `riel-shaping/v2`: the marker carries the uid, and
-  `## Question` must be ONE line with ONE question mark. Two questions are two
-  shapings, and validation refuses them.
+- Metadata's Definition hash is `definition_sha256` and is REQUIRED on an active
+  run: the pre-rename `plan_sha256` key is not read, and a run without a
+  Definition hash is refused as stale.
+- Shaping format is `riel-shaping/v3`. The marker carries the uid, and the
+  shaping now ANSWERS its question: seven sections in a fixed order —
+  `Question` (ONE line, ONE `?`), `Answer` (ONE line, no `?`, backed by
+  `— supported by F#` or `— decided by: owner`), `Findings`, `Facts`,
+  `Not wanted`, `What we want`, and `Open` LAST (the residue).
+- Findings are `### F#` dossiers: the heading is the citable claim, the body is
+  its support, and a finding may carry its own `#### Diagram`. The frozen Basis
+  copies heading + source + confidence, never the body — slices stay small.
+  This removes the one-physical-line trap of the bullet register.
+- `Alternatives bounced` is now `Not wanted`; `Verdict (→ run)` splits into
+  `Answer` (the resolution, which feeds the Contract's Why) and `What we want`
+  (the commission: We need · Claim seeds · Scope). The top-level `Diagrams`
+  section folds into per-finding `#### Diagram`.
+- v2 and v1 sources are refused. Upgrading is deliberate authoring: the Answer,
+  `Not wanted`, `What we want` and the dossier findings are decisions, not
+  something a converter can invent from old prose.
 - `shape validate` with no path answers for the only file in `.riel/shapings/`;
   with several, the caller must choose.
 - The stale check watches the BOUND shaping. Editing a sibling shaping no longer
@@ -59,9 +93,9 @@ packaged guides carry their own versions.
 - The canonical single `.riel/shaping.md` as the binding target.
 
 ### Upgrade
-A loose `.riel/shaping.md` is migrated automatically on the next `activate` or
-`rebase`; a shaping that answers two questions refuses migration and must be
-split first. Archived runs and project files are new — nothing to convert.
+There is no upgrade path for old state: a v1/v2 shaping must be re-authored in
+v3, and a run whose Metadata predates `definition_sha256` must be re-activated.
+Archived runs and project files are new — nothing to convert.
 `clean` is now destructive by default: pass `archive=true` to keep a verified
 copy.
 

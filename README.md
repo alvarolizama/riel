@@ -43,7 +43,7 @@ riel_shape(verb="new")
 riel_shape(verb="validate", file=".riel/shapings/<slug>.md")
 ```
 
-One question per shaping, findings with sources, alternatives and the final decision. Code references name the repository, observed commit, file lines and symbol so they can be checked again.
+One question and one answer per shaping: findings as dossiers with sources and their own diagrams, what the design must respect, what we do not want and why, the commission for the executor, and what stays open. Code references name the repository, observed commit, file lines and symbol so they can be checked again.
 
 ### 2. Order the questions (when there are several)
 

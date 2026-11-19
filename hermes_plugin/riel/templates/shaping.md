@@ -1,52 +1,62 @@
 # Shaping: {{name}}
 
-<!-- riel-shaping/v2 id:{{id}} -->
+<!-- riel-shaping/v3 id:{{id}} -->
 
 ## Question
 {{question}}
 <!-- ONE line with ONE question mark: the single question this shaping closes.
      Two questions are two shapings — split them, because a run binds one
-     shaping and a PR delivers one answer. Everything below exists to close
-     this line. The uid in the marker identifies the shaping across renames:
-     a run binds it by id, path and sha256. -->
+     shaping and a PR delivers one answer. The uid in the marker identifies the
+     shaping across renames: a run binds it by id, path and sha256. -->
+
+## Answer
+{{answer}} — because {{why}} — supported by {{F#}}
+<!-- ONE line, no '?': the resolution of the Question. Cite a finding
+     (`— supported by F1`) or the owner (`— decided by: owner`); an answer
+     without either is an opinion. This line feeds the Contract's ### Why.
+     It is NOT the deliverable: what must be built goes in What we want. -->
 
 ## Findings
-<!-- What was actually learned, and how we know it. One F# per PHYSICAL line,
-     ids unique, each with its source; confidence is optional but a finding
-     that a run activates gets copied with it. A finding without a source
-     is a hypothesis: `shape validate` fails on it and nothing downstream
-     should rest on it.
-       - F1: <finding> — source: path/to/file.py:120, confidence high
-       - F2: <finding> — source: https://… (2026-01-15), confidence med -->
-- F1: {{finding}} — source: {{path:line | URL + date | command}}, confidence {{high|med|low}}
+<!-- What was actually learned, and how we know it. One dossier per finding:
+     the heading is the citable claim (ONE line), the body is its support, and
+     a finding may carry its own #### Diagram. Ids unique; a finding without a
+     source is a hypothesis and `shape validate` fails on it.
+     The Basis freezes heading + source + confidence — never the body. -->
+
+### F1: {{finding}}
+{{evidence}}
+— source: {{repo@commit:path:lines#symbol | path:line | URL + date | command}}, confidence {{high|med|low}}
+
+#### Diagram
+<!-- OPTIONAL — delete it when the prose already carries the point. This
+     finding's own diagram, NOT the execution DAG (that one is the Contract's
+     ## Graph). -->
 
 ## Facts
 <!-- What the design must RESPECT: established constraints, invariants,
-     conventions of the repo, things that cannot be changed. Not opinions. -->
+     conventions of the repo, things that cannot be changed. Derived from the
+     findings, never new F# ids. These become the Contract's ## Constraints. -->
 - {{fact}}
 
-## Diagrams
-<!-- OPTIONAL — delete it when the prose already carries the context. The
-     shape of the system as it IS and as it WOULD BE. Mermaid. NOT the
-     execution DAG — that one is the run's ## Graph. -->
+## Not wanted
+<!-- What we do NOT want, and why it lost. One A# per line with the verdict
+     spelled out: kept | discarded: <reason> | deferred: <reason>. The Contract
+     keeps only the surviving rationale in ### Why; the rejected options stay
+     here so the next session does not re-litigate them. -->
+- A1: {{option}} — pro: {{pro}} / contra: {{contra}} — verdict: discarded: {{reason}}
 
-## Alternatives bounced
-<!-- The ideas that were considered and why they lost. This is the part a
-     run cannot carry: its ### Why keeps only the surviving rationale.
-     One A# per line, with the verdict spelled out. -->
-- A1: {{option}} — pro: {{pro}} / contra: {{contra}} — verdict: {{kept|discarded}}
-
-## Open
-<!-- Questions still unsettled. Each names the CHEAPEST test that would
-     settle it — these migrate to the run's ## Open when it activates. -->
-- Q1: {{question}} — settled by: {{cheapest refuting test}}
-
-## Verdict (→ run)
-<!-- The seed of the run. The Objective line, the decision with its
-     because, the claims that will be pre-registered (with the finding
-     that supports each), and the scope. Never a summary of the sections
-     above: the decision, in the closed form the run needs. -->
+## What we want
+<!-- The commission to the executor: the three things the Contract needs.
+     Not the answer again — the answer is above. We need seeds the Objective,
+     Claim seeds become the pre-registered P# (each supported by a finding),
+     and Scope becomes Constraints and DO NOT. -->
 - We need {{what done produces}}
-- Decision: {{the path chosen}} — because {{why this and not another}}
 - Claim seeds: {{what will be true}} — supported by {{F#}}
 - Scope: in {{in}} · out {{out}}
+
+## Open
+<!-- LAST: the residue. What this shaping could NOT close, each with the
+     CHEAPEST test that would settle it, on the SAME line. These transfer to
+     the Contract's ## Open at the handoff. If nothing is open, say so here
+     instead of deleting the section. -->
+- Q1: {{open_question}} — settled by: {{cheapest refuting test}}

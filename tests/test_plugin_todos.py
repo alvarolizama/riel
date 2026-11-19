@@ -28,20 +28,32 @@ The checklist is a projection, never a second source of truth.
 ## Constraints
 - one TodoStore per session.
 
-## Claims
-- P1: activation publishes the checks — anchor: §Graph
-- P2: evidence closes them — anchor: §Gates
+## Phases
 
-## Graph
-- F1: implement checks
-  - EDIT todos.py
-  - RUN python3 -m unittest
-- F2: verify checks
-  - RUN python3 -m unittest
+### F1: implement checks
+- EDIT todos.py
+- RUN python3 -m unittest
 
-## Gates
-- G1: phase one passes — phase: F1
-- G2: phase two passes — phase: F2
+#### Claims
+- P1: activation publishes the checks — anchor: §F1#1
+
+#### Gates
+- G1: phase one passes
+
+#### Deliverable
+- the checks are published
+
+### F2: verify checks
+- RUN python3 -m unittest
+
+#### Claims
+- P2: evidence closes them — anchor: §F2#1
+
+#### Gates
+- G2: phase two passes
+
+#### Deliverable
+- the nested checklist
 
 ## Deliverable
 A nested checklist with step subchecks.
@@ -101,8 +113,8 @@ class RunOwnsTodoTest(unittest.TestCase):
         self.assertIn("mine", rows, "a non-Riel item survives the sync")
         self.assertEqual(rows["riel-phase-F1"]["status"], "in_progress")
         self.assertEqual(rows["riel-gate-G1"]["parent"], "riel-phase-F1")
-        self.assertEqual(rows["riel-step-F1-S1"]["parent"], "riel-gate-G1")
-        self.assertEqual(rows["riel-step-F1-S1"]["status"], "in_progress")
+        self.assertEqual(rows["riel-step-F1S1"]["parent"], "riel-gate-G1")
+        self.assertEqual(rows["riel-step-F1S1"]["status"], "in_progress")
 
     def test_passing_evidence_closes_checks_and_failed_evidence_does_not(self):
         self.call(tools.riel_run, verb="activate")
@@ -110,12 +122,12 @@ class RunOwnsTodoTest(unittest.TestCase):
                   command="true", covering="phase one")
         rows = self.rows()
         self.assertEqual(rows["riel-gate-G1"]["status"], "completed")
-        self.assertEqual(rows["riel-step-F1-S1"]["status"], "completed")
+        self.assertEqual(rows["riel-step-F1S1"]["status"], "completed")
         self.call(tools.riel_note, gates=["G2"], claims=["P2"],
                   command="false", covering="phase two")
         rows = self.rows()
         self.assertEqual(rows["riel-gate-G2"]["status"], "in_progress")
-        self.assertEqual(rows["riel-step-F2-S3"]["status"], "in_progress")
+        self.assertEqual(rows["riel-step-F2S1"]["status"], "in_progress")
         self.assertFalse(json.loads(
             self.call(tools.riel_run, verb="status")["stdout"])["done"])
 

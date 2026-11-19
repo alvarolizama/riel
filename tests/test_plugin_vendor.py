@@ -314,13 +314,16 @@ class HandlerTest(unittest.TestCase):
                                {"verb": "new", "params": ["name=demo"], "worktree": self.tmp})
         self.assertTrue(payload["passed"], payload)
         self.assertIn("# Shaping:", payload["stdout"])
-        self.assertFalse((Path(self.tmp) / ".riel" / "shaping.md").exists(),
+        self.assertFalse((Path(self.tmp) / ".riel" / "shapings").exists(),
                          "the tool returns the text; the agent decides what to write")
 
     def test_shape_validate_accepts_the_written_shaping(self):
-        shaping = Path(self.tmp) / ".riel" / "shaping.md"
+        shaping = Path(self.tmp) / ".riel" / "shapings" / "demo.md"
         shaping.parent.mkdir(parents=True)
-        shaping.write_text("# Shaping: demo\n\n## Question\n?\n", encoding="utf-8")
+        shaping.write_text(
+            "# Shaping: demo\n\n<!-- riel-shaping/v3 id:shp_0a1b2c3d -->\n\n"
+            "## Question\nDoes it read one file?\n\n"
+            "## Answer\nIn one file — supported by F1\n", encoding="utf-8")
         payload = self.payload(self.tools.riel_shape, {"verb": "validate", "worktree": self.tmp})
         self.assertTrue(payload["passed"], payload)
 
@@ -457,7 +460,8 @@ class EngineIntegrationTest(unittest.TestCase):
                                {"verb": "new", "params": ["name=demo"], "worktree": self.tmp})
         self.assertTrue(payload["passed"], payload)
         self.assertIn("# Shaping:", payload["stdout"])
-        self.assertFalse((Path(self.tmp) / ".riel" / "shaping.md").exists())
+        self.assertIn("riel-shaping/v3", payload["stdout"])
+        self.assertFalse((Path(self.tmp) / ".riel" / "shapings").exists())
 
     def test_a_missing_run_state_is_a_negative_envelope(self):
         payload = self.payload(self.tools.riel_run, {"verb": "status", "worktree": self.tmp})

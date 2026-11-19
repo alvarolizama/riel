@@ -2,7 +2,7 @@
 
 El paquete ES el producto: la prosa, el motor, las tools, el gate y el chip.
 El estado vive en `.riel/run.md` (riel-run/v1), la evidencia de una pregunta en
-`.riel/shapings/<slug>.md` (riel-shaping/v2) y el orden de varias preguntas en
+`.riel/shapings/<slug>.md` (riel-shaping/v3) y el orden de varias preguntas en
 `.riel/project.md` (riel-project/v1). No hay conversor ni compatibilidad con las
 tools v1 (`riel_plan`, `riel_seam`).
 
@@ -24,10 +24,22 @@ sobre de seis llaves (`tool, worktree, exit_code, passed, stdout, stderr`).
   proyectos, un MCP, una API o un copy-paste escribe los bytes; `validate`
   decide si están bien formados. No hay fetch: el transporte es asunto del
   productor, el Markdown es el contrato.
-- **Un shaping = una pregunta.** `.riel/shapings/<slug>.md` con marker
-  `<!-- riel-shaping/v2 id:shp_xxxxxxxx -->`. El uid es la identidad (sobrevive
-  un rename), el slug la ubicación y el sha256 la revisión. `## Question` es UNA
-  línea con UN `?`: dos preguntas son dos shapings, y el validador las rechaza.
+- **Un shaping = una pregunta y una respuesta.** `.riel/shapings/<slug>.md` con
+  marker `<!-- riel-shaping/v3 id:shp_xxxxxxxx -->`. El uid es la identidad
+  (sobrevive un rename), el slug la ubicación y el sha256 la revisión. Siete
+  secciones en orden: `Question` (UNA línea, UN `?`), `Answer` (UNA línea, sin
+  `?`, con `— supported by F#` o `— decided by: owner`), `Findings` (dossiers
+  `### F#` con cuerpo, source y su `#### Diagram` opcional), `Facts`,
+  `Not wanted` (lo que NO queremos, con la razón), `What we want` (We need ·
+  Claim seeds · Scope) y `Open` AL FINAL (el residuo, con su test más barato).
+  El Basis congela el heading + source + confidence, nunca el cuerpo.
+- **Las fases son secciones.** `## Phases` carga el DAG general en su preámbulo
+  (mermaid entre fases, lista `- F1 → F2`, o el orden de los headings) y luego un
+  `### F#: <título>` por fase, cada una con sus steps y sus propios `#### Claims`,
+  `#### Gates` y `#### Deliverable`. La membresía es ESTRUCTURAL: no hay sufijo
+  `— phase:` ni gates globales. Los steps se numeran por fase (`F1S1`, `F1S2`…),
+  así que insertar un step no renumera los anchors de otra fase: `§F1#2` es estable.
+  `Constraints` y `DO NOT` son globales — un run es un shaping es un PR.
 - **Un run ejecuta un shaping.** La Definition lo declara en `### Shaping` (path o
   uid); `activate` valida ese shaping, resuelve los anchors `shaping:F#` contra
   él, congela los findings en `### Basis` y registra path + uid + sha256 en
@@ -50,10 +62,9 @@ sobre de seis llaves (`tool, worktree, exit_code, passed, stdout, stderr`).
   opt-in: `archive=true` copia el árbol fuera de `.riel/`
   (`~/.hermes/riel/archive/<worktree>/<ts>/`) y verifica cada sha256 ANTES de
   borrar. Sin eso no hay vuelta: `.riel/` está gitignored. Ya no hay `scope`.
-- **Migración**: un `.riel/shaping.md` suelto (v1) se sigue leyendo para que un
-  run activo no se rompa al actualizar; `activate`/`rebase` lo migran a
-  `shapings/`, le acuñan uid, rotan el original a `.bak.md` y re-ligan el run en
-  la misma transacción.
+- **Sin versiones viejas**: solo se lee `riel-shaping/v3`. Un shaping v1/v2 se
+  rechaza, no se convierte; un `.riel/shaping.md` suelto no se lee. Un run sin
+  `definition_sha256` es stale. Actualizar es re-authorar, no migrar.
 
 ## La prosa viaja acá, y se lee por una sola puerta, por secciones
 

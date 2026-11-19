@@ -42,22 +42,38 @@ progress from those archived runs.
 
 Activation is explicit. Writing or validating a draft does not activate it.
 
+## Authoring guard
+
+`run validate` and `run activate` REFUSE a Definition that still carries
+`{{placeholder}}` text, and name every field left to author. A skeleton is not a
+Contract: fill it, or the run does not start. Placeholders inside HTML comments
+are documentation and do not count.
+
 ## Definition
 
 The Definition carries Run, Objective, Context (`### Why`, `### Context keywords`
-and `### Shaping`), Constraints, Claims, Graph, Gates, Deliverable and DO NOT.
+and `### Shaping`), Constraints, Phases, Deliverable and DO NOT.
 Findings prove design choices in a shaping; Claims prove the implemented
 behavior. Neither replaces the other.
+
+`## Phases` holds the general DAG in its preamble (mermaid between phases, an
+arrow list `- F1 → F2`, or nothing — then the heading order is the order), then
+one `### F#: <title>` per phase. Each phase carries its own steps and its own
+`#### Claims`, `#### Gates` and `#### Deliverable`. Constraints and DO NOT are
+GLOBAL: one run is one shaping is one PR, so no phase may relax the boundary.
 
 `### Shaping` names the one shaping this run executes — a path under
 `.riel/shapings/` or its uid. One run, one shaping, one question, one PR.
 
-Use `P#` for claims, `F#`/`W#` for phases, `S#` for steps and `G#` for gate
-decisions. A claim closes as:
+Use `P#` for claims, `F#`/`W#` for phases and `G#` for gates. Steps are numbered
+PER PHASE (`F1S1`, `F1S2`, …) so inserting a step never renumbers another
+phase's anchors. A claim closes as:
 
 `- P1: what must hold — anchor: shaping:F1`
 
-The gate command lives in Gates (`G1`); the claim says what must hold.
+inside its phase's `#### Claims`. The gate command lives in the same phase's
+`#### Gates` (`G1`); membership is structural, so there is no `— phase:` suffix.
+`§F1#2` anchors a claim to step 2 of phase F1.
 
 Anchors can also be `§Section#n` or a graph node. Every `shaping:F#` anchor
 must resolve to a real finding in the BOUND shaping before activation; its text

@@ -63,7 +63,12 @@ def _state_path(worktree):
 
 
 def _shaping_path(worktree):
-    return os.path.join(worktree, ".riel", "shaping.md")
+    """The single shaping in .riel/shapings/, or "" — there is no loose file."""
+    folder = os.path.join(worktree, ".riel", "shapings")
+    if not os.path.isdir(folder):
+        return ""
+    files = sorted(f for f in os.listdir(folder) if f.endswith(".md"))
+    return os.path.join(folder, files[0]) if len(files) == 1 else ""
 
 
 def _empty_state():
@@ -263,15 +268,32 @@ def run_verb(argv, worktree=None, out=None, err=None):
         if sub == "new":
             params = [argv[i + 1] for i, a in enumerate(argv) if a == "--param"]
             name = params[0].split("=", 1)[1] if params else "draft"
-            out.write("# Shaping: {}\n\n<!-- riel-shaping/v1 -->\n\n## Question\n{}\n".format(
-                name, params[0].split("=", 1)[1] if params else "?"))
+            uid = "shp_{:08x}".format(
+                sum(ord(c) * (i + 1) for i, c in enumerate(name)) % 0xffffffff)
+            out.write(
+                "# Shaping: {}\n\n<!-- riel-shaping/v3 id:{} -->\n\n"
+                "## Question\n{{{{question}}}}\n\n"
+                "## Answer\n{{{{answer}}}} — supported by F1\n\n"
+                "## Findings\n\n### F1: {{{{finding}}}}\n"
+                "— source: {{{{source}}}}, confidence high\n\n"
+                "## Facts\n- {{{{fact}}}}\n\n"
+                "## Not wanted\n- A1: {{{{option}}}} — verdict: discarded: {{{{reason}}}}\n\n"
+                "## What we want\n- We need {{{{need}}}}\n"
+                "- Claim seeds: {{{{claim}}}} — supported by F1\n"
+                "- Scope: in {{{{in}}}} · out {{{{out}}}}\n\n"
+                "## Open\n- Q1: {{{{open_question}}}} — settled by: {{{{test}}}}\n".format(name, uid))
             return 0  # RENDERS the template — never writes
         if sub == "validate":
             target = argv[2] if len(argv) > 2 else _shaping_path(worktree)
+            if not target:
+                err.write("no shaping to validate — name one under .riel/shapings/\n")
+                return 1
             target = target if os.path.isabs(target) else os.path.join(worktree, target)
             if os.path.isfile(target):
                 with open(target, encoding="utf-8") as fh:
-                    ok = "## Question" in fh.read()
+                    body = fh.read()
+                ok = ("<!-- riel-shaping/v3 id:shp_" in body
+                      and "## Question" in body and "## Answer" in body)
             else:
                 ok = False
             if ok:
@@ -287,7 +309,15 @@ def run_verb(argv, worktree=None, out=None, err=None):
         if sub == "new":
             template = argv[argv.index("--template") + 1] if "--template" in argv else "run"
             params = [argv[i + 1] for i, a in enumerate(argv) if a == "--param"]
-            out.write("# Run: {{{{title}}}} (template {})\n\n```riel-run/v1\n```\n\n## Objective\n".format(template))
+            out.write(
+                "# Run: {{{{title}}}} (template {})\n\n<!-- riel-run/v1 -->\n\n"
+                "## Objective\n{{{{objective}}}}\n\n## Context\n\n### Why\n{{{{why}}}}\n\n"
+                "## Constraints\n- {{{{constraint}}}}\n\n## Phases\n\n"
+                "### F1: {{{{phase}}}}\n- RUN {{{{gate_command}}}}\n\n"
+                "#### Claims\n- P1: {{{{claim}}}} — anchor: §F1#1\n\n"
+                "#### Gates\n- G1: {{{{gate}}}}\n\n"
+                "#### Deliverable\n- {{{{phase_deliverable}}}}\n\n"
+                "## Deliverable\n{{{{deliverable}}}}\n\n## DO NOT\n- {{{{do_not}}}}\n".format(template))
             return 0  # PRINTS the draft — never writes
         if sub == "validate":
             state = _load_state(worktree)

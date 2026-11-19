@@ -6,9 +6,11 @@ version: 2.1.0
 # delegate — One run, several workers
 
 The parent owns `.riel/run.md` and is its only writer. Children receive `run
-slices`: immutable packets containing Objective, Why, constraints, the selected
-subgraph, its claims and gates, deliverable scope and the frozen findings those
-claims reference. They do not receive mutable State or the whole shaping.
+slices`: immutable packets carrying the global sections (Objective, Why,
+Constraints, Deliverable, DO NOT) plus ONE `### F#: <title>` block copied
+verbatim — its steps, its `#### Claims`, its `#### Gates`, its
+`#### Deliverable` — and the frozen Basis those claims reference. No other
+phase travels. They do not receive mutable State or the whole shaping.
 
 ## Dispatch
 

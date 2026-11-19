@@ -42,21 +42,33 @@ The v1 contract/ledger pair made seams expensive.
 ## Constraints
 - stdlib only.
 
-## Claims
-- P1: the parser reads the list register — anchor: §Graph
-- P2: evidence closes gates — anchor: §Gates
+## Phases
 
-## Graph
-- F1: build parser
-  - READ the spec
-  - RUN make test
-- F2: wire verbs
-  - EDIT tools.py
-  - RUN make test
+### F1: build parser
+- READ the spec
+- RUN make test
 
-## Gates
-- G1: parser tests pass — phase: F1
-- G2: verbs wired — phase: F2
+#### Claims
+- P1: the parser reads the phase outline — anchor: §F1#1
+
+#### Gates
+- G1: parser tests pass
+
+#### Deliverable
+- the parser reads one file
+
+### F2: wire verbs
+- EDIT tools.py
+- RUN make test
+
+#### Claims
+- P2: evidence closes gates — anchor: §F2#2
+
+#### Gates
+- G2: verbs wired
+
+#### Deliverable
+- tools.py rewired
 
 ## Deliverable
 engine/run.py rewired.
@@ -66,24 +78,19 @@ engine/run.py rewired.
 """
 
 MERMAID_RUN = LIST_RUN.replace(
-    """## Graph
-- F1: build parser
-  - READ the spec
-  - RUN make test
-- F2: wire verbs
-  - EDIT tools.py
-  - RUN make test
-""",
-    """## Graph
+    """## Phases
+
+### F1: build parser""",
+    """## Phases
+<!-- the general DAG between phases; retry < 3 attempts -->
 ```mermaid
 flowchart TD
-  F1["build parser"] --> S1["READ the spec"]
-  S1 --> D1{"tests ok?"}
+  F1["build parser"] --> D1{"tests ok?"}
   D1 -->|yes| F2["wire verbs"]
-  D1 -->|no| S2["RUN make test"]
-  S2 --> D1
+  D1 -->|no| F1
 ```
-""")
+
+### F1: build parser""")
 
 
 def run(*argv, cwd=None):
@@ -190,9 +197,9 @@ class FormatTests(TempDirTest):
 
     def test_template_comments_are_not_data(self):
         text = LIST_RUN.replace(
-            "- P2: evidence closes gates — anchor: §Gates",
-            "<!-- - P2: commented out — anchor: §Gates -->\n"
-            "- P2: evidence closes gates — anchor: §Gates")
+            "- P2: evidence closes gates — anchor: §F2#2",
+            "<!-- - P2: commented out — anchor: §F2#2 -->\n"
+            "- P2: evidence closes gates — anchor: §F2#2")
         os.makedirs(os.path.join(self.tmp, ".riel"))
         with open(self.run_path(), "w", encoding="utf-8") as fh:
             fh.write(text)
@@ -423,9 +430,9 @@ class ProjectionTests(TempDirTest):
         shape_path = os.path.join(self.tmp, "shape.md")
         rc, draft, _ = run("shape", "new", "--param", "name=demo", cwd=self.tmp)
         self.assertEqual(rc, 0)
-        self.assertRegex(draft, r"<!-- riel-shaping/v2 id:shp_[0-9a-f]{8} -->")
+        self.assertRegex(draft, r"<!-- riel-shaping/v3 id:shp_[0-9a-f]{8} -->")
         with open(shape_path, "w", encoding="utf-8") as handle:
-            handle.write(re.sub(r"<!-- riel-shaping/v2 id:shp_[0-9a-f]{8} -->",
+            handle.write(re.sub(r"<!-- riel-shaping/v3 id:shp_[0-9a-f]{8} -->",
                                 "", draft))
         rc, _out, _err = run("shape", "validate", shape_path, cwd=self.tmp)
         self.assertEqual(rc, 1)
@@ -444,16 +451,227 @@ class ProjectionTests(TempDirTest):
         self.assertEqual(states["riel-phase-F2"], "pending")
 
 
-    def test_global_gate_does_not_complete_a_phase_early(self):
-        self.activate(text=LIST_RUN.replace(" — phase: F1", ""))
+    def test_a_later_phases_gate_does_not_complete_an_earlier_phase(self):
+        """Gate membership is structural: G2 lives in F2 and cannot close F1."""
+        self.activate()
         state = self.status()
         self.assertEqual(state["current_phase"], "F1")
         self.assertEqual(state["gates"]["G1"], "pending")
+        self.assertEqual(state["gates"]["G2"], "pending")
         rc, output, err = run("todo", cwd=self.tmp)
         self.assertEqual(rc, 0, err)
         rows = {row["id"]: row["status"] for row in json.loads(output)}
         self.assertEqual(rows["riel-phase-F1"], "in_progress")
-        self.assertEqual(rows["riel-step-F1-S1"], "in_progress")
+        self.assertEqual(rows["riel-step-F1S1"], "in_progress")
+        self.assertEqual(rows["riel-phase-F2"], "pending")
+
+
+class PhasesTests(TempDirTest):
+    """## Phases: the general DAG plus one ### F# block per phase.
+
+    Phase membership is structural, step ids are per phase, and a phase's
+    claims/gates/deliverable travel with it.
+    """
+
+    @staticmethod
+    def engine():
+        spec = importlib.util.spec_from_file_location("riel_engine_phases", ENGINE)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def validate(self, text):
+        os.makedirs(os.path.join(self.tmp, ".riel"), exist_ok=True)
+        with open(self.run_path(), "w", encoding="utf-8") as fh:
+            fh.write(text)
+        return run("run", "validate", cwd=self.tmp)
+
+    def test_step_ids_are_per_phase_and_stable(self):
+        eng = self.engine()
+        before = eng.contract_graph(LIST_RUN)[0]
+        inserted = LIST_RUN.replace("- READ the spec\n",
+                                    "- READ the spec\n- READ the changelog\n")
+        after = eng.contract_graph(inserted)[0]
+        self.assertEqual(before["F2S1"], after["F2S1"],
+                         "inserting a step in F1 must not renumber F2")
+        self.assertEqual(after["F1S2"][1], "READ the changelog")
+        self.assertEqual(after["F1S3"][1], "RUN make test")
+
+    def test_a_section_anchor_names_a_phase_step(self):
+        eng = self.engine()
+        nodes, edges, _r = eng.contract_graph(LIST_RUN)
+        issues, _w = eng._check_definition(LIST_RUN, nodes, edges, "", False, [])
+        self.assertEqual(issues, [])
+        bad = LIST_RUN.replace("— anchor: §F1#1", "— anchor: §F1#9")
+        nodes, edges, _r = eng.contract_graph(bad)
+        issues, _w = eng._check_definition(bad, nodes, edges, "", False, [])
+        self.assertTrue(any("§F1#9" in i and "item(s)" in i for i in issues), issues)
+
+    def test_gate_membership_is_structural(self):
+        gates = self.engine()._parse_gates(LIST_RUN)
+        self.assertEqual([(g["id"], g["phase"]) for g in gates],
+                         [("G1", "F1"), ("G2", "F2")])
+        self.assertTrue(all(g["declared_phase"] == "" for g in gates))
+
+    def test_a_disagreeing_phase_suffix_is_refused(self):
+        bad = LIST_RUN.replace("- G1: parser tests pass",
+                               "- G1: parser tests pass — phase: F2")
+        rc, out, _err = self.validate(bad)
+        self.assertEqual(rc, 1)
+        self.assertIn("declares phase F2 but lives in F1", out)
+
+    def test_the_flat_pre_phases_definition_is_refused(self):
+        old = """# Run: old
+<!-- riel-run/v1 -->
+
+## Objective
+o.
+
+## Context
+
+### Why
+w.
+
+## Constraints
+- c.
+
+## Claims
+- P1: x — anchor: §Graph
+
+## Graph
+- F1: build
+  - RUN true
+
+## Gates
+- G1: g — phase: F1
+
+## Deliverable
+d.
+
+## DO NOT
+- n.
+"""
+        rc, out, _err = self.validate(old)
+        self.assertEqual(rc, 1)
+        for name in ("Claims", "Graph", "Gates"):
+            self.assertIn("## {} is no longer part of the Contract".format(name), out)
+
+    def test_each_phase_needs_claims_gates_and_deliverable(self):
+        missing = LIST_RUN.replace("""#### Deliverable
+- the parser reads one file
+
+""", "")
+        rc, out, _err = self.validate(missing)
+        self.assertEqual(rc, 1)
+        self.assertIn("phase F1 has no #### Deliverable items", out)
+
+    def test_a_phase_without_steps_is_refused(self):
+        no_steps = LIST_RUN.replace("- READ the spec\n- RUN make test\n", "")
+        rc, out, _err = self.validate(no_steps)
+        self.assertEqual(rc, 1)
+        self.assertIn("phase F1 has no steps", out)
+
+    def test_duplicate_ids_across_phases_are_refused(self):
+        dup = LIST_RUN.replace("- P2: evidence closes gates", "- P1: evidence closes gates")
+        rc, out, _err = self.validate(dup)
+        self.assertEqual(rc, 1)
+        self.assertIn("duplicate claim id P1", out)
+        dupg = LIST_RUN.replace("- G2: verbs wired", "- G1: verbs wired")
+        rc, out, _err = self.validate(dupg)
+        self.assertEqual(rc, 1)
+        self.assertIn("duplicate gate id across phases", out)
+
+    def test_the_general_dag_can_be_an_arrow_list(self):
+        eng = self.engine()
+        listed = LIST_RUN.replace("## Phases\n", "## Phases\n- F2 → F1\n")
+        nodes, edges, register = eng.contract_graph(listed)
+        self.assertEqual(register, "outline")
+        self.assertIn(("F2S2", "", "F1"), edges,
+                      "the preamble order overrides the heading order")
+        self.assertNotIn(("F1S2", "", "F2"), edges)
+
+    def test_the_general_dag_can_be_mermaid_with_a_decision(self):
+        eng = self.engine()
+        nodes, edges, register = eng.contract_graph(MERMAID_RUN)
+        self.assertEqual(register, "mermaid")
+        self.assertIn("D1", nodes)
+        self.assertEqual(nodes["D1"][0], "{")
+        issues, warnings = eng._check_definition(MERMAID_RUN, nodes, edges, "", False, [])
+        self.assertEqual(issues, [])
+        self.assertFalse(any("counter guard" in w for w in warnings), warnings)
+
+    def test_the_authored_heading_order_is_the_default(self):
+        nodes, _edges, register = self.engine().contract_graph(LIST_RUN)
+        self.assertEqual(register, "outline")
+        self.assertEqual([n for n in nodes if re.match(r"^F\d+$", n)], ["F1", "F2"])
+
+    def test_a_slice_carries_its_phase_block_and_self_validates(self):
+        self.activate()
+        rc, out, err = run("run", "slice", "F1", cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        self.assertIn("### F1: build parser", out)
+        self.assertIn("#### Claims", out)
+        self.assertIn("#### Gates", out)
+        self.assertIn("#### Deliverable", out)
+        self.assertIn("- P1: the parser reads the phase outline", out)
+        self.assertNotIn("### F2:", out, "a slice carries ONE phase")
+        self.assertNotIn("- P2:", out)
+        self.assertIn("## DO NOT", out, "the global scope travels with the slice")
+        eng = self.engine()
+        nodes, edges, _r = eng.contract_graph(out)
+        issues, _w = eng._check_definition(out, nodes, edges, "", False,
+                                           eng._parse_basis(out), basis_only=True)
+        self.assertEqual(issues, [])
+
+    def test_the_checklist_names_steps_by_their_phase_scoped_id(self):
+        self.activate()
+        rc, out, err = run("todo", cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        rows = {row["id"] for row in json.loads(out)}
+        self.assertIn("riel-step-F1S1", rows)
+        self.assertIn("riel-step-F2S1", rows)
+        self.assertNotIn("riel-step-F1-S1", rows)
+
+
+class PlaceholderGuardTests(TempDirTest):
+    """A Definition still carrying {{…}} is a skeleton, not a Contract."""
+
+    def write(self, text):
+        os.makedirs(os.path.join(self.tmp, ".riel"), exist_ok=True)
+        with open(self.run_path(), "w", encoding="utf-8") as fh:
+            fh.write(text)
+
+    def test_a_raw_template_is_refused_and_names_what_is_missing(self):
+        rc, draft, err = run("run", "new", cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        self.write(draft)
+        rc, out, _err = run("run", "validate", cwd=self.tmp)
+        self.assertEqual(rc, 1)
+        self.assertIn("unfilled placeholder(s) in the Definition", out)
+        for name in ("{{objective}}", "{{why}}", "{{constraint}}", "{{do_not}}"):
+            self.assertIn(name, out)
+        rc, out, err = run("run", "activate", cwd=self.tmp)
+        self.assertEqual(rc, 1, "a skeleton must not activate")
+        self.assertIn("unfilled placeholder(s)", out + err)
+
+    def test_one_leftover_placeholder_refuses_activation(self):
+        self.write(LIST_RUN.replace("The engine records evidence against riel-run/v1 contracts.",
+                                    "{{objective}}"))
+        rc, out, err = run("run", "activate", cwd=self.tmp)
+        self.assertEqual(rc, 1)
+        self.assertIn("{{objective}}", out + err)
+        self.assertNotIn("revision r1", out)
+
+    def test_a_placeholder_inside_a_comment_is_not_data(self):
+        self.write(LIST_RUN + "\n<!-- example: {{not_a_field}} -->\n")
+        rc, out, err = run("run", "validate", cwd=self.tmp)
+        self.assertEqual(rc, 0, out + err)
+
+    def test_an_authored_contract_passes(self):
+        self.write(LIST_RUN)
+        rc, out, err = run("run", "validate", cwd=self.tmp)
+        self.assertEqual(rc, 0, out + err)
+        self.assertNotIn("unfilled placeholder", out)
 
 
 class FailedEvidenceTests(TempDirTest):
@@ -501,25 +719,39 @@ class SliceTests(TempDirTest):
 class RebaseTests(TempDirTest):
     SHAPING = """# Shaping: engine
 
-<!-- riel-shaping/v2 id:shp_0a1b2c3d -->
+<!-- riel-shaping/v3 id:shp_0a1b2c3d -->
 
 ## Question
-Does the v2 engine read one state file?
+Does the engine read one state file?
+
+## Answer
+In one file, cut at Metadata — supported by F1
 
 ## Findings
-- F1: the single run.md parse works — source: scratch probe, confidence high
+
+### F1: the single run.md parse works
+The cut is `## Metadata`.
+— source: scratch probe, confidence high
 
 ## Facts
 - stdlib only.
 
-## Verdict (→ run)
+## Not wanted
+- A1: two files — pro: separation / contra: drift — verdict: discarded: drift
+
+## What we want
 - We need one file
+- Claim seeds: the parser reads it — supported by F1
+- Scope: in engine · out ui
+
+## Open
+- Q1: does the reader survive a partial write? — settled by: kill -9 mid-rename
 """
 
     @staticmethod
     def anchored(text):
         return text.replace(
-            "- P1: the parser reads the list register — anchor: §Graph",
+            "- P1: the parser reads the phase outline — anchor: §F1#1",
             "- P1: the parser reads the list register — anchor: shaping:F1")
 
     def test_rebase_reserves_old_evidence(self):
@@ -631,15 +863,27 @@ class SinkTests(TempDirTest):
         self.assertFalse(os.path.exists(self.run_path()))
 
 def shaping_text(name="engine", uid="shp_0a1b2c3d",
-                 question="Does the v2 engine read one state file?", findings=None):
-    """A valid riel-shaping/v2 source: ONE question, sourced findings."""
-    findings = findings or [
+                 question="Does the engine read one state file?", findings=None):
+    """A valid riel-shaping/v3 source — the fixture the binding tests share.
+
+    `findings` accepts the old bullet spelling for convenience and is converted
+    to dossiers; the Answer cites the first finding so the fixture stays valid.
+    """
+    bullets = findings or [
         "- F1: the single run.md parse works — source: scratch probe, confidence high"]
-    return ("# Shaping: {}\n\n<!-- riel-shaping/v2 id:{} -->\n\n"
-            "## Question\n{}\n\n## Findings\n{}\n\n"
-            "## Facts\n- stdlib only.\n\n"
-            "## Verdict (→ run)\n- We need one file\n").format(
-                name, uid, question, "\n".join(findings))
+    dossiers, first = [], None
+    for bullet in bullets:
+        body = bullet.lstrip("- ")
+        fid, _, rest = body.partition(":")
+        claim, _, source = rest.partition(" — source: ")
+        fid = fid.strip()
+        first = first or fid
+        dossiers.append("### {}: {}\n— source: {}".format(
+            fid, claim.strip(), source.strip() or "scratch probe"))
+    return shaping_v3(name=name, uid=uid, question=question,
+                      answer="In one file, cut at Metadata — supported by " + (first or "F1"),
+                      findings="\n\n".join(dossiers) + "\n")
+
 
 
 class ShapingBindingTests(TempDirTest):
@@ -660,12 +904,12 @@ class ShapingBindingTests(TempDirTest):
     def undecorated_anchored_run(self, anchor="shaping:F1"):
         """A pre-v2 run: anchors into a shaping, but declares nothing."""
         return LIST_RUN.replace(
-            "- P1: the parser reads the list register — anchor: §Graph",
+            "- P1: the parser reads the phase outline — anchor: §F1#1",
             "- P1: the parser reads the list register — anchor: " + anchor)
 
     def anchored_run(self, slug="engine", anchor="shaping:F1"):
         text = LIST_RUN.replace(
-            "- P1: the parser reads the list register — anchor: §Graph",
+            "- P1: the parser reads the phase outline — anchor: §F1#1",
             "- P1: the parser reads the list register — anchor: " + anchor)
         return self.declared(text, slug)
 
@@ -776,7 +1020,7 @@ class ShapingBindingTests(TempDirTest):
     def test_no_declaration_and_anchors_refuses_activation(self):
         self.write_shaping()
         self.write_run(LIST_RUN.replace(
-            "- P1: the parser reads the list register — anchor: §Graph",
+            "- P1: the parser reads the phase outline — anchor: §F1#1",
             "- P1: the parser reads the list register — anchor: shaping:F1"))
         rc, out, err = run("run", "activate", cwd=self.tmp)
         self.assertEqual(rc, 1)
@@ -788,116 +1032,190 @@ class ShapingBindingTests(TempDirTest):
         with open(self.loose_shaping_path(), "w", encoding="utf-8") as fh:
             fh.write(text)
 
-    def test_migration_moves_mints_rebinds_and_keeps_the_original(self):
-        original = shaping_text().replace(
-            "<!-- riel-shaping/v2 id:shp_0a1b2c3d -->", "<!-- riel-shaping/v1 -->")
-        self.loose(original)
-        self.write_run(LIST_RUN.replace(
-            "- P1: the parser reads the list register — anchor: §Graph",
-            "- P1: the parser reads the list register — anchor: shaping:F1"))
-        rc, out, err = run("run", "activate", cwd=self.tmp)
-        self.assertEqual(rc, 0, out + err)
-        self.assertFalse(os.path.exists(self.loose_shaping_path()))
-        migrated = self.shaping_path()
-        self.assertTrue(os.path.isfile(migrated))
-        with open(migrated, encoding="utf-8") as fh:
-            body = fh.read()
-        self.assertRegex(body, r"<!-- riel-shaping/v2 id:shp_[0-9a-f]{8} -->")
-        self.assertIn("F1: the single run.md parse works", body)
-        backups = [f for f in os.listdir(os.path.join(self.tmp, ".riel"))
-                   if f.startswith("shaping-") and f.endswith(".bak.md")]
-        self.assertEqual(len(backups), 1, "the original is rotated, never deleted")
-        with open(os.path.join(self.tmp, ".riel", backups[0]), encoding="utf-8") as fh:
-            kept = fh.read()
-        self.assertEqual(kept, original)
-        run_body = self.read_run()
-        self.assertIn("- shaping: .riel/shapings/engine.md", run_body)
-        self.assertIn("### Shaping", run_body)
-        self.assertIn("### Basis", run_body)
-
-    def test_migration_refuses_to_overwrite_a_different_shaping(self):
-        self.write_shaping("engine", uid="shp_0000000e",
-                           question="Is this a different question?")
-        self.loose(shaping_text().replace(
-            "<!-- riel-shaping/v2 id:shp_0a1b2c3d -->", "<!-- riel-shaping/v1 -->"))
-        self.write_run(self.undecorated_anchored_run())
-        rc, out, err = run("run", "activate", cwd=self.tmp)
-        self.assertNotEqual(rc, 0)
-        self.assertIn("DIFFERENT shaping", out + err)
-        self.assertTrue(os.path.exists(self.loose_shaping_path()))
-
-    def test_migration_refuses_an_invalid_loose_shaping(self):
-        self.loose(shaping_text(question="One? Two?").replace(
-            "<!-- riel-shaping/v2 id:shp_0a1b2c3d -->", "<!-- riel-shaping/v1 -->"))
+    def test_a_loose_shaping_file_is_not_read(self):
+        """There is no canonical loose shaping any more: shapings/ or nothing."""
+        self.loose(shaping_text())
         self.write_run(self.undecorated_anchored_run())
         rc, out, err = run("run", "activate", cwd=self.tmp)
         self.assertEqual(rc, 1)
-        self.assertIn("exactly ONE question", out + err)
-        self.assertTrue(os.path.exists(self.loose_shaping_path()))
-
-    def test_a_pre_rename_definition_hash_key_still_reads_and_rebase_migrates_it(self):
-        """The Contract vocabulary must not turn a live run stale on upgrade."""
+        self.assertIn("binds no shaping", out + err)
+        self.assertTrue(os.path.exists(self.loose_shaping_path()),
+                        "the loose file is not migrated, not touched, not read")
+        self.assertFalse(os.path.isdir(os.path.join(self.tmp, ".riel", "shapings")))
+    def test_a_pre_v3_run_is_refused(self):
+        """No legacy support: a run without definition_sha256 is stale, not read."""
         self.write_shaping()
         self.write_run(self.anchored_run())
         rc, _out, err = run("run", "activate", cwd=self.tmp)
         self.assertEqual(rc, 0, err)
         body = self.read_run()
-        self.assertIn("- definition_sha256:", body)
-        # rewind Metadata to the pre-rename key, bytes of the Definition untouched
         head, state = body.split("## Metadata", 1)
         state = state.replace("- definition_sha256:", "- plan_sha256:")
         with open(self.run_path(), "w", encoding="utf-8") as fh:
             fh.write(head + "## Metadata" + state)
-        rc, out, err = run("run", "status", cwd=self.tmp)
-        self.assertEqual(rc, 0, "the old key is still read: " + err)
-        rc, _out, err = run("note", "--core", "legacy key — still writes", cwd=self.tmp)
+        rc, _out, err = run("run", "status", cwd=self.tmp)
+        self.assertEqual(rc, 3, "the pre-rename key is not read: " + err)
+        self.assertIn("stale state", err)
+
+
+def shaping_v3(name="engine", uid="shp_0a1b2c3d",
+               question="Does the engine read one state file?",
+               answer="In one file, cut at Metadata — supported by F1",
+               findings=None, sections=None):
+    """A valid riel-shaping/v3 source: dossiers, an Answer, and Open last."""
+    findings = findings if findings is not None else (
+        "### F1: the single run.md parse works\n"
+        "The cut is `## Metadata`; above it is authored, below it is engine-written.\n"
+        "— source: scratch probe, confidence high\n")
+    parts = {
+        "Question": question,
+        "Answer": answer,
+        "Findings": findings,
+        "Facts": "- stdlib only.",
+        "Not wanted": "- A1: two files — pro: separation / contra: drift — verdict: discarded: drift",
+        "What we want": ("- We need one file\n"
+                         "- Claim seeds: the parser reads it — supported by F1\n"
+                         "- Scope: in engine · out ui"),
+        "Open": "- Q1: does the reader survive a partial write? — settled by: kill -9 mid-rename",
+    }
+    order = sections if sections is not None else list(parts)
+    body = "\n\n".join("## {}\n{}".format(k, parts[k]) for k in order if k in parts)
+    return "# Shaping: {}\n\n<!-- riel-shaping/v3 id:{} -->\n\n{}\n".format(name, uid, body)
+
+
+class ShapingV3Tests(TempDirTest):
+    """v3: the answer is a first-class line, findings are dossiers, Open is last."""
+
+    def write(self, text, slug="engine"):
+        path = self.shaping_path(slug)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        return path
+
+    def validate(self, text):
+        return run("shape", "validate", self.write(text), cwd=self.tmp)
+
+    def test_a_valid_v3_shaping_passes(self):
+        rc, out, err = self.validate(shaping_v3())
+        self.assertEqual(rc, 0, out + err)
+        self.assertIn("1 finding(s)", out)
+
+    def test_a_dossier_may_carry_its_own_diagram(self):
+        findings = ("### F1: one file holds both halves\n"
+                    "The cut is Metadata.\n"
+                    "— source: engine/run.py:442, confidence high\n\n"
+                    "#### Diagram\n```mermaid\nflowchart TD\n  A[\"run.md\"] --> B[\"Definition\"]\n```\n")
+        rc, out, err = self.validate(shaping_v3(findings=findings))
+        self.assertEqual(rc, 0, out + err)
+
+    def test_the_answer_is_mandatory(self):
+        rc, out, _err = self.validate(shaping_v3(sections=[
+            "Question", "Findings", "Facts", "Not wanted", "What we want", "Open"]))
+        self.assertEqual(rc, 1)
+        self.assertIn("missing shaping section: Answer", out)
+
+    def test_an_empty_answer_is_refused(self):
+        rc, out, _err = self.validate(shaping_v3(answer=""))
+        self.assertEqual(rc, 1)
+        self.assertIn("## Answer is empty", out)
+
+    def test_a_multiline_answer_is_refused(self):
+        rc, out, _err = self.validate(shaping_v3(answer="In one file.\nAnd it is cut at Metadata."))
+        self.assertEqual(rc, 1)
+        self.assertIn("## Answer must be ONE line", out)
+
+    def test_an_answer_that_is_a_question_is_refused(self):
+        rc, out, _err = self.validate(shaping_v3(answer="Maybe in one file? — supported by F1"))
+        self.assertEqual(rc, 1)
+        self.assertIn("must not be a question", out)
+
+    def test_an_answer_without_backing_is_refused(self):
+        rc, out, _err = self.validate(shaping_v3(answer="In one file, because it is simpler"))
+        self.assertEqual(rc, 1)
+        self.assertIn("needs evidence", out)
+
+    def test_an_answer_citing_a_missing_finding_is_refused(self):
+        rc, out, _err = self.validate(shaping_v3(answer="In one file — supported by F9"))
+        self.assertEqual(rc, 1)
+        self.assertIn("cites F9 which is not a finding", out)
+
+    def test_an_owner_decision_backs_an_answer(self):
+        rc, out, err = self.validate(shaping_v3(answer="In one file — decided by: owner"))
+        self.assertEqual(rc, 0, out + err)
+
+    def test_open_must_be_last(self):
+        rc, out, _err = self.validate(shaping_v3(sections=[
+            "Question", "Answer", "Findings", "Facts", "Not wanted", "Open", "What we want"]))
+        self.assertEqual(rc, 1)
+        self.assertIn("out of order", out)
+        self.assertIn("Open goes last", out)
+
+    def test_a_missing_section_is_refused(self):
+        rc, out, _err = self.validate(shaping_v3(sections=[
+            "Question", "Answer", "Findings", "Facts", "What we want", "Open"]))
+        self.assertEqual(rc, 1)
+        self.assertIn("missing shaping section: Not wanted", out)
+
+    def test_duplicate_dossier_ids_are_refused(self):
+        findings = ("### F1: first\n— source: a.py:1, confidence high\n\n"
+                    "### F1: again\n— source: b.py:2, confidence high\n")
+        rc, out, _err = self.validate(shaping_v3(findings=findings))
+        self.assertEqual(rc, 1)
+        self.assertIn("duplicate finding id(s): F1", out)
+
+    def test_a_dossier_without_a_source_is_refused(self):
+        rc, out, _err = self.validate(shaping_v3(findings="### F1: a claim with no evidence\nJust prose.\n"))
+        self.assertEqual(rc, 1)
+        self.assertIn("F1 has no `— source:`", out)
+
+    def test_a_raw_shaping_template_is_refused_and_names_what_is_missing(self):
+        rc, draft, err = run("shape", "new", cwd=self.tmp)
         self.assertEqual(rc, 0, err)
-        with open(self.shaping_path(), "a", encoding="utf-8") as fh:
-            fh.write("\n- F2: research moved — source: probe\n")
-        rc, out, err = run("run", "rebase", cwd=self.tmp)
+        path = self.write(draft)
+        rc, out, _err = run("shape", "validate", path, cwd=self.tmp)
+        self.assertEqual(rc, 1)
+        self.assertIn("unfilled placeholder(s) in the shaping", out)
+        for name in ("{{question}}", "{{answer}}", "{{fact}}"):
+            self.assertIn(name, out)
+
+    def test_one_leftover_shaping_placeholder_is_refused(self):
+        path = self.write(shaping_v3().replace("- stdlib only.", "- {{fact}}"))
+        rc, out, _err = run("shape", "validate", path, cwd=self.tmp)
+        self.assertEqual(rc, 1)
+        self.assertIn("{{fact}}", out)
+
+    def test_a_shaping_placeholder_inside_a_comment_is_not_data(self):
+        path = self.write(shaping_v3() + "\n<!-- example: {{not_a_field}} -->\n")
+        rc, out, err = run("shape", "validate", path, cwd=self.tmp)
+        self.assertEqual(rc, 0, out + err)
+
+    def test_a_v2_shaping_is_refused(self):
+        old = shaping_text().replace("<!-- riel-shaping/v3 id:", "<!-- riel-shaping/v2 id:")
+        rc, out, _err = self.validate(old)
+        self.assertEqual(rc, 1)
+        self.assertIn("riel-shaping/v3", out)
+    def test_the_basis_freezes_the_claim_not_the_dossier_body(self):
+        findings = ("### F1: one file holds both halves\n"
+                    "A long body paragraph that must NOT travel into a slice.\n"
+                    "— source: engine/run.py:442, confidence high\n\n"
+                    "#### Diagram\n```mermaid\nflowchart TD\n  A[\"x\"] --> B[\"y\"]\n```\n")
+        self.write(shaping_v3(findings=findings))
+        text = LIST_RUN.replace(
+            "- P1: the parser reads the phase outline — anchor: §F1#1",
+            "- P1: the parser reads the list register — anchor: shaping:F1")
+        os.makedirs(os.path.join(self.tmp, ".riel"), exist_ok=True)
+        with open(self.run_path(), "w", encoding="utf-8") as fh:
+            fh.write(self.declared(text))
+        rc, out, err = run("run", "activate", cwd=self.tmp)
         self.assertEqual(rc, 0, out + err)
         body = self.read_run()
-        self.assertIn("- definition_sha256:", body)
-        self.assertNotIn("- plan_sha256:", body, "the rebase drops the pre-rename key")
-
-
-    def test_a_legacy_active_run_keeps_working_until_its_next_rebase(self):
-        """A pre-v2 active run: hash-only Metadata, no declaration, loose shaping.
-
-        The state half is built by hand exactly as the old engine wrote it, so
-        the definition hash is real — upgrading must not turn a live run stale.
-        """
-        definition = self.undecorated_anchored_run()
-        loose_text = shaping_text().replace(
-            "<!-- riel-shaping/v2 id:shp_0a1b2c3d -->", "<!-- riel-shaping/v1 -->")
-        self.loose(loose_text)
-        definition_bytes = definition.rstrip("\n") + "\n"
-        state = (
-            "## Metadata\n\n"
-            "- format: riel-run/v1\n- revision: r1\n"
-            "- activated: 2026-01-01T00:00:00\n"
-            "- definition_sha256: {}\n- shaping_sha256: {}\n\n"
-            "## Execution state\n\n- current_phase: F1\n\n"
-            "## Core\n\n<!-- empty -->\n\n"
-            "## Open\n\n<!-- empty -->\n\n"
-            "## Evidence\n\n<!-- empty -->\n").format(
-                hashlib.sha256(definition_bytes.encode("utf-8")).hexdigest(),
-                hashlib.sha256(loose_text.encode("utf-8")).hexdigest())
-        self.write_run(definition_bytes + "\n" + state)
-        rc, out, err = run("run", "status", cwd=self.tmp)
-        self.assertEqual(rc, 0, "a pre-v2 active run must not break on upgrade: " + err)
-        self.assertEqual(json.loads(out)["shaping"]["path"], ".riel/shaping.md")
-        rc, _out, err = run("note", "--core", "legacy — still writes", cwd=self.tmp)
-        self.assertEqual(rc, 0, err)
-        rc, out, err = run("run", "rebase", cwd=self.tmp)
-        self.assertEqual(rc, 0, out + err)
-        self.assertTrue(os.path.isfile(self.shaping_path()))
-        self.assertFalse(os.path.exists(self.loose_shaping_path()))
-        body = self.read_run()
-        self.assertIn("- shaping: .riel/shapings/engine.md", body)
-        self.assertIn("- shaping_id: shp_", body)
-        self.assertIn("### Shaping", body)
-        self.assertEqual(self.status()["revision"], "r2")
+        basis = body.split("### Basis", 1)[1].split("## Constraints", 1)[0]
+        self.assertIn("- F1: one file holds both halves", basis)
+        self.assertIn("— source: engine/run.py:442", basis)
+        self.assertIn("— confidence: high", basis)
+        self.assertNotIn("long body paragraph", basis)
+        self.assertNotIn("mermaid", basis)
 
 
 class CleanAndArchiveTests(TempDirTest):
@@ -910,7 +1228,7 @@ class CleanAndArchiveTests(TempDirTest):
             "project.md": "# Project: demo\n",
             "shapings/sibling.md": shaping_text(name="sibling", uid="shp_0000000f"),
             "runs/old.md": "# Run: an older proof\n",
-            "shaping.md": shaping_text(name="loose", uid="shp_0000000l"),
+            "shaping.md": shaping_text(name="loose", uid="shp_0000000e"),
             "contract.md": "# legacy v1\n",
             "ledger.md": "# legacy v1\n",
             "run-20260101-000000.bak.md": "# an old backup\n",

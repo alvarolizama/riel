@@ -1,59 +1,103 @@
 ---
 topic: shaping
-trigger: "Use when research must precede execution: .riel/shapings/<slug>.md answers ONE question with sourced findings, and a run binds exactly one shaping."
-version: 2.0.0
+trigger: "Use when research must precede execution: .riel/shapings/<slug>.md asks ONE question and answers it with sourced findings, and a run binds exactly one shaping."
+version: 3.0.0
 ---
-# shaping — One question's evidence
+# shaping — One question, one answer
 
 A shaping is a separate editable research artifact: `.riel/shapings/<slug>.md`.
-It answers ONE question — what we know and how we know it. It is not a Definition,
-contains no execution cursor and never records task progress. A task whose
-decision is settled skips it.
+It asks ONE question and answers it. It is not a Definition, contains no
+execution cursor and never records task progress. A task whose decision is
+already settled skips it.
 
 Several shapings coexist: one per question, one per track of a project. A run
 binds exactly one of them, and a PR delivers that one answer.
 
 ## Format
 
-`riel-shaping/v2`: the title `# Shaping: <name>`, then the marker carrying its
-uid `<!-- riel-shaping/v2 id:shp_xxxxxxxx -->`, then Question, Findings, Facts,
-optional Diagrams, Alternatives bounced, Open and Verdict.
+`riel-shaping/v3`: the title `# Shaping: <name>`, the marker carrying its uid
+`<!-- riel-shaping/v3 id:shp_xxxxxxxx -->`, then seven sections in this order:
+
+| section | role |
+|---|---|
+| `## Question` | the one question, ONE line, ONE `?` |
+| `## Answer` | the resolution, ONE line, no `?`, backed by a finding or the owner |
+| `## Findings` | what was learned: `### F#` dossiers, each with its source |
+| `## Facts` | what the design must respect (the Contract's Constraints) |
+| `## Not wanted` | what we do NOT want, and why it lost (`A#` with verdict) |
+| `## What we want` | the commission: We need · Claim seeds · Scope |
+| `## Open` | LAST — the residue: what could not be closed, with its cheapest test |
+
+Open goes last because it is what remains after the answer, the evidence and
+the commission. The order is enforced.
 
 The uid is the shaping's identity: it survives a rename, and a run binds by
 uid + path + sha256. `shape new` mints a fresh one when it renders the skeleton;
 a project system may supply its own with `params=["id=shp_…"]`. Two files
 sharing one uid are refused: an id identifies one question.
 
-## One question, enforced
+## Authoring guard
+
+`shape validate` REFUSES a shaping that still carries `{{placeholder}}` text and
+names every field left to author. A skeleton is not research: fill it, or no run
+can bind to it. Placeholders inside HTML comments are documentation and do not
+count.
+
+## Question and Answer
 
 `## Question` is ONE line with ONE question mark. Two questions are two
-shapings, and the validator refuses them: a run that answers two questions
-cannot be delivered as one PR. Everything below exists to close that line.
+shapings: a run that answers two questions cannot be delivered as one PR.
 
-## Findings and code references
+`## Answer` is ONE line, with no `?` — a question is not an answer — and it must
+cite its backing: `— supported by F1` (a finding that exists) or
+`— decided by: owner`. An answer with neither is an opinion, and validation
+refuses it. Whether the answer truly addresses the question is a review
+judgment, not something a validator can decide.
 
-Every citable finding is one `F#` line under Findings with source and
-confidence, on ONE physical line. Facts derive constraints from findings and do
-not create competing `F#` identifiers. HTML comments are documentation, never
-findings; labels in Mermaid comments are never execution nodes.
+The Answer is the resolution, not the deliverable. What must be built goes in
+`## What we want`.
+
+## Findings as dossiers
+
+Each finding is a `### F#` subsection: the heading is the citable claim on ONE
+line, the body is its support, and `— source: …, confidence …` names the
+evidence. A finding may carry its own `#### Diagram`.
+
+    ### F1: one file holds the Definition and the State
+    The cut is `## Metadata`; everything above it is authored, everything below
+    is engine-written.
+    — source: repo@2b1979a:hermes_plugin/riel/engine/run.py:442-452#_split_definition, confidence high
+
+    #### Diagram
+    ```mermaid
+    flowchart TD
+      A["run.md"] --> B["Definition"]
+      A --> C["State + Evidence"]
+    ```
+
+The frozen Basis copies the heading, the source and the confidence — never the
+body or the diagram, so a delegated slice stays small.
+
+Facts derive constraints from findings and do not create competing `F#` ids.
+HTML comments are documentation, never findings. Only dossiers are read.
 
 Pin repository evidence to its observed commit and symbol:
+`repo@057dc31:path/to/file.py:694-718#symbol`. The commit fixes what was
+investigated; path and symbol make later drift findable. Before activation,
+re-read the reference against current HEAD. A passed benchmark with command and
+output belongs here. An execution assertion about the future implementation
+belongs in the Contract's Claims instead.
 
-`repo@057dc31:hermes_plugin/riel/engine/run.py:694-718#contract_to_todo_items`
+## Not wanted, and what stays open
 
-The commit fixes what was investigated; path and symbol make later drift
-findable. Before activation, re-read the reference against current HEAD. A
-passed benchmark with command and output belongs here. An execution assertion
-about the future implementation belongs in the run's Claims instead.
+`## Not wanted` records kept, discarded and deferred options with reasons. Only
+the surviving rationale reaches the Contract's `### Why`; the rejected ones stay
+here so the next session does not re-litigate them.
 
-## Decisions and open questions
-
-Alternatives record kept, discarded and deferred options with reasons. Only the
-winning decision survives into the run's Why; the rejected ones remain here.
-
-Each Open item has the cheapest test that settles it. Activation must resolve
-it, explicitly transfer it to the run's Open, or put it out of scope. A research
-question cannot disappear during the handoff.
+`## Open` is the residue. Each item names the cheapest test that settles it, on
+the SAME line (`— settled by:`). The handoff must resolve it, transfer it to the
+Contract's Open with `riel_note`, or put it out of scope — the engine does not
+transfer it automatically, so a question can disappear if the author skips it.
 
 ## Authoring outside Riel
 
@@ -70,10 +114,12 @@ The bytes are the contract: a shaping produced anywhere is the same Markdown,
 so any transport that preserves them works. Riel does not fetch, and nothing
 downloaded activates itself.
 
-## Handoff into run
+## Handoff into the Contract
 
-The Verdict supplies one Objective, the kept decision and rationale, claim
-seeds and scope. Authoring the exact Definition remains deliberate: no generator
+`## Answer` feeds the Objective's rationale (`### Why`). `## What we want`
+supplies the three things the Definition needs: `We need` seeds the Objective,
+`Claim seeds` become the pre-registered `P#`, and `Scope` becomes Constraints
+and DO NOT. Authoring the exact Definition remains deliberate: no generator
 invents nodes, paths or gates from prose.
 
 The run declares its shaping under `## Context`:
@@ -90,11 +136,10 @@ reference to the parent's mutable workspace.
 Editing the bound shaping marks the run stale and requires rebase. Editing a
 sibling shaping does not: it is another track's evidence.
 
-## The loose legacy file
+## No legacy support
 
-A pre-v2 `.riel/shaping.md` is still read, so an active run keeps working after
-an upgrade. `activate` and `rebase` migrate it into `.riel/shapings/<slug>.md`,
-mint its uid, rotate the original to a timestamped `.bak.md` and rebind the run
-in the same transaction. A shaping that answers two questions refuses
-migration: split it first. A different shaping already holding the target slug
-also refuses: rename one of them.
+Only `riel-shaping/v3` is read. A v1 or v2 shaping is refused, not converted:
+there is no converter and no migration path. A loose `.riel/shaping.md` is not
+read at all — shapings live in `.riel/shapings/`. Re-author the source in v3: the
+Answer, `Not wanted`, `What we want` and the dossier findings are authored
+decisions, not something a tool can invent from old prose.

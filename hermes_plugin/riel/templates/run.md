@@ -27,35 +27,55 @@
 - shaping: {{shaping}}
 
 ## Constraints
-<!-- Hard rules the execution may not break. -->
+<!-- Hard rules the execution may not break. Global: they bind every phase. -->
 - {{constraint}}
 
-## Claims
-<!-- What must be true for the run to be done. One P# per line; the anchor
-     is optional but a claim that cannot be re-read at a seam is a WARN:
-     `— anchor: §Section#n` | a graph node id | `shaping:F#`. -->
+## Phases
+<!-- The general DAG goes HERE, before the first phase: a ```mermaid flowchart
+     between phases (decisions `{...}` with labeled outgoing edges, loops with
+     a `< 3` counter guard), or an arrow list `- F1 → F2 → F3`. With neither,
+     the authored order of the ### headings is the execution order.
+     Then ONE `### F#: <title>` per phase. Its steps are bullets with closed
+     verbs (READ/EDIT/CREATE/RUN/VERIFY/ASK), numbered PER PHASE as F1S1, F1S2…
+     so inserting a step never renumbers another phase's anchors.
+     Each phase carries its OWN #### Claims, #### Gates and #### Deliverable.
+     Gate membership is structural: there is no `— phase:` suffix. -->
+
+### F1: {{phase}}
+- READ {{step}}
+- EDIT {{target}}
+- RUN {{gate_command}}
+
+#### Claims
+<!-- What must be true when this phase is done. Anchors: `§F1#2` (this phase's
+     step 2), `shaping:F#` (a frozen finding), or another `## Section#n`. -->
 - P1: {{claim}} — anchor: {{anchor}}
 
-## Graph
-<!-- EITHER a ```mermaid flowchart (phases F#, steps with closed verbs
-     READ/EDIT/CREATE/RUN/VERIFY/ASK, decisions `{...}` with labeled
-     outgoing edges, loops with a `< 3` counter guard) OR the plain list
-     register below. A phase's last step is its gate (RUN or VERIFY). -->
-- F1: {{phase}}
-  - READ {{step}}
-  - RUN {{gate_command}}
+#### Gates
+<!-- The commands that prove this phase. `note --gate G1` runs and records. -->
+- G1: {{gate}}
 
-## Gates
-<!-- One G# per line; `— phase: F#` maps the gate onto a graph phase (a
-     gate with no phase applies to the whole run). `note --gate G#` runs
-     the command and stores the evidence. -->
-- G1: {{gate}} — phase: F1
+#### Deliverable
+<!-- What exists when THIS phase is done. -->
+- {{phase_deliverable}}
+
+### F2: {{next_phase}}
+- VERIFY {{verify_command}}
+
+#### Claims
+- P2: {{next_claim}} — anchor: §F2#1
+
+#### Gates
+- G2: {{next_gate}}
+
+#### Deliverable
+- {{next_phase_deliverable}}
 
 ## Deliverable
-<!-- What exists when the run is done. -->
+<!-- What exists when the whole run is done. -->
 
 {{deliverable}}
 
 ## DO NOT
-<!-- Scope enforcement: what this run must not touch. -->
+<!-- Scope enforcement for the whole PR. Global: no phase may relax it. -->
 - {{do_not}}

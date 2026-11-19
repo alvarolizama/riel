@@ -20,8 +20,8 @@ Public surface (nothing else exists; there is NO converter from riel v1):
     riel [--worktree DIR] check FILE [--mermaid]
 
 State is ONE file, `.riel/run.md`, format `riel-run/v1`. It executes ONE
-shaping from `.riel/shapings/<slug>.md` (`riel-shaping/v2`: one question, a uid
-in its marker), optionally ordered by `.riel/project.md` (`riel-project/v1`),
+shaping from `.riel/shapings/<slug>.md` (`riel-shaping/v3`: one question, one
+answer, a uid in its marker), optionally ordered by `.riel/project.md` (`riel-project/v1`),
 whose progress is derived from the runs archived in `.riel/runs/`. The
 Definition (the title plus eight sections, ending at `## DO NOT`) is authored by
 hand —
@@ -69,16 +69,17 @@ RUN_MD = "run.md"
 PROJECT_MD = "project.md"
 SHAPINGS_DIR = "shapings"
 RUNS_DIR = "runs"
-# The loose pre-v2 layout. Never read as the canonical shaping: activate and
-# rebase MIGRATE it into shapings/ (verified bytes, original rotated to .bak).
-SHAPING_MD = "shaping.md"
 LOCK_NAME = ".run.lock"
-SHAPING_FORMAT = "riel-shaping/v2"
-SHAPING_LEGACY_FORMAT = "riel-shaping/v1"
+SHAPING_FORMAT = "riel-shaping/v3"
 SHAPING_ID_RE = re.compile(r"^shp_[0-9a-f]{8}$")
 SHAPING_MARKER_RE = re.compile(
     r"^<!--\s*" + re.escape(SHAPING_FORMAT) + r"\s+id:(shp_[0-9a-f]{8})\s*-->\s*$", re.M)
-SHAPING_LEGACY_MARKER = "<!-- {} -->".format(SHAPING_LEGACY_FORMAT)
+# The section order. Open is LAST: it is the residue — what the shaping could
+# not close after the answer, the evidence and the commission.
+SHAPING_SECTIONS = ("Question", "Answer", "Findings", "Facts",
+                    "Not wanted", "What we want", "Open")
+ANSWER_SUPPORT_RE = re.compile(r"supported by\s+(F\d+)", re.I)
+ANSWER_OWNER_RE = re.compile(r"decided by:\s*owner", re.I)
 LEGACY_STATE_FILES = ("contract.md", "ledger.md")
 MARKER_LINE = "<!-- {} -->".format(RUN_FORMAT)
 
@@ -86,8 +87,7 @@ MARKER_LINE = "<!-- {} -->".format(RUN_FORMAT)
 # Activation appends five more (Metadata, Execution state, Core, Open,
 # Evidence).
 DEFINITION_TITLES = (
-    "Objective", "Context", "Constraints", "Claims", "Graph",
-    "Gates", "Deliverable", "DO NOT",
+    "Objective", "Context", "Constraints", "Phases", "Deliverable", "DO NOT",
 )
 CLOSED_VERBS = ("READ", "EDIT", "CREATE", "RUN", "VERIFY", "ASK")
 DENSE_RE = re.compile(r"[✓?]\d+|↔|⇒|⊕|λ|Σ")
@@ -175,9 +175,10 @@ def context_keywords(text):
 
 
 # --------------------------------------------------------------- graph ----
-# The Definition's graph lives ONLY in `## Graph` (the audit fix: no fallback to
-# the first mermaid block anywhere in a run file). Two registers parse into
-# the same shape: nodes {id: (opener, label)}, edges [(src, label, dst)].
+# Shared graph shape: nodes {id: (opener, label)}, edges [(src, label, dst)].
+# A Contract's graph is parsed by contract_graph() from `## Phases`; graph_any()
+# below serves project.md (`## Graph` with `- S#:` lists) and external files
+# under `check`, where a first-mermaid fallback keeps riel_check's reach.
 
 NODE_ANCHOR_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 PHASE_ID_PATTERN = r"F\d+|W\d+"
@@ -298,9 +299,10 @@ def list_graph(body, phase_pattern=PHASE_ID_PATTERN):
 
 
 def graph_any(text, strict_section=False, phase_pattern=PHASE_ID_PATTERN):
-    """The file's graph → (nodes, edges, register); ({}, [], '') when absent.
+    """A project/external file's graph → (nodes, edges, register).
 
-    strict_section (run files): ONLY `## Graph` counts. Otherwise (external
+    NOT for Contracts: those parse through contract_graph() from `## Phases`.
+    strict_section (project.md): ONLY `## Graph` counts. Otherwise (external
     files under `check`) a first-mermaid fallback keeps riel_check's reach.
     """
     body = _section(text, "Graph")
@@ -319,6 +321,109 @@ def graph_any(text, strict_section=False, phase_pattern=PHASE_ID_PATTERN):
     if nodes:
         return nodes, edges, "list"
     return {}, [], ""
+
+
+# ------------------------------------------------------- phase outline ----
+# The Contract's execution structure lives in `## Phases`: the general DAG in
+# the preamble, then one `### F#: <title>` per phase carrying its own steps and
+# its `#### Claims`, `#### Gates` and `#### Deliverable`. Phase membership is
+# STRUCTURAL — a gate no longer names its phase in a text suffix.
+
+PHASE_HEADING_RE = re.compile(
+    r"^###\s+(" + PHASE_ID_PATTERN + r")\s*[:：]\s*(.+)$", re.M)
+PHASE_SUBSECTIONS = ("Claims", "Gates", "Deliverable")
+
+
+def phase_blocks(text):
+    """[(id, title, body)] for each `### F#: <title>` under `## Phases`."""
+    body = _section(text, "Phases")
+    marks = list(PHASE_HEADING_RE.finditer(body))
+    out = []
+    for i, m in enumerate(marks):
+        end = marks[i + 1].start() if i + 1 < len(marks) else len(body)
+        out.append((m.group(1), m.group(2).strip(), body[m.end():end].strip()))
+    return out
+
+
+def phases_preamble(text):
+    """The general-DAG area of `## Phases`, before the first phase heading."""
+    body = _section(text, "Phases")
+    m = PHASE_HEADING_RE.search(body)
+    return (body[:m.start()] if m else body).strip()
+
+
+def phase_steps_body(body):
+    """A phase's step bullets: everything before its first `#### `."""
+    return re.split(r"^####\s", body, maxsplit=1, flags=re.M)[0].strip()
+
+
+def phase_sub(body, name):
+    """Body of `#### <name>` inside one phase block."""
+    m = re.search(r"^####\s+" + re.escape(name) + r"[^\n]*\n(.*?)"
+                  r"(?=^####\s|^###\s|^##\s|\Z)", body, re.S | re.M)
+    return m.group(1).strip() if m else ""
+
+
+def _preamble_edges(pre):
+    """`- F1 → F2 → F3` bullets in the preamble → linear phase edges."""
+    edges = []
+    for item in _bullets(pre):
+        parts = [p.strip() for p in re.split(r"\s*(?:→|->|-->)\s*", item)]
+        ids = [p for p in parts if PHASE_ID_RE.match(p)]
+        edges += [(a, "", b) for a, b in zip(ids, ids[1:])]
+    return edges
+
+
+def contract_graph(text):
+    """The Contract's two-level graph → (nodes, edges, register).
+
+    Level 1 — the general DAG between phases: a mermaid block in the preamble,
+    an arrow list, or the authored order of the `### F#` headings.
+    Level 2 — each phase's step bullets, chained linearly and numbered PER
+    PHASE (`F1S1`, `F1S2`, …) so inserting a step never renumbers another
+    phase's anchors. Decisions and loops belong to the general DAG.
+    """
+    blocks = phase_blocks(text)
+    if not blocks:
+        return {}, [], ""
+    nodes, edges, tails = {}, [], {}
+    pre = phases_preamble(text)
+    block = _first_mermaid(pre)
+    register, general = "outline", []
+    if block is not None:
+        gn, ge = mermaid_graph(block)
+        nodes.update(gn)
+        general, register = ge, "mermaid"
+    else:
+        general = _preamble_edges(pre)
+    order = []
+    for pid, title, body in blocks:
+        nodes[pid] = ("[", title)
+        order.append(pid)
+        last = None
+        for n, item in enumerate(_bullets(phase_steps_body(body)), 1):
+            sid = "{}S{}".format(pid, n)
+            nodes[sid] = ("[", item)
+            edges.append((pid if last is None else last, "", sid))
+            last = sid
+        tails[pid] = last or pid
+    if not general:
+        general = [(a, "", b) for a, b in zip(order, order[1:])]
+    for u, lbl, v in general:
+        edges.append((tails.get(u, u), lbl, v))
+    return nodes, edges, register
+
+
+def _anchor_target(text, name):
+    """(body, items) for a `§` anchor: a `## Section`, or a phase's steps."""
+    if PHASE_ID_RE.match(name):
+        for pid, _title, body in phase_blocks(text):
+            if pid == name:
+                steps = phase_steps_body(body)
+                return steps, _bullets(steps)
+        return "", []
+    body = _section(text, name)
+    return body, _bullets(body)
 
 
 def _first_mermaid(text):
@@ -468,18 +573,6 @@ def marker_present(text):
     return False
 
 
-# The pre-rename Metadata key. READ-ONLY compat: a run activated before the
-# Contract vocabulary keeps working, and its next rebase writes the new key
-# (the renderer emits a fixed key list, so the old one drops out by itself).
-LEGACY_DEFINITION_HASH_KEY = "plan_sha256"
-
-
-def _definition_hash(meta):
-    """The activated definition hash, accepting the pre-rename Metadata key."""
-    value = meta.get("definition_sha256")
-    return meta.get(LEGACY_DEFINITION_HASH_KEY) if value is None else value
-
-
 def _parse_metadata(text):
     meta = {}
     for item in _bullets(_section(text, "Metadata")):
@@ -490,39 +583,43 @@ def _parse_metadata(text):
 
 
 def _parse_claims(text):
-    """[{id, text, anchor}] from `## Claims` (anchor = last em-dash clause)."""
+    """[{id, text, anchor, phase}] from each phase's `#### Claims`."""
     out = []
-    for item in _bullets(_section(text, "Claims")):
-        clauses = _clauses(item)
-        anchor, prose = "", []
-        for i, clause in enumerate(clauses):
-            if clause.lower().startswith("anchor:") and i == len(clauses) - 1:
-                anchor = clause[len("anchor:"):].strip().strip("`")
-            else:
-                prose.append(clause)
-        m = re.match(r"^(P\d+)\s*[:：]\s*(.*)$", " — ".join(prose))
-        if m:
-            out.append({"id": m.group(1), "text": m.group(2).strip(),
-                        "anchor": anchor})
+    for pid, _title, body in phase_blocks(text):
+        for item in _bullets(phase_sub(body, "Claims")):
+            clauses = _clauses(item)
+            anchor, prose = "", []
+            for i, clause in enumerate(clauses):
+                if clause.lower().startswith("anchor:") and i == len(clauses) - 1:
+                    anchor = clause[len("anchor:"):].strip().strip("`")
+                else:
+                    prose.append(clause)
+            m = re.match(r"^(P\d+)\s*[:：]\s*(.*)$", " — ".join(prose))
+            if m:
+                out.append({"id": m.group(1), "text": m.group(2).strip(),
+                            "anchor": anchor, "phase": pid})
     return out
 
 
 def _parse_gates(text):
-    """[{id, label, phase}] from `## Gates` (`— phase: F#` optional)."""
+    """[{id, label, phase}] from each phase's `#### Gates`.
+
+    Membership is structural: the phase is the one whose block holds the gate.
+    A leftover `— phase: F#` suffix is stripped and reported when it disagrees.
+    """
     out = []
-    for item in _bullets(_section(text, "Gates")):
-        clauses = _clauses(item)
-        phase, prose = "", []
-        for i, clause in enumerate(clauses):
-            m = re.match(r"^phase:\s*(\S+)$", clause)
-            if m and i == len(clauses) - 1:
-                phase = m.group(1)
-            else:
-                prose.append(clause)
-        m = re.match(r"^(G\d+)\s*[:：]\s*(.*)$", " — ".join(prose))
-        if m:
-            out.append({"id": m.group(1), "label": m.group(2).strip(),
-                        "phase": phase})
+    for pid, _title, body in phase_blocks(text):
+        for item in _bullets(phase_sub(body, "Gates")):
+            m = re.match(r"^(G\d+)\s*[:：]\s*(.*)$", item)
+            if not m:
+                continue
+            label, declared = m.group(2).strip(), ""
+            cm = re.search(r"\s+—\s+phase:\s*(\S+)\s*$", label)
+            if cm:
+                declared = cm.group(1)
+                label = label[:cm.start()].strip()
+            out.append({"id": m.group(1), "label": label, "phase": pid,
+                        "declared_phase": declared})
     return out
 
 
@@ -628,25 +725,62 @@ def _parse_basis(text):
 
 # ------------------------------------------------------ shaping parse ----
 
+def _finding_dossiers(body):
+    """[{id, head, lines}] from `### F<n>:` dossiers, in authored order.
+
+    A dossier runs until the next `###` heading. `#### Diagram` (four hashes)
+    stays INSIDE it, so a finding can carry its own diagram.
+    """
+    out, current = [], None
+    for raw in _strip_comments(body).splitlines():
+        stripped = raw.strip()
+        m = re.match(r"^###\s+(F\d+)\s*[:：]\s*(.*)$", stripped)
+        if m:
+            current = {"id": m.group(1), "head": m.group(2).strip(), "lines": []}
+            out.append(current)
+        elif current is not None:
+            if re.match(r"^#{1,3}\s", stripped):
+                current = None
+            else:
+                current["lines"].append(raw)
+    return out
+
+
+def _source_confidence(lines):
+    """(source, confidence) from a finding's own lines — never across findings."""
+    source = confidence = ""
+    for ln in lines:
+        ms = re.search(r"—\s*source:\s*(.+)$", ln)
+        if ms and not source:
+            tail = ms.group(1)
+            mc = re.search(r",\s*confidence\s*[:：]?\s*(\S+)", tail)
+            if mc:
+                confidence = mc.group(1).strip()
+                tail = tail[:mc.start()]
+            source = tail.strip().rstrip(",")
+        if not confidence:
+            mc = re.search(r"\bconfidence\s*[:：]?\s*(high|med|medium|low)\b", ln, re.I)
+            if mc:
+                confidence = mc.group(1)
+    return source, confidence
+
+
 def shaping_findings(text):
-    """[{id, text, source, confidence}] from `## Findings` (unique F# ids)."""
+    """[{id, text, source, confidence}] from `## Findings` dossiers.
+
+    `### F1: <claim>` — the heading is the citable one-line claim, the body is
+    its support. The Basis freezes claim + source + confidence, never the body.
+    """
+    body = _section(text, "Findings")
     out, seen = [], set()
-    for item in _bullets(_section(text, "Findings")):
-        m = re.match(r"^(F\d+)\s*[:：]\s*(.*)$", item)
-        if not m or m.group(1) in seen:
+    for dossier in _finding_dossiers(body):
+        fid = dossier["id"]
+        if fid in seen:
             continue
-        seen.add(m.group(1))
-        fid, rest = m.group(1), m.group(2)
-        source, confidence = "", ""
-        ms = re.search(r"—\s*source:\s*(.*?)(?=,\s*confidence\s|$)", rest)
-        if ms:
-            source = ms.group(1).strip().rstrip(",")
-            rest = rest[:ms.start()].strip()
-        mc = re.search(r",?\s*confidence\s*[:：]?\s*(\S+)", rest)
-        if mc:
-            confidence = mc.group(1).strip()
-            rest = rest[:mc.start()].strip().rstrip(",")
-        out.append({"id": fid, "text": rest.strip(" —").strip(),
+        seen.add(fid)
+        claim = re.split(r"\s+—\s*source:", dossier["head"])[0].strip()
+        source, confidence = _source_confidence([dossier["head"]] + dossier["lines"])
+        out.append({"id": fid, "text": claim.strip(" —").strip(),
                     "source": source, "confidence": confidence})
     return out
 
@@ -660,6 +794,11 @@ def shaping_id(text):
 def shaping_question(text):
     """The ONE question this shaping answers (first line of ## Question)."""
     return _first_line(_section(text, "Question"))
+
+
+def shaping_answer(text):
+    """The ONE line that answers the Question (v3 `## Answer`)."""
+    return _first_line(_section(text, "Answer"))
 
 
 def shaping_title(text):
@@ -685,27 +824,31 @@ def validate_shaping(text):
     """(issues, warnings) for one versioned shaping source.
 
     A shaping answers ONE question: that is the unit a run binds and a PR
-    delivers. Two questions are two shapings, so the validator refuses them.
+    delivers. The ANSWER is a first-class line and the section order is fixed
+    (Open last, because it is the residue). Only riel-shaping/v3 is read.
     """
     issues, warnings = [], []
     head = text.split("\n## ", 1)[0]
     if text.lstrip().startswith("---"):
         issues.append("frontmatter is not part of {}; use a marker line".format(
             SHAPING_FORMAT))
-    sid = shaping_id(text)
-    if sid:
-        if "<!-- {}".format(SHAPING_FORMAT) not in head:
-            issues.append("malformed {} marker".format(SHAPING_FORMAT))
-    elif SHAPING_LEGACY_MARKER in head:
-        warnings.append(
-            "{} carries no id — activate migrates it into .riel/shapings/ "
-            "and mints one".format(SHAPING_LEGACY_MARKER))
-    else:
+    if not shaping_id(text):
         issues.append(
             "missing <!-- {} id:shp_xxxxxxxx --> after the title".format(
                 SHAPING_FORMAT))
     if not re.match(r"^#\s*Shaping:", text.lstrip()):
         issues.append("title must be `# Shaping: <name>`")
+
+    # An unfilled skeleton is not research. Same guard as the Definition: a
+    # shaping whose Facts or Open are still `{{…}}` must not back a run.
+    left = sorted(set(re.findall(r"\{\{([^}]+)\}\}", _strip_comments(text))))
+    if left:
+        issues.append(
+            "unfilled placeholder(s) in the shaping: {} — author them before "
+            "binding a run to it".format(
+                ", ".join("{{" + name + "}}" for name in left)))
+
+    # ONE question, on ONE line.
     q_lines = [ln.strip() for ln in
                _strip_comments(_section(text, "Question")).splitlines()
                if ln.strip()]
@@ -721,8 +864,10 @@ def validate_shaping(text):
             issues.append(
                 "## Question must ask exactly ONE question (one '?'): {!r}".format(
                     question[:80]))
+
+    # Findings: unique ids, each with a source.
     findings = shaping_findings(text)
-    raw_ids = re.findall(r"^[-*]\s*(F\d+)\s*[:：]",
+    raw_ids = re.findall(r"^(?:[-*]|###)\s*(F\d+)\s*[:：]",
                          _strip_comments(_section(text, "Findings")), re.M)
     dupes = sorted({i for i in raw_ids if raw_ids.count(i) > 1})
     if dupes:
@@ -733,8 +878,45 @@ def validate_shaping(text):
         if not f["source"]:
             issues.append("{} has no `— source:` — a finding without a "
                           "source is a hypothesis".format(f["id"]))
-    if not _section(text, "Verdict"):
-        warnings.append("no ## Verdict — the run's Objective has no seed")
+
+    # The ANSWER is mandatory, one line, and backed.
+    a_lines = [ln.strip() for ln in
+               _strip_comments(_section(text, "Answer")).splitlines()
+               if ln.strip()]
+    if not a_lines:
+        issues.append("## Answer is empty — the Question must be answered")
+    elif len(a_lines) > 1:
+        issues.append("## Answer must be ONE line — the resolution, not an essay")
+    else:
+        answer = re.sub(r"^[-*]\s+", "", a_lines[0])
+        if "?" in answer:
+            issues.append("## Answer must not be a question (no '?')")
+        cited = ANSWER_SUPPORT_RE.findall(answer)
+        if not cited and not ANSWER_OWNER_RE.search(answer):
+            issues.append(
+                "## Answer needs evidence: '— supported by F#' or "
+                "'— decided by: owner'")
+        known = {f["id"] for f in findings}
+        for fid in cited:
+            if fid not in known:
+                issues.append(
+                    "## Answer cites {} which is not a finding".format(fid))
+
+    # The seven sections, in order, Open last.
+    lvl2 = [title.strip() for lvl, title in
+            re.findall(r"^(#{1,2})\s+(.+)$", text, re.M) if lvl == "##"]
+    pos = []
+    for want in SHAPING_SECTIONS:
+        for i, title in enumerate(lvl2):
+            if title == want or title.startswith(want):
+                pos.append(i)
+                break
+        else:
+            issues.append("missing shaping section: {}".format(want))
+    if pos != sorted(pos):
+        issues.append(
+            "shaping sections out of order — expected {}; Open goes last".format(
+                " · ".join(SHAPING_SECTIONS)))
     return issues, warnings
 
 
@@ -748,8 +930,6 @@ def _worktree_paths(worktree):
         "project": os.path.join(riel_dir, PROJECT_MD),
         "shapings": os.path.join(riel_dir, SHAPINGS_DIR),
         "runs": os.path.join(riel_dir, RUNS_DIR),
-        # the loose legacy file, kept ONLY as a migration source
-        "shaping": os.path.join(riel_dir, SHAPING_MD),
         "lock": os.path.join(riel_dir, LOCK_NAME),
     }
 
@@ -821,9 +1001,8 @@ def _bound_shaping(worktree, definition_text=None, meta=None):
 
     Identity first: an activated run binds by uid, so renaming the file keeps
     the binding. The Definition's `### Shaping` declaration is the authoring path.
-    A loose .riel/shaping.md is still resolved (pre-v2 runs keep working);
-    activate/rebase migrate it into shapings/. However the file was found, its
-    uid must identify ONE shaping in the directory.
+    However the file was found, its uid must identify ONE shaping in the
+    directory.
     """
     meta = meta or {}
     want_id = str(meta.get("shaping_id") or "").strip()
@@ -851,12 +1030,6 @@ def _bound_shaping(worktree, definition_text=None, meta=None):
                 "the bound shaping {} does not exist — fix the ### Shaping "
                 "declaration or run rebase".format(want_path))
     if not rel:
-        loose = _worktree_paths(worktree)["shaping"]
-        if os.path.isfile(loose):
-            rel = os.path.relpath(loose, worktree)
-            abs_path = loose
-            uid = shaping_id(_read_file(loose))
-    if not rel:
         if want_id:
             raise EngineError(
                 "no shaping with id {} in .riel/shapings/".format(want_id))
@@ -868,49 +1041,6 @@ def _bound_shaping(worktree, definition_text=None, meta=None):
                 "shaping id {} is not unique ({}) — one id identifies one "
                 "question".format(uid, ", ".join(same)))
     return rel, uid, abs_path
-
-
-def _migrate_loose_shaping(worktree, paths, err):
-    """Move a loose .riel/shaping.md into shapings/<slug>.md, minting its id.
-
-    The original is rotated to a timestamped .bak (never deleted) and the
-    migrated bytes are the original plus the id, so the transform is auditable.
-    Returns the new relative path, or "" when there was nothing to migrate.
-    """
-    loose = paths["shaping"]
-    if not os.path.isfile(loose):
-        return ""
-    text = _read_file(loose)
-    issues, warnings = validate_shaping(text)
-    for w in warnings:
-        print("WARN: shaping: {}".format(w), file=err)
-    if issues:
-        print("refusing to migrate .riel/shaping.md — invalid shaping:", file=err)
-        for issue in issues:
-            print("  - " + issue, file=err)
-        raise EngineError(
-            "fix .riel/shaping.md (or split it into one shaping per question) "
-            "before activating", code=1)
-    slug = slugify(shaping_title(text))
-    target = os.path.join(paths["shapings"], slug + ".md")
-    rel = os.path.relpath(target, worktree)
-    sid = shaping_id(text)
-    if not sid:
-        sid = new_shaping_id()
-        text = text.replace(
-            SHAPING_LEGACY_MARKER,
-            "<!-- {} id:{} -->".format(SHAPING_FORMAT, sid), 1)
-    if os.path.isfile(target):
-        if _read_file(target) != text:
-            raise EngineError(
-                "cannot migrate .riel/shaping.md to {} — a DIFFERENT shaping "
-                "already lives there; rename one of them".format(rel))
-    else:
-        _atomic_write(target, text, worktree)
-    _backup(loose)
-    os.unlink(loose)
-    print("migrated .riel/shaping.md -> {} (id {})".format(rel, sid), file=err)
-    return rel
 
 
 def _refuse_legacy(worktree):
@@ -1079,8 +1209,7 @@ def load_state(worktree, require_active=False, require_exists=True, path=None):
     if require_active and not active:
         raise EngineError(
             "run at {} is a draft — `run activate` first".format(run_path))
-    graph_nodes, graph_edges, register = graph_any(definition_text,
-                                                   strict_section=True)
+    graph_nodes, graph_edges, register = contract_graph(definition_text)
     shaping_hash = None
     if active and meta.get("shaping_sha256") not in (None, "none"):
         shaping_hash = meta["shaping_sha256"]
@@ -1091,7 +1220,7 @@ def load_state(worktree, require_active=False, require_exists=True, path=None):
         "active": active,
         "meta": meta,
         "revision": meta.get("revision") if active else None,
-        "definition_hash": _definition_hash(meta) if active else None,
+        "definition_hash": meta.get("definition_sha256") if active else None,
         "shaping_hash": shaping_hash,
         "claims": _parse_claims(definition_text),
         "gates": _parse_gates(definition_text),
@@ -1120,10 +1249,9 @@ def load_state(worktree, require_active=False, require_exists=True, path=None):
 
 
 def _phase_gate_ids(st, phase_id):
-    """A gate bound to a phase, or the run-global obligation set."""
-    mapped = [gate["id"] for gate in st["gates"]
-              if gate.get("phase") == phase_id]
-    return mapped or [gate["id"] for gate in st["gates"]]
+    """The gates structurally inside a phase. There is no run-global fallback."""
+    return [gate["id"] for gate in st["gates"]
+            if gate.get("phase") == phase_id]
 
 
 def _derive_phase(st):
@@ -1171,6 +1299,16 @@ def _check_definition(text, nodes, edges, shaping_path, active, basis, basis_onl
     if not re.match(r"^#\s*Run:\s*\S", text.lstrip()):
         issues.append("title must be `# Run: <name>`")
 
+    # An unfilled template is NOT an authored Contract. Every section being
+    # non-empty is not authoring: `{{objective}}` is non-empty text, and without
+    # this guard definition_sha256 freezes the skeleton as if it were a decision.
+    left = sorted(set(re.findall(r"\{\{([^}]+)\}\}", _strip_comments(text))))
+    if left:
+        issues.append(
+            "unfilled placeholder(s) in the Definition: {} — author them "
+            "before activating".format(
+                ", ".join("{{" + name + "}}" for name in left)))
+
     headings = [t.strip() for _lvl, t in
                 re.findall(r"^(#{1,2})\s+(.+)$", text, re.M)]
     wanted = ["Run:"] + list(DEFINITION_TITLES)
@@ -1194,9 +1332,29 @@ def _check_definition(text, nodes, edges, shaping_path, active, basis, basis_onl
     if not _first_line(_section(text, "Deliverable")):
         issues.append("## Deliverable is empty")
 
+    # The flat pre-Phases Definition is refused, not read.
+    for old in ("Claims", "Graph", "Gates"):
+        if re.search(r"^##\s+" + old + r"\s*$", text, re.M):
+            issues.append(
+                "## {} is no longer part of the Contract — claims, gates and "
+                "the execution DAG live inside ## Phases".format(old))
+
+    blocks = phase_blocks(text)
+    if not blocks:
+        issues.append("## Phases has no `### F#: <title>` phase")
+    for pid, title, body in blocks:
+        if not title:
+            issues.append("phase {} has no title".format(pid))
+        if not _bullets(phase_steps_body(body)):
+            issues.append("phase {} has no steps".format(pid))
+        for sub in PHASE_SUBSECTIONS:
+            if not _bullets(phase_sub(body, sub)):
+                issues.append(
+                    "phase {} has no #### {} items".format(pid, sub))
+
     claims = _parse_claims(text)
     if not claims:
-        issues.append("## Claims has no P# entries")
+        issues.append("no P# claims under the phases' #### Claims")
     seen = set()
     for c in claims:
         if c["id"] in seen:
@@ -1204,21 +1362,24 @@ def _check_definition(text, nodes, edges, shaping_path, active, basis, basis_onl
         seen.add(c["id"])
 
     gates = _parse_gates(text)
+    if not gates:
+        issues.append("no G# gates under the phases' #### Gates")
     gate_ids = {g["id"] for g in gates}
     if len(gate_ids) != len(gates):
-        issues.append("duplicate gate id in ## Gates")
-    phase_ids = {nid for nid in nodes if PHASE_ID_RE.match(nid)}
+        issues.append("duplicate gate id across phases")
     for g in gates:
-        if g["phase"] and g["phase"] not in phase_ids:
-            issues.append("gate {} maps to phase {} which is not in the "
-                          "graph".format(g["id"], g["phase"]))
         if not g["label"]:
             issues.append("gate {} has no label".format(g["id"]))
+        if g.get("declared_phase") and g["declared_phase"] != g["phase"]:
+            issues.append(
+                "gate {} declares phase {} but lives in {} — membership is "
+                "structural, drop the suffix".format(
+                    g["id"], g["declared_phase"], g["phase"]))
 
     # graph conventions — parsed shapes and parsed edges only
     if not nodes:
-        issues.append("no execution graph under ## Graph (a ```mermaid block "
-                      "or a plain F#/W# phase list)")
+        issues.append("no execution graph under ## Phases (a general DAG in "
+                      "the preamble plus `### F#: <title>` phases)")
     else:
         if not edges:
             issues.append("execution graph has no edges")
@@ -1247,7 +1408,7 @@ def _check_definition(text, nodes, edges, shaping_path, active, basis, basis_onl
                 issues.append(
                     "decision node {} needs a label on every outgoing edge "
                     "(parsed from the edges)".format(nid))
-        blocks = re.findall(r"```mermaid\n(.*?)```", _section(text, "Graph"),
+        blocks = re.findall(r"```mermaid\n(.*?)```", _section(text, "Phases"),
                             re.S)
         for block in blocks:
             if "<br" in block:
@@ -1257,14 +1418,14 @@ def _check_definition(text, nodes, edges, shaping_path, active, basis, basis_onl
                 issues.append(
                     "graph carries `style` — not a parsed-as-spec DAG")
         if graph_back_edges(edges) and not re.search(
-                r"< *[0-9]|>= *[0-9]", _section(text, "Graph")):
+                r"< *[0-9]|>= *[0-9]", _section(text, "Phases")):
             warnings.append(
                 "graph has a loop but no counter guard (< 3 / >= 3)")
         issues.extend(mmdc_issues(blocks))
 
     # anchors
     node_ids = set(nodes)
-    graph_section = _section(text, "Graph")
+    graph_section = _section(text, "Phases")
     for c in claims:
         if not c["anchor"]:
             warnings.append("{} has no anchor — add '— anchor: §Section#n', "
@@ -1293,16 +1454,15 @@ def _check_definition(text, nodes, edges, shaping_path, active, basis, basis_onl
                     "will refuse".format(c["id"], c["anchor"]))
         elif am:
             name, idx = am.group(1).strip(), am.group(2)
-            body = _section(text, name)
+            body, items = _anchor_target(text, name)
             if not body:
                 issues.append("{} anchor {} does not resolve — no such "
-                              "section".format(c["id"], c["anchor"]))
+                              "section or phase".format(c["id"], c["anchor"]))
             elif idx is not None:
-                items = _bullets(body)
                 if not 1 <= int(idx) <= len(items):
                     issues.append(
-                        "{} anchor {} does not resolve — the section has {} "
-                        "bullet(s)".format(c["id"], c["anchor"], len(items)))
+                        "{} anchor {} does not resolve — {} has {} "
+                        "item(s)".format(c["id"], c["anchor"], name, len(items)))
         elif NODE_ANCHOR_RE.match(c["anchor"]):
             if c["anchor"] not in node_ids \
                     and c["anchor"] not in graph_section:
@@ -1320,7 +1480,12 @@ def _check_definition(text, nodes, edges, shaping_path, active, basis, basis_onl
 def _validate_active_hashes(st, shaping_path):
     """The stale check: definition/shaping bytes must match the activated hashes."""
     current_definition = definition_sha256(st["definition_text"])
-    if st["definition_hash"] and st["definition_hash"] != current_definition:
+    if not st["definition_hash"]:
+        raise EngineError(
+            "stale state: the run has no definition_sha256 — it was not "
+            "activated by this engine; re-author the Definition and activate "
+            "again", code=3)
+    if st["definition_hash"] != current_definition:
         raise EngineError(
             "stale state: the definition changed since {} — run `run rebase` "
             "(old evidence is reserved, not lost)".format(st["revision"]),
@@ -1434,7 +1599,6 @@ def _default_shaping_path(worktree):
     """The shaping `shape validate` answers for when no path is given.
 
     One file in shapings/ -> that one. Several -> the caller must choose.
-    None -> the loose legacy file, if that is all there is.
     """
     paths = _worktree_paths(worktree)
     found = _shaping_files(paths["shapings"])
@@ -1445,8 +1609,6 @@ def _default_shaping_path(worktree):
             "{} shapings in .riel/shapings/ — pass the file to validate "
             "({})".format(len(found), ", ".join(
                 os.path.relpath(f, worktree) for f in found)))
-    if os.path.isfile(paths["shaping"]):
-        return paths["shaping"]
     raise EngineError(
         "no shaping file in {} — write one (shape new renders the "
         "template) or pass a path".format(os.path.relpath(paths["shapings"], worktree)))
@@ -1515,7 +1677,7 @@ def _run_validate(args, out, err):
     definition_text, _ = _split_definition(text)
     meta = _parse_metadata(text)
     active = bool(meta.get("revision"))
-    nodes, edges, _reg = graph_any(definition_text, strict_section=True)
+    nodes, edges, _reg = contract_graph(definition_text)
     basis = _parse_basis(definition_text)
     issues, warnings = [], []
     try:
@@ -1533,7 +1695,7 @@ def _run_validate(args, out, err):
             _validate_active_hashes({
                 "definition_text": definition_text,
                 "revision": meta.get("revision"),
-                "definition_hash": _definition_hash(meta),
+                "definition_hash": meta.get("definition_sha256"),
                 "shaping_hash": (None if meta.get("shaping_sha256") == "none"
                                  else meta.get("shaping_sha256")),
             }, shaping_path)
@@ -1556,15 +1718,9 @@ def _freeze_from_shaping(worktree, paths, definition_text, err, meta=None):
 
     The run binds ONE shaping: its declaration (or its activated uid) resolves
     the file, the file is validated, and the referenced findings are frozen
-    into the Basis. A loose legacy shaping is migrated first. No shaping is
-    allowed ONLY when no claim anchors into one.
+    into the Basis. No shaping is allowed ONLY when no claim anchors into one.
     """
     rel, sid, abs_path = _bound_shaping(worktree, definition_text, meta)
-    if rel == os.path.join(RIEL_DIR, SHAPING_MD):
-        migrated = _migrate_loose_shaping(worktree, paths, err)
-        if migrated:
-            definition_text = _declare_shaping(definition_text, migrated)
-            rel, sid, abs_path = _bound_shaping(worktree, definition_text)
     shaping_hash = "none"
     findings = []
     referenced = _referenced_finding_ids(definition_text)
@@ -1616,7 +1772,7 @@ def _run_activate(args, out, err):
                 "activates once; edit the definition and `run rebase` instead"
                 .format(paths["run"], meta["revision"]))
         definition_text, _ = _split_definition(text)
-        nodes, edges, _reg = graph_any(definition_text, strict_section=True)
+        nodes, edges, _reg = contract_graph(definition_text)
         try:
             _rel, _sid, shaping_path = _bound_shaping(args.worktree, definition_text)
         except EngineError as exc:
@@ -1662,7 +1818,7 @@ def _run_rebase(args, out, err):
         st = load_state(args.worktree, require_active=True)
         old_revision = st["revision"]
         definition_text = st["definition_text"]
-        nodes, edges, _reg = graph_any(definition_text, strict_section=True)
+        nodes, edges, _reg = contract_graph(definition_text)
         try:
             _rel, _sid, shaping_path = _bound_shaping(
                 args.worktree, definition_text, st["meta"])
@@ -1745,94 +1901,57 @@ def _run_status(args, out, err):
 
 
 def _run_slice(args, out, err):
+    """Emit ONE phase as a self-contained Contract packet.
+
+    The phase's block travels verbatim (steps, Claims, Gates, Deliverable) with
+    the global sections and the frozen Basis, so its anchors resolve exactly as
+    in the parent and the child never reads the parent's shaping file.
+    """
     paths = _worktree_paths(args.worktree)
     st = load_state(args.worktree, require_active=True)
-    nodes, edges = st["nodes"], st["edges"]
-    if not nodes:
-        raise EngineError("the run has no graph to slice")
+    definition = st["definition_text"]
+    by_id = {pid: (title, body) for pid, title, body in phase_blocks(definition)}
+    if not by_id:
+        raise EngineError("the run has no phases to slice")
     phase = args.phase
-    if phase not in nodes:
+    if phase not in by_id:
         raise EngineError(
-            "no phase node {!r} in the run's graph (phases: {})".format(
-                phase, ", ".join(_phase_order(nodes)) or "none"))
-    keep = _phase_subgraph(nodes, edges, phase)
-    closers = {"[": "]", "(": ")", "{": "}"}
-
-    claims = [c for c in st["claims"]
-              if NODE_ANCHOR_RE.match(c["anchor"] or "")
-              and c["anchor"] in keep]
-    if not claims:
-        claims = st["claims"]
-    gates = [g for g in st["gates"] if g["phase"] == phase]
-
-    title_m = re.match(r"^#\s*Run:\s*(.+)$", st["definition_text"], re.M)
+            "no phase {!r} under ## Phases (phases: {})".format(
+                phase, ", ".join(by_id) or "none"))
+    title, body = by_id[phase]
+    title_m = re.match(r"^#\s*Run:\s*(.+)$", definition, re.M)
     parent_title = title_m.group(1).strip() if title_m else "(task)"
-    body = ["# Run: {} — {}".format(parent_title, nodes[phase][1] or phase),
-            MARKER_LINE, ""]
-    for name in DEFINITION_TITLES:
-        body.append("## " + name)
-        if name == "Graph":
-            body += ["", "```mermaid", "flowchart TD"]
-            for nid, (opener, label) in nodes.items():
-                if nid in keep:
-                    body.append('  {}{}"{}"{}'.format(
-                        nid, opener, (label or nid).replace('"', "'"),
-                        closers[opener]))
-            for u, lbl, v in edges:
-                if u in keep and v in keep:
-                    body.append("  {} -->|{}| {}".format(u, lbl, v) if lbl
-                                else "  {} --> {}".format(u, v))
-            body += ["```"]
-        elif name == "Claims":
-            body.append("")
-            for c in claims:
-                line = "- {}: {}".format(c["id"], c["text"])
-                if c["anchor"]:
-                    line += " — anchor: {}".format(c["anchor"])
-                body.append(line)
-        elif name == "Gates":
-            body.append("")
-            for g in gates:
-                line = "- {}: {}".format(g["id"], g["label"])
-                if g["phase"]:
-                    line += " — phase: {}".format(g["phase"])
-                body.append(line)
-            if not gates:
-                body.append(
-                    "<!-- no gate mapped to {} in the parent run -->".format(
-                        phase))
-        elif name == "Context":
-            body.append("")
-            basis = _subsection(st["definition_text"], "Context", "Basis")
-            if basis:
-                body += ["### Basis", basis, ""]
-            why = _subsection(st["definition_text"], "Context", "Why")
-            if why:
-                body += ["### Why", why, ""]
-            kws = context_keywords(st["definition_text"])
+
+    parts = ["# Run: {} — {}".format(parent_title, title or phase),
+             MARKER_LINE, ""]
+    for name in ("Objective", "Context", "Constraints"):
+        parts.append("## " + name)
+        if name == "Context":
+            parts.append("")
+            for sub in ("Basis", "Why"):
+                content = _subsection(definition, "Context", sub)
+                if content:
+                    parts += ["### " + sub, content, ""]
+            kws = context_keywords(definition)
             if kws:
-                body += ["### Context keywords"]
-                body += ["- {}{}".format(
+                parts.append("### Context keywords")
+                parts += ["- {}{}".format(
                     k["term"],
                     " → {}".format(k["source"]) if k["source"] else "")
                     for k in kws]
-                body.append("")
+                parts.append("")
         else:
-            section = _section(st["definition_text"], name)
-            if section:
-                body += ["", section]
-        body.append("")
-    packet = "\n".join(body).rstrip("\n") + "\n"
+            content = _section(definition, name)
+            parts += ["", content, ""] if content else [""]
+    parts += ["## Phases", "", "### {}: {}".format(phase, title), "", body, ""]
+    for name in ("Deliverable", "DO NOT"):
+        parts += ["## " + name, "", _section(definition, name), ""]
+    packet = "\n".join(parts).rstrip("\n") + "\n"
 
-    # self-validating: the packet must pass the same validator as a draft
-    nodes2, edges2, _r = graph_any(packet, strict_section=True)
-    try:
-        _rel, _sid, shaping_path = _bound_shaping(
-            args.worktree, st["definition_text"], st["meta"])
-    except EngineError:
-        shaping_path = ""   # the packet carries its own frozen Basis
-    issues, _w = _check_definition(packet, nodes2, edges2, shaping_path,
-                             False, _parse_basis(packet), basis_only=True)
+    # self-validating: the packet passes the same validator as a draft
+    nodes2, edges2, _r = contract_graph(packet)
+    issues, _w = _check_definition(packet, nodes2, edges2, "", False,
+                                   _parse_basis(packet), basis_only=True)
     if issues:
         raise EngineError("slice of {} is not self-validating: {}".format(
             phase, "; ".join(issues)))
@@ -1843,8 +1962,6 @@ def _run_slice(args, out, err):
     print(packet, end="", file=out)
     return 0
 
-
-# --------------------------------------------------------------- note ----
 
 def _note_evidence(st, args):
     """Run --command in the worktree; capture the REAL exit code + snippet.
@@ -2072,7 +2189,7 @@ def todo_projection(st):
                 status = "in_progress"
                 work_started = True
             items.append({
-                "id": "riel-step-{}-{}".format(phase_id, step_id),
+                "id": "riel-step-" + step_id,
                 "content": "{}: {}".format(step_id, nodes[step_id][1] or step_id),
                 "status": status,
                 "parent": step_parent,
@@ -2349,7 +2466,7 @@ def _copy_verified(src_dir, dest_dir):
 def cmd_clean(args, out, err):
     """Remove EVERYTHING inside .riel/. Archiving is opt-in, never the default.
 
-    run.md, project.md, shapings/, runs/, the loose legacy shaping, v1 state
+    run.md, project.md, shapings/, runs/, v1 state
     and every backup go. The lock file stays (it is coordination, not state,
     and unlinking a held flock would let two writers in). Without --archive
     there is no way back: .riel/ is gitignored local state.
