@@ -15,14 +15,14 @@ Public surface (nothing else exists; there is NO converter from riel v1):
                         [--open Q --settled-by TEST] [--close N --evidence N]
     riel [--worktree DIR] todo
     riel [--worktree DIR] project [FILE] | project new | project status
-    riel [--worktree DIR] run archive
     riel [--worktree DIR] clean [--archive]
     riel [--worktree DIR] check FILE [--mermaid]
 
-State is ONE file, `.riel/run.md`, format `riel-run/v1`. It executes ONE
+Each contract is ONE file, `.riel/runs/<slug>.md`, format `riel-run/v1`, executed
+in place; several may be active at once. It executes ONE
 shaping from `.riel/shapings/<slug>.md` (`riel-shaping/v3`: one question, one
 answer, a uid in its marker), optionally ordered by `.riel/project.md` (`riel-project/v1`),
-whose progress is derived from the runs archived in `.riel/runs/`. The
+whose progress is derived from the contracts in `.riel/runs/`. The
 Definition (the title plus eight sections, ending at `## DO NOT`) is authored by
 hand —
 `run new` only renders the template to stdout; an editor, a project system or a
@@ -33,7 +33,7 @@ shaping's bytes, records its path and uid, then appends Metadata + Execution
 state + Core + Open + Evidence. `note` is the ONLY writer of that state. If the
 Definition or the BOUND shaping changes underneath, note refuses as stale until
 `run rebase` reserves the old evidence (retained, not counted) under a new
-revision. `run archive` moves a finished run to `.riel/runs/<slug>.md` (never
+revision. Contracts are executed IN PLACE at `.riel/runs/<slug>.md` (never
 pruned); `clean` wipes everything inside `.riel/`, archiving only when asked.
 
 Every output goes to explicit sinks: `run_verb(argv, worktree, out, err)`
@@ -65,7 +65,6 @@ VERSION = "3.0.0"
 RUN_FORMAT = "riel-run/v1"
 
 RIEL_DIR = ".riel"
-RUN_MD = "run.md"
 PROJECT_MD = "project.md"
 SHAPINGS_DIR = "shapings"
 RUNS_DIR = "runs"
@@ -927,12 +926,81 @@ def _worktree_paths(worktree):
     riel_dir = os.path.join(worktree, RIEL_DIR)
     return {
         "dir": riel_dir,
-        "run": os.path.join(riel_dir, RUN_MD),
         "project": os.path.join(riel_dir, PROJECT_MD),
         "shapings": os.path.join(riel_dir, SHAPINGS_DIR),
         "runs": os.path.join(riel_dir, RUNS_DIR),
         "lock": os.path.join(riel_dir, LOCK_NAME),
     }
+
+
+def run_files(worktree):
+    """[(slug, abs_path)] for every contract in .riel/runs/, sorted by slug.
+
+    Backups are NOT contracts: `_backup` writes timestamped `.bak.md` files
+    next to the original, and counting them would make the resolver see
+    ghosts. A SYMLINK is still listed, so the confinement check refuses it
+    loudly — silently skipping it would let the gate believe there is no work.
+    """
+    folder = _worktree_paths(worktree)["runs"]
+    if not os.path.isdir(folder):
+        return []
+    out = []
+    for name in sorted(os.listdir(folder)):
+        if not name.endswith(".md") or name.endswith(".bak.md"):
+            continue
+        path = os.path.join(folder, name)
+        if os.path.isfile(path):
+            out.append((name[:-3], path))
+    return out
+
+
+def _run_is_active(path):
+    try:
+        return bool(_parse_metadata(_read_file(path)).get("revision"))
+    except (OSError, EngineError, UnicodeDecodeError):
+        return False
+
+
+def resolve_run(worktree, selector=None, want=None):
+    """The contract a verb acts on -> its absolute path.
+
+    Contracts live in `.riel/runs/<slug>.md` and are executed IN PLACE: there is
+    no live file and no archive move. `selector` is a slug or a path. With no
+    selector the ONLY file matching `want` ("active", "draft", or None for any)
+    is used; several matches REFUSE and name them, because a verb must never
+    guess which contract it is writing.
+    """
+    files = run_files(worktree)
+    if selector:
+        sel = str(selector).strip()
+        if sel.endswith(".md"):
+            cand = sel if os.path.isabs(sel) else os.path.join(worktree, sel)
+            cand = os.path.realpath(cand)
+            for _slug, path in files:
+                if os.path.realpath(path) == cand:
+                    return path
+            raise EngineError(
+                "no contract at {} - contracts live in .riel/runs/".format(sel))
+        for slug, path in files:
+            if slug == sel:
+                return path
+        raise EngineError(
+            "no contract named {!r} in .riel/runs/ (have: {})".format(
+                sel, ", ".join(s for s, _p in files) or "none"))
+    pool = files
+    if want == "active":
+        pool = [(s, p) for s, p in files if _run_is_active(p)]
+    elif want == "draft":
+        pool = [(s, p) for s, p in files if not _run_is_active(p)]
+    if not pool:
+        raise EngineError(
+            "no {}contract in .riel/runs/ - `run new` renders the template; "
+            "save it as .riel/runs/<slug>.md".format((want + " ") if want else ""))
+    if len(pool) > 1:
+        raise EngineError(
+            "several {}contracts in .riel/runs/ ({}) - pass run=<slug>".format(
+                (want + " ") if want else "", ", ".join(s for s, _p in pool)))
+    return pool[0][1]
 
 
 def _shaping_files(directory):
@@ -1171,14 +1239,22 @@ def evidence_passes(ev):
         ev["confidence"] is None or ev["confidence"] >= CONFIDENCE_PASS)
 
 
-def load_state(worktree, require_active=False, require_exists=True, path=None):
-    """Read + parse a run file → dict; clean EngineError on every refusal.
+def load_state(worktree, require_active=False, require_exists=True, path=None,
+               run=None):
+    """Read + parse a contract → dict; clean EngineError on every refusal.
 
-    `path` reads an ARCHIVED run (.riel/runs/<slug>.md) instead of the live
-    one: that is how a project derives a shaping's progress from real evidence.
+    `path` reads one specific file; `run` is a slug/path selector. With neither,
+    the worktree's ONLY matching contract is resolved — several refuse.
     """
-    paths = _worktree_paths(worktree)
-    run_path = path or paths["run"]
+    if path is None:
+        try:
+            path = resolve_run(worktree, run,
+                               want="active" if require_active else None)
+        except EngineError:
+            if require_exists:
+                raise
+            return None
+    run_path = path
     if not os.path.exists(run_path):
         if require_exists:
             raise EngineError(
@@ -1639,8 +1715,8 @@ def cmd_run(args, out, err):
         "activate": _run_activate,
         "rebase": _run_rebase,
         "status": _run_status,
+        "list": _run_list,
         "slice": _run_slice,
-        "archive": _run_archive,
     }[args.cmd2](args, out, err)
 
 
@@ -1655,7 +1731,7 @@ def _run_new(args, out, err):
 
 def _run_validate(args, out, err):
     paths = _worktree_paths(args.worktree)
-    path = args.file or paths["run"]
+    path = args.file or resolve_run(args.worktree, getattr(args, "run", None))
     text = _read_file(path)
     if not marker_present(text):
         raise EngineError(
@@ -1743,20 +1819,18 @@ def _freeze_from_shaping(worktree, paths, definition_text, err, meta=None):
 def _run_activate(args, out, err):
     paths = _worktree_paths(args.worktree)
     with _Locked(paths["lock"]):
-        if not os.path.exists(paths["run"]):
-            raise EngineError(
-                "no run to activate at {} — `run new` renders the template; "
-                "an editor writes the file".format(paths["run"]))
-        text = _read_file(paths["run"])
+        run_path = resolve_run(args.worktree, getattr(args, "run", None),
+                               want="draft")
+        text = _read_file(run_path)
         if not marker_present(text):
             raise EngineError("{} is not a {} file (missing {})".format(
-                paths["run"], RUN_FORMAT, MARKER_LINE))
+                run_path, RUN_FORMAT, MARKER_LINE))
         meta = _parse_metadata(text)
         if meta.get("revision"):
             raise EngineError(
                 "run at {} is already active (revision {}) — a run "
                 "activates once; edit the definition and `run rebase` instead"
-                .format(paths["run"], meta["revision"]))
+                .format(run_path, meta["revision"]))
         definition_text, _ = _split_definition(text)
         nodes, edges, _reg = contract_graph(definition_text)
         try:
@@ -1789,11 +1863,11 @@ def _run_activate(args, out, err):
             meta["shaping_id"] = shaping_uid
         body = definition_text + "\n" + _render_state_sections(
             meta, [], [], [], None)
-        _backup(paths["run"])
-        _atomic_write(paths["run"], body, args.worktree)
-    st = load_state(args.worktree, require_active=True)
+        _backup(run_path)
+        _atomic_write(run_path, body, args.worktree)
+    st = load_state(args.worktree, require_active=True, path=run_path)
     print("activated {} revision r1 — current_phase: {}, next: {}".format(
-        paths["run"], st["current_phase"] or "(no graph)", st["next"] or "-"),
+        run_path, st["current_phase"] or "(no graph)", st["next"] or "-"),
         file=out)
     return 0
 
@@ -1801,7 +1875,8 @@ def _run_activate(args, out, err):
 def _run_rebase(args, out, err):
     paths = _worktree_paths(args.worktree)
     with _Locked(paths["lock"]):
-        st = load_state(args.worktree, require_active=True)
+        st = load_state(args.worktree, require_active=True,
+                        run=getattr(args, "run", None))
         old_revision = st["revision"]
         definition_text = st["definition_text"]
         nodes, edges, _reg = contract_graph(definition_text)
@@ -1849,22 +1924,23 @@ def _run_rebase(args, out, err):
         # revision no longer matches the current one.
         body = definition_text + "\n" + _render_state_sections(
             meta, st["core"], st["open"], st["evidence"], st["current_phase"])
-        _backup(paths["run"])
-        _atomic_write(paths["run"], body, args.worktree)
+        _backup(st["path"])
+        _atomic_write(st["path"], body, args.worktree)
     print("rebased to r{} — {} evidence record(s) reserved (retained, not "
           "counted)".format(rev_n, len(st["evidence"])), file=out)
     return 0
 
 
-def _run_status(args, out, err):
-    st = load_state(args.worktree)
-    assert st is not None  # require_exists=True rejects the missing run above
+def _status_payload(worktree, st):
+    """The ONE status shape — `run status` prints it, `run list` folds it."""
     shaping_rel, shaping_uid, shaping_path = _bound_shaping(
-        args.worktree, st["definition_text"], st["meta"])
+        worktree, st["definition_text"], st["meta"])
     if st["active"]:
         _validate_active_hashes(st, shaping_path)
-    payload = {
+    title_m = re.match(r"^#\s*Run:\s*(.+)$", st["definition_text"], re.M)
+    return {
         "format": RUN_FORMAT,
+        "title": title_m.group(1).strip() if title_m else "",
         "revision": st["revision"],
         "status": "active" if st["active"] else "draft",
         "current_phase": st["current_phase"],
@@ -1882,7 +1958,34 @@ def _run_status(args, out, err):
                      "sha256": st["shaping_hash"]} if shaping_rel else None),
         "todos": todo_projection(st),
     }
-    print(json.dumps(payload, ensure_ascii=False), file=out)
+
+
+def _run_status(args, out, err):
+    st = load_state(args.worktree, run=getattr(args, "run", None))
+    assert st is not None  # require_exists=True rejects the missing run above
+    print(json.dumps(_status_payload(args.worktree, st), ensure_ascii=False),
+          file=out)
+    return 0
+
+
+def _run_list(args, out, err):
+    """Every contract in .riel/runs/ — the enumeration parallel tracks need.
+
+    A contract that cannot be read is reported WITH its error, never skipped:
+    a silent omission would let the gate believe the work is finished.
+    """
+    rows = []
+    for slug, path in run_files(args.worktree):
+        rel = os.path.relpath(path, args.worktree)
+        try:
+            st = load_state(args.worktree, path=path)
+            payload = _status_payload(args.worktree, st)
+        except EngineError as exc:
+            rows.append({"slug": slug, "run": rel, "error": str(exc)})
+            continue
+        rows.append(dict(payload, slug=slug, run=rel))
+    print(json.dumps({"format": RUN_FORMAT, "contracts": rows},
+                     ensure_ascii=False), file=out)
     return 0
 
 
@@ -1894,7 +1997,8 @@ def _run_slice(args, out, err):
     in the parent and the child never reads the parent's shaping file.
     """
     paths = _worktree_paths(args.worktree)
-    st = load_state(args.worktree, require_active=True)
+    st = load_state(args.worktree, require_active=True,
+                    run=getattr(args, "run", None))
     definition = st["definition_text"]
     by_id = {pid: (title, body) for pid, title, body in phase_blocks(definition)}
     if not by_id:
@@ -2063,7 +2167,8 @@ def cmd_note(args, out, err):
         raise EngineError("one note, one kind: gate evidence OR core OR "
                           "open/close — not a mix")
     with _Locked(paths["lock"]):
-        st = load_state(args.worktree, require_active=True)
+        st = load_state(args.worktree, require_active=True,
+                        run=getattr(args, "run", None))
         _rel, _sid, shaping_path = _bound_shaping(
             args.worktree, st["definition_text"], st["meta"])
         _validate_active_hashes(st, shaping_path)
@@ -2102,9 +2207,9 @@ def cmd_note(args, out, err):
         meta = dict(st["meta"])
         body = st["definition_text"] + "\n" + _render_state_sections(
             meta, core, open_qs, evidence, st["current_phase"])
-        _backup(paths["run"])
-        _atomic_write(paths["run"], body, args.worktree)
-    st2 = load_state(args.worktree, require_active=True)
+        _backup(st["path"])
+        _atomic_write(st["path"], body, args.worktree)
+    st2 = load_state(args.worktree, require_active=True, path=st["path"])
     print("noted {} — revision {} | phase {} | next: {} | claims {}/{} "
           "covered | gates passed: {} | done: {}".format(
               what, st2["revision"], st2["current_phase"] or "-",
@@ -2197,7 +2302,7 @@ def todo_projection(st):
 
 def cmd_todo(args, out, err):
     """The session-checklist mirror as JSON — the same projection `status` embeds."""
-    st = load_state(args.worktree)
+    st = load_state(args.worktree, run=getattr(args, "run", None))
     assert st is not None  # require_exists=True rejects the missing run above
     print(json.dumps(todo_projection(st), ensure_ascii=False), file=out)
     return 0
@@ -2206,8 +2311,8 @@ def cmd_todo(args, out, err):
 # ------------------------------------------------------------- project ----
 # A project is an ORDERING of shapings, not another execution engine: each node
 # is one shaping (one question), each shaping runs once and delivers one PR.
-# Progress is DERIVED from the runs' own evidence — the live run plus the
-# archived ones in .riel/runs/. Nothing here writes state.
+# Progress is DERIVED from the contracts' own evidence — every one of them,
+# live or finished, all in .riel/runs/. Nothing here writes state.
 
 PROJECT_FORMAT = "riel-project/v1"
 PROJECT_MARKER = "<!-- {} -->".format(PROJECT_FORMAT)
@@ -2301,35 +2406,37 @@ def project_derive(worktree, text):
     nodes, edges, bindings, issues, warnings = parse_project(text, worktree)
     if issues:
         return None, issues, warnings
-    paths = _worktree_paths(worktree)
     preds = {nid: set() for nid in nodes}
     for u, _lbl, v in edges:
         if u in preds and v in preds and u != v:
             preds[v].add(u)
-    live, live_rel = None, ""
-    if os.path.isfile(paths["run"]):
+    # Every contract lives in .riel/runs/ and is executed IN PLACE. Match it to
+    # a node by its BOUND shaping, not by filename: the author names the run.
+    # A done contract is the node's proof; otherwise the active one shows.
+    by_shaping = {}
+    for _slug, path in run_files(worktree):
         try:
-            live = load_state(worktree)
-            live_rel, _uid, _p = _bound_shaping(
-                worktree, live["definition_text"], live["meta"])
+            st = load_state(worktree, path=path)
+            rel, uid, _p = _bound_shaping(
+                worktree, st["definition_text"], st["meta"])
         except EngineError:
-            live, live_rel = None, ""
+            continue
+        for key in (rel, uid):
+            if not key:
+                continue
+            prev = by_shaping.get(key)
+            if prev is None or (st["done"] and not prev[0]["done"]):
+                by_shaping[key] = (st, os.path.relpath(path, worktree))
     order = _project_order(nodes, edges)
     rows, done_ids = {}, set()
     for nid in order:
         entry = bindings.get(nid)
         if entry is None:
             continue
-        archived = os.path.join(paths["runs"], entry["slug"] + ".md")
-        proof, proof_rel = None, ""
-        if os.path.isfile(archived):
-            try:
-                proof = load_state(worktree, path=archived)
-                proof_rel = os.path.relpath(archived, worktree)
-            except EngineError:
-                proof = None
+        hit = by_shaping.get(entry["rel"]) or by_shaping.get(entry["id"])
+        proof, proof_rel = hit if hit else (None, "")
         is_done = bool(proof and proof["done"])
-        is_live = bool(live_rel) and live_rel == entry["rel"]
+        is_live = bool(proof and proof["active"] and not is_done)
         if is_done:
             status = "done"
             done_ids.add(nid)
@@ -2342,9 +2449,8 @@ def project_derive(worktree, text):
         rows[nid] = {
             "shaping": entry["rel"], "id": entry["id"], "slug": entry["slug"],
             "question": entry["question"], "status": status,
-            "run": proof_rel or (os.path.relpath(paths["run"], worktree)
-                                 if is_live else ""),
-            "revision": (proof or live or {}).get("revision") if (is_done or is_live) else None,
+            "run": proof_rel,
+            "revision": proof.get("revision") if proof else None,
         }
     nxt = next((nid for nid in order
                 if rows.get(nid, {}).get("status") == "pending"), None)
@@ -2497,39 +2603,6 @@ def cmd_clean(args, out, err):
     return 0
 
 
-def _run_archive(args, out, err):
-    """Move the active run to .riel/runs/<slug>.md — the project's per-shaping proof.
-
-    Never pruned: project status derives each shaping's progress from these
-    files, so deleting one would silently reopen a finished track.
-    """
-    paths = _worktree_paths(args.worktree)
-    with _Locked(paths["lock"]):
-        st = load_state(args.worktree, require_active=True)
-        rel, _uid, _spath = _bound_shaping(args.worktree, st["definition_text"], st["meta"])
-        if rel:
-            slug = os.path.basename(rel)[:-3]
-        else:
-            m = re.match(r"^#\s*Run:\s*(.+)$", st["definition_text"], re.M)
-            slug = slugify(m.group(1) if m else "run")
-        target = os.path.join(paths["runs"], slug + ".md")
-        rel_target = os.path.relpath(target, args.worktree)
-        if os.path.exists(target):
-            raise EngineError(
-                "{} already exists — one shaping archives one run; rename the "
-                "old file or keep working the live run".format(rel_target))
-        text = st["text"]
-        _atomic_write(target, text, args.worktree)
-        if _read_file(target) != text:
-            os.unlink(target)
-            raise EngineError("archive verification failed — the run was left in place")
-        os.unlink(paths["run"])
-    suffix = "" if st["done"] else " (run is NOT done — its shaping stays pending)"
-    print("archived .riel/run.md -> {}{}".format(rel_target, suffix), file=out)
-    return 0
-
-
-# -------------------------------------------------------------- check ----
 
 def _dense_report(path):
     try:
@@ -2740,7 +2813,7 @@ def build_parser(out=None, err=None):
     shn.set_defaults(fn=cmd_shape, cmd2="new")
     sh.set_defaults(fn=cmd_shape, cmd2="validate", path=None)
 
-    r = sub.add_parser("run", help="work with .riel/run.md (riel-run/v1)")
+    r = sub.add_parser("run", help="work with .riel/runs/<slug>.md (riel-run/v1)")
     rsub = r.add_subparsers(dest="cmd2", required=True)
     rn = rsub.add_parser(
         "new", help="render the run template (stdout; an editor is the "
@@ -2751,25 +2824,29 @@ def build_parser(out=None, err=None):
     rn.add_argument("--template-dir", action="append", default=None)
     rn.add_argument("--strict", action="store_true")
     rn.set_defaults(fn=cmd_run, cmd2="new")
-    rv = rsub.add_parser("validate", help="validate the draft or active run")
+    rv = rsub.add_parser("validate", help="validate a draft or active contract")
     rv.add_argument("file", nargs="?", default=None)
+    rv.add_argument("--run", default=None, help="contract slug in .riel/runs/")
     rv.set_defaults(fn=cmd_run, cmd2="validate")
     ra = rsub.add_parser(
         "activate", help="freeze the definition, compute the hashes, open r1")
+    ra.add_argument("--run", default=None, help="contract slug in .riel/runs/")
     ra.set_defaults(fn=cmd_run, cmd2="activate")
     rb = rsub.add_parser(
         "rebase", help="re-freeze hashes after a definition/shaping edit; "
                        "reserves old evidence")
+    rb.add_argument("--run", default=None, help="contract slug in .riel/runs/")
     rb.set_defaults(fn=cmd_run, cmd2="rebase")
+    rl = rsub.add_parser("list", help="every contract in .riel/runs/ (JSON)")
+    rl.set_defaults(fn=cmd_run, cmd2="list")
     rs = rsub.add_parser("status", help="concise JSON state + derivation")
+    rs.add_argument("--run", default=None, help="contract slug in .riel/runs/")
     rs.set_defaults(fn=cmd_run, cmd2="status")
     rsl = rsub.add_parser("slice", help="emit a self-validating phase packet")
     rsl.add_argument("phase", help="phase node id (e.g. F1)")
     rsl.add_argument("--output", "-o", default=None)
+    rsl.add_argument("--run", default=None, help="contract slug in .riel/runs/")
     rsl.set_defaults(fn=cmd_run, cmd2="slice")
-    rar = rsub.add_parser(
-        "archive", help="move the run to .riel/runs/<slug>.md (never pruned)")
-    rar.set_defaults(fn=cmd_run, cmd2="archive")
 
     pj = sub.add_parser(
         "project", help="the ordering of shapings (.riel/project.md)")
@@ -2802,6 +2879,7 @@ def build_parser(out=None, err=None):
     n.set_defaults(fn=cmd_note)
 
     t = sub.add_parser("todo", help="the session-todo mirror (JSON)")
+    t.add_argument("--run", default=None, help="contract slug in .riel/runs/")
     t.set_defaults(fn=cmd_todo)
 
     cl = sub.add_parser(

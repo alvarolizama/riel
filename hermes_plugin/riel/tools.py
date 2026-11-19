@@ -20,7 +20,7 @@ seven doors, no compatibility shims):
   * `riel_guide` — the prose (no engine call);
   * `riel_project` — new | validate | status, the ordering of shapings;
   * `riel_shape` — new | validate, one question's evidence;
-  * `riel_run`   — new | validate | activate | rebase | status | slice | archive;
+  * `riel_run`   — new | validate | activate | rebase | status | list | slice;
     activation and every later mutation also refresh the session's checks;
   * `riel_note`  — run-state writes, gates included (the engine executes the
     gate's command and records the evidence E#; a caller never passes an
@@ -71,7 +71,7 @@ ENGINE_MISSING_HINT = "reinstall the plugin: hermes plugins update riel"
 
 PROJECT_VERBS = ("new", "validate", "status")
 SHAPE_VERBS = ("new", "validate")
-RUN_VERBS = ("new", "validate", "activate", "rebase", "status", "slice", "archive")
+RUN_VERBS = ("new", "validate", "activate", "rebase", "status", "list", "slice")
 MAX_PARAMS = 24
 
 
@@ -291,17 +291,16 @@ def riel_shape(args: dict, **kwargs) -> str:
 
 # ------------------------------------------------------------------- run ----
 def riel_run(args: dict, **kwargs) -> str:
-    """The run — ONE door for the contract (`.riel/run.md`).
+    """The run — ONE door for a contract in `.riel/runs/<slug>.md`.
 
-    `new` PRINTS the draft template — the agent writes `.riel/run.md` itself,
-    then `validate` (the strict riel-run/v1 rules, hashing definition+shaping; the
-    file is optional, the worktree's run is the default) and `activate`
-    (freezes the definition, computes the hashes, opens r1 — no file argument: it
-    always answers for the worktree's run). `rebase` re-freezes the hashes
-    after a definition/shaping edit, `status` answers the state as ONE JSON object,
-    `slice` extracts one phase (`phase` required) as a child packet, `archive`
-    moves the finished run to `.riel/runs/<slug>.md` so the next shaping can
-    activate (the project derives its progress from those files).
+    `new` PRINTS the draft template — the agent saves it under `.riel/runs/`
+    itself, then `validate` (the strict riel-run/v1 rules, hashing
+    definition+shaping) and `activate` (freezes the definition, computes the
+    hashes, opens r1). `rebase` re-freezes the hashes after a definition/shaping
+    edit, `status` answers one contract's state as ONE JSON object,
+    `list` enumerates every contract with its state, `slice` extracts one phase
+    (`phase` required) as a child packet. Contracts are executed IN PLACE at
+    `.riel/runs/<slug>.md`; several may be active at once, and `run` selects one.
     """
     verb = _verb_args(args, RUN_VERBS, "riel_run")
     if verb not in RUN_VERBS:
@@ -330,8 +329,11 @@ def riel_run(args: dict, **kwargs) -> str:
         target = str(args.get("file") or "").strip()
         if target:
             argv.append(os.path.expanduser(target))
-    # activate / rebase / status take no file: they answer for the
-    # worktree's own .riel/run.md, always.
+    # Every verb but `new` acts on a contract in .riel/runs/. With one
+    # matching contract the selector is optional; with several it is required.
+    selector = str(args.get("run") or "").strip()
+    if selector and verb != "new":
+        argv += ["--run", selector]
     return _dump(_run(argv, args, kwargs, tool="riel_run", verb=verb))
 
 

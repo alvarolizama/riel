@@ -153,7 +153,7 @@ class GuardTest(unittest.TestCase):
                 sys.modules.pop(name, None)
 
     def run_path(self):
-        return Path(self.tmp) / ".riel" / "run.md"
+        return Path(self.tmp) / ".riel" / "runs" / "run.md"
 
     def test_tools_off_refuses_without_running_the_engine(self):
         self.live["tools"] = False

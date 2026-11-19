@@ -3,19 +3,25 @@
 This document specifies the Contract: the artifact a run executes. The format
 tag is `riel-run/v1`; the engine version that implements it is riel 3.0.0. Any
 future incompatible change bumps the tag (and this spec gets a new version
-section). There is **no converter** and no legacy machinery: `.riel/run.md` is the only
+section). There is **no converter** and no legacy machinery: `.riel/runs/<slug>.md` is the only
 state file, so any other file in `.riel/` is simply invisible to the engine.
 
 ## Role and location
 
 A **Contract** is the operational artifact: the exact Definition of what will
 be done, the State of what is being done, and the Evidence of what was done.
-A **run** is the execution of that Contract, and `.riel/run.md` is the ONE file
+A **run** is the execution of that Contract, and `.riel/runs/<slug>.md` is the file
 that holds both, inside the worktree's `.riel/` directory. "Plan" is not a term
 of this model. It executes ONE shaping from `.riel/shapings/` (Spec 2), optionally
-ordered by `.riel/project.md` (Spec 9), and when finished it is archived to
-`.riel/runs/<slug>.md`. The run replaces riel v1's contract + ledger pair: the
-Definition, State and Evidence live in the same file, separated by activation.
+ordered by `.riel/project.md` (Spec 9).
+
+The contract is **executed in place**: authored at `.riel/runs/<slug>.md` and never
+moved. There is no live file and no archive transition — `done` is derived from
+evidence, so a location would carry no information. SEVERAL contracts may be active
+at once in one worktree (parallel tracks); every verb takes `run=<slug>` and resolves
+the only match when it is omitted, refusing and naming the candidates when several
+match. `run list` enumerates them. The run replaces riel v1's contract + ledger pair:
+the Definition, State and Evidence live in the same file, separated by activation.
 
 ## File anatomy
 
@@ -272,12 +278,13 @@ limit.
   copy-paste is the writing path. `shape new` mints the shaping's uid.
 - `project [FILE]` / `project status` — the ordering of shapings and its
   derived progress (Spec 9).
-- `run archive` — move the active run to `.riel/runs/<slug>.md`, byte-verified,
-  refusing to overwrite an existing archive. Never pruned.
+- `run list` — every contract in `.riel/runs/` with its status object, slug and
+  path. A contract that cannot be read is reported WITH its error, never skipped:
+  a silent omission would let the gate believe the work is finished.
 - `todo` — JSON mirror: goal, phases with nested steps and statuses, next,
   claims, open questions.
 - `clean [--archive]` — remove EVERY entry inside `.riel/` (run, project,
-  shapings, archived runs, backups, any other file); only the lock file stays.
+  shapings, contracts, backups, any other file); only the lock file stays.
   `--archive` first copies the tree to `~/.hermes/riel/archive/<worktree>/<ts>/`
   and verifies every sha256. Without it there is no backup and no way back.
 - `check FILE [--mermaid]` — dense-register markers + graph digest (+mmdc)
@@ -292,9 +299,10 @@ limit.
 - A cross-process exclusive flock is held around the ENTIRE note / activate
   / rebase transaction; readers take no lock and rely on the atomic rename,
   so a reader never sees an empty or partial state file.
-- Churn backups are flat (`run-<stamp>.bak.md` inside `.riel/`) and pruned to
-  the last 3 — no unbounded accumulation. Archived runs (`.riel/runs/`) and a
-  clean archive are NEVER pruned: they are evidence, not churn.
+- Churn backups are flat (`<slug>-<stamp>.bak.md` next to the contract) and pruned
+  to the last 3 — no unbounded accumulation. They are NOT contracts: the resolver
+  skips them. Contracts (`.riel/runs/*.md`) and a clean archive are NEVER pruned:
+  they are evidence, not churn.
 - Every error is clean text on the error sink, never a traceback; every
   output goes to explicit sinks (`run_verb(argv, worktree, out, err)`),
   never to process-global stdout/stderr.

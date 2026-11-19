@@ -3,6 +3,37 @@
 Notable changes to Riel. Version numbers refer to `hermes_plugin/riel/plugin.yaml`;
 packaged guides carry their own versions.
 
+## Unreleased
+
+### Changed
+- **Contracts are executed in place.** `.riel/run.md` is gone: a contract is
+  authored at `.riel/runs/<slug>.md` and stays there, live and finished alike.
+  `done` is derived from evidence, so encoding it as a location carried no
+  information and forced a move when the work finished.
+- **Several contracts may be active at once in one worktree** — parallel tracks
+  no longer need separate worktrees. Every run verb and `note` accept
+  `run=<slug>`; with one match it is optional, with several the verb REFUSES and
+  names them rather than guessing which contract it is writing.
+- `project status` matches a node to its contract by the contract's `### Shaping`
+  declaration (path or uid), not by filename, and reads one code path instead of
+  the old live-vs-archived split.
+- The gate aggregates across active contracts: it holds the turn while ANY of
+  them owes evidence, and names the pending slugs. The prompt section lists every
+  active contract with its cursor and pending counts, one line each.
+- The desktop chip shows `pending/active` and its dialog LISTS the contracts;
+  picking one renders its markdown. `GET /run` returns the listing, and
+  `GET /run?slug=` returns one contract.
+
+### Added
+- `run list` — every contract with its status object, slug and path. A contract
+  that cannot be read is reported WITH its error, never skipped.
+- `run` selector on `riel_run` (validate/activate/rebase/status/slice) and on
+  `riel_note`; `title` in the status object.
+
+### Removed
+- `run archive` — there is nothing to move. Contracts are never pruned.
+- The fixed `.riel/run.md` path and every `paths["run"]` resolution.
+
 ## 3.0.0
 
 ### Added
@@ -61,7 +92,7 @@ packaged guides carry their own versions.
 - The operational artifact is a **Contract** with three named parts: the
   **Definition** (exactly what will be done, authored and frozen), the **State**
   (what is being done) and the **Evidence** (what was done). A run is the
-  execution of a Contract; `.riel/run.md` holds it. The word "plan" is gone from
+  execution of a Contract; `.riel/runs/<slug>.md` holds it. The word "plan" is gone from
   the model, the identifiers (`DEFINITION_TITLES`, `_split_definition`,
   `_check_definition`, `definition_sha256`) and every guide and spec.
 - Metadata's Definition hash is `definition_sha256` and is REQUIRED on an active
@@ -110,7 +141,7 @@ copy.
 ## 2.0.0
 
 ### Changed
-- Replaced separate contract and ledger state with `.riel/run.md`: one immutable
+- Replaced separate contract and ledger state with `.riel/runs/<slug>.md`: one immutable
   Plan, revision-bound State and typed Evidence.
 - Shaping stays separate as `.riel/shaping.md`, versioned `riel-shaping/v1`,
   and its referenced Findings are frozen into run slices.

@@ -25,6 +25,18 @@ package loads it by path.
 
 NOTE_PARAMS = (
     {
+        # A SELECTOR, not a state entry: which contract in .riel/runs/ this
+        # note writes. With several active contracts it is required.
+        "name": "run",
+        "flag": "--run",
+        "kind": "str",
+        "section": None,
+        "help": (
+            "Contract slug in .riel/runs/ this note writes "
+            "(default: the only active contract; several require it)."
+        ),
+    },
+    {
         "name": "gate",
         "flag": "--gate",
         "kind": "str",

@@ -5,7 +5,7 @@ version: 2.1.0
 ---
 # delegate — One run, several workers
 
-The parent owns `.riel/run.md` and is its only writer. Children receive `run
+The parent owns `.riel/runs/<slug>.md` and is its only writer. Children receive `run
 slices`: immutable packets carrying the global sections (Objective, Why,
 Constraints, Deliverable, DO NOT) plus ONE `### F#: <title>` block copied
 verbatim — its steps, its `#### Claims`, its `#### Gates`, its

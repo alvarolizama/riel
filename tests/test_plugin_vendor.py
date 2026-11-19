@@ -189,7 +189,7 @@ class VersionContractTest(unittest.TestCase):
     def test_the_major_bump_is_declared_in_the_manifest_description(self):
         """A clean break is not a silent one: the description names the model."""
         description = _manifest_field("description") or ""
-        self.assertIn("run.md", description)
+        self.assertIn("runs/<slug>.md", description)
 
 
 class WiringTest(unittest.TestCase):
@@ -267,8 +267,8 @@ class HandlerTest(unittest.TestCase):
         payload = self.payload(self.tools.riel_run, {"verb": "new", "worktree": self.tmp})
         self.assertTrue(payload["passed"], payload)
         self.assertIn("# Run:", payload["stdout"])
-        self.assertFalse((Path(self.tmp) / ".riel" / "run.md").exists(),
-                         "the tool returns the draft; the agent writes .riel/run.md itself")
+        self.assertFalse((Path(self.tmp) / ".riel" / "runs").exists(),
+                         "the tool returns the draft; the agent writes .riel/runs/<slug>.md itself")
 
     def test_note_executes_a_gate_and_records_the_evidence(self):
         """gates + command → the ENGINE runs it, records E# and closes the claims."""
@@ -348,7 +348,7 @@ class HandlerTest(unittest.TestCase):
         payload = self.payload(self.tools.riel_clean, {"worktree": self.tmp})
         self.assertEqual(payload["tool"], "riel_clean")
         self.assertNotIn("verb", payload, "clean takes no verb — the envelope says the tool")
-        self.assertFalse((Path(self.tmp) / ".riel" / "run.md").exists())
+        self.assertFalse((Path(self.tmp) / ".riel" / "runs").exists())
         self.assertEqual(list((Path(self.tmp) / ".riel").glob("*.bak.md")), [],
                          "archiving is opt-in: the default leaves no backup")
 
@@ -453,7 +453,7 @@ class EngineIntegrationTest(unittest.TestCase):
         payload = self.payload(self.tools.riel_run, {"verb": "new", "worktree": self.tmp})
         self.assertTrue(payload["passed"], payload)
         self.assertIn("riel-run/v1", payload["stdout"])
-        self.assertFalse((Path(self.tmp) / ".riel" / "run.md").exists())
+        self.assertFalse((Path(self.tmp) / ".riel" / "runs").exists())
 
     def test_shape_new_renders_the_shaping_template(self):
         payload = self.payload(self.tools.riel_shape,
@@ -468,13 +468,13 @@ class EngineIntegrationTest(unittest.TestCase):
         self.assertFalse(payload["passed"])
         for key in ("tool", "worktree", "exit_code", "passed", "stdout", "stderr"):
             self.assertIn(key, payload)
-        self.assertIn("run state", payload["stderr"])
+        self.assertIn("contract in .riel/runs/", payload["stderr"])
 
     def test_note_without_a_run_state_refuses(self):
         payload = self.payload(self.tools.riel_note,
                                {"core": "probe — fact", "worktree": self.tmp})
         self.assertFalse(payload["passed"])
-        self.assertIn("run state", payload["stderr"])
+        self.assertIn("contract in .riel/runs/", payload["stderr"])
 
     def test_clean_archive_flag_reaches_the_engine(self):
         stub.seed(self.tmp, goal="old task")
@@ -488,8 +488,8 @@ class EngineIntegrationTest(unittest.TestCase):
                                {"archive": True, "worktree": self.tmp})
         self.assertTrue(payload["passed"], payload)
         self.assertIn("archived", payload["stdout"])
-        self.assertFalse((Path(self.tmp) / ".riel" / "run.md").exists())
-        self.assertTrue(list(Path(self.tmp).glob(".hermes/riel/archive/**/run.md")),
+        self.assertFalse((Path(self.tmp) / ".riel" / "runs").exists())
+        self.assertTrue(list(Path(self.tmp).glob(".hermes/riel/archive/**/*.md")),
                         "the archive lands OUTSIDE .riel/, which clean wipes")
 
     def test_check_answers_the_engine_json_through_the_envelope(self):

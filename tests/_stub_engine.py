@@ -15,7 +15,7 @@ The contract (v2 — run/shaping model, clean break):
     worktree by parameter (no chdir);
   * verbs: `project new|validate|status`, `shape new|validate`,
     `run new|validate|activate|rebase|`
-    `status|slice|archive`, `note`, `todo`, `clean`, `check`;
+    `status|list|slice`, `note`, `todo`, `clean`, `check`;
   * `clean` wipes ALL of .riel/ (archiving opt-in, outside .riel/);
   * `run new` PRINTS the draft (never writes); `run status` answers ONE JSON
     OBJECT;
@@ -24,7 +24,7 @@ The contract (v2 — run/shaping model, clean break):
     note surface is `engine/params.py` (the real, packaged declaration — the
     stub does not re-declare it).
 
-The stub keeps the run state inside `.riel/run.md` behind a ` ```riel-state `
+The stub keeps each contract in `.riel/runs/<slug>.md` behind a ` ```riel-state `
 fence — a real file the gate, the dashboard and the chip can all see.
 
 `install(tools)` points a freshly-loaded `tools` module at this file (as the
@@ -58,8 +58,30 @@ _FENCE_OPEN = "```riel-state"
 _FENCE_CLOSE = "```"
 
 
-def _state_path(worktree):
-    return os.path.join(worktree, ".riel", "run.md")
+def _runs_dir(worktree):
+    return os.path.join(worktree, ".riel", "runs")
+
+
+def _contract_slugs(worktree):
+    folder = _runs_dir(worktree)
+    if not os.path.isdir(folder):
+        return []
+    return sorted(f[:-3] for f in os.listdir(folder)
+                  if f.endswith(".md") and not f.endswith(".bak.md"))
+
+
+def _state_path(worktree, slug=None):
+    """One contract in .riel/runs/ — executed in place, no live file."""
+    if slug:
+        return os.path.join(_runs_dir(worktree), str(slug) + ".md")
+    slugs = _contract_slugs(worktree)
+    if len(slugs) == 1:
+        return os.path.join(_runs_dir(worktree), slugs[0] + ".md")
+    return ""
+
+
+def _selector(argv):
+    return argv[argv.index("--run") + 1] if "--run" in argv else None
 
 
 def _shaping_path(worktree):
@@ -76,9 +98,9 @@ def _empty_state():
             "claims": [], "gates": [], "evidence": [], "open": []}
 
 
-def _load_state(worktree):
-    path = _state_path(worktree)
-    if not os.path.isfile(path):
+def _load_state(worktree, slug=None):
+    path = _state_path(worktree, slug)
+    if not path or not os.path.isfile(path):
         return None
     with open(path, encoding="utf-8") as fh:
         text = fh.read()
@@ -92,13 +114,14 @@ def _load_state(worktree):
     return state if isinstance(state, dict) else None
 
 
-def _save_state(worktree, state):
-    os.makedirs(os.path.join(worktree, ".riel"), exist_ok=True)
+def _save_state(worktree, state, slug=None):
+    os.makedirs(_runs_dir(worktree), exist_ok=True)
     body = (
         "# Run: {}\n\n```riel-state\n{}\n```\n".format(
             state.get("goal") or "draft", json.dumps(state, ensure_ascii=False, indent=1))
     )
-    with open(_state_path(worktree), "w", encoding="utf-8") as fh:
+    with open(_state_path(worktree, slug or state.get("slug") or "run"),
+              "w", encoding="utf-8") as fh:
         fh.write(body)
 
 
@@ -319,51 +342,51 @@ def run_verb(argv, worktree=None, out=None, err=None):
                 "#### Deliverable\n- {{{{phase_deliverable}}}}\n\n"
                 "## Deliverable\n{{{{deliverable}}}}\n\n## DO NOT\n- {{{{do_not}}}}\n".format(template))
             return 0  # PRINTS the draft — never writes
+        sel = _selector(argv)
         if sub == "validate":
-            state = _load_state(worktree)
+            state = _load_state(worktree, sel)
             if state is None:
-                err.write("run is not valid: no readable .riel/run.md\n")
+                err.write("run is not valid: no readable contract in .riel/runs/\n")
                 return 1
             out.write("run ok\n")
             return 0
         if sub == "activate":
-            state = _load_state(worktree)
+            state = _load_state(worktree, sel)
             if state is None:
-                err.write("nothing to activate: no .riel/run.md\n")
+                err.write("nothing to activate: no contract in .riel/runs/\n")
                 return 1
             state["active"] = True
-            _save_state(worktree, state)
+            _save_state(worktree, state, sel)
             out.write("run activated\n")
             return 0
         if sub == "rebase":
-            state = _load_state(worktree)
+            state = _load_state(worktree, sel)
             if state is None:
-                err.write("nothing to rebase: no .riel/run.md\n")
+                err.write("nothing to rebase: no contract in .riel/runs/\n")
                 return 1
             state["rebased"] = True
-            _save_state(worktree, state)
+            _save_state(worktree, state, sel)
             out.write("run rebased\n")
             return 0
         if sub == "status":
-            if os.path.isfile(_state_path(worktree)) and _load_state(worktree) is None:
+            path = _state_path(worktree, sel)
+            if path and os.path.isfile(path) and _load_state(worktree, sel) is None:
                 err.write("the run state is unreadable\n")
                 return 1
-            out.write(json.dumps(_load_state(worktree) or _empty_state()) + "\n")
+            out.write(json.dumps(_load_state(worktree, sel) or _empty_state()) + "\n")
             return 0
-        if sub == "archive":
-            state = _load_state(worktree)
-            if state is None or not state.get("active"):
-                err.write("nothing to archive: no active .riel/run.md\n")
-                return 1
-            runs = os.path.join(worktree, ".riel", "runs")
-            os.makedirs(runs, exist_ok=True)
-            slug = state.get("shaping_slug") or "run"
-            target = os.path.join(runs, slug + ".md")
-            if os.path.exists(target):
-                err.write("{} already exists\n".format(target))
-                return 2
-            os.replace(_state_path(worktree), target)
-            out.write("archived .riel/run.md -> .riel/runs/{}.md\n".format(slug))
+        if sub == "list":
+            rows = []
+            for slug in _contract_slugs(worktree):
+                state = _load_state(worktree, slug)
+                if state is None:
+                    rows.append({"slug": slug,
+                                 "run": ".riel/runs/{}.md".format(slug),
+                                 "error": "the run state is unreadable"})
+                    continue
+                rows.append(dict(state, slug=slug,
+                                 run=".riel/runs/{}.md".format(slug)))
+            out.write(json.dumps({"contracts": rows}) + "\n")
             return 0
         if sub == "slice":
             if len(argv) < 3:

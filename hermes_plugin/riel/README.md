@@ -1,7 +1,7 @@
 # Riel — Hermes plugin (v3.0.0)
 
 The package **is** the product: the prose, the engine, the tools, the gate and the
-desktop chip. State lives in `.riel/run.md` (`riel-run/v1`), one question's evidence in
+desktop chip. State lives in `.riel/runs/<slug>.md` (`riel-run/v1`), one question's evidence in
 `.riel/shapings/<slug>.md` (`riel-shaping/v3`), and the order of several questions in
 `.riel/project.md` (`riel-project/v1`). There is no converter and no compatibility with
 the v1 tools (`riel_plan`, `riel_seam`).
@@ -18,7 +18,7 @@ Seven typed tools over one engine (stdlib, no dependencies, shipped inside the p
 | `riel_guide` | the prose, by topic and section |
 | `riel_project` | `new` · `validate` · `status` |
 | `riel_shape` | `new` · `validate` |
-| `riel_run` | `new` · `validate` · `activate` · `rebase` · `status` · `slice` · `archive` |
+| `riel_run` | `new` · `validate` · `activate` · `rebase` · `status` · `list` · `slice` |
 | `riel_note` | the only writer of State; runs gates |
 | `riel_clean` | wipe `.riel/`, optionally archiving first |
 | `riel_check` | dense-register and graph checks on any Markdown |
@@ -73,11 +73,12 @@ never reaches the model, and a repeatable parameter reaches it as ONE array (`cl
   editing a sibling shaping does not.
 - **A project orders shapings.** `.riel/project.md` with `## Objective` and `## Graph`
   (`S#` nodes that are shapings; a linear list or a branching mermaid flowchart).
-  `project status` DERIVES progress: a node is done when the run archived at
-  `.riel/runs/<slug>.md` is done. It writes no state and has no gates of its own.
-- **`run archive`** moves the finished run to `.riel/runs/<slug>.md` (byte-verified, never
-  pruned) and frees the worktree for the next shaping. One worktree holds ONE active run:
-  parallel tracks go in separate worktrees, one PR each.
+  `project status` DERIVES progress: a node is done when a contract bound to that
+  shaping is done. It writes no state and has no gates of its own.
+- **Executed in place.** A contract is authored at `.riel/runs/<slug>.md` and stays
+  there — no live file, no archive move, never pruned. SEVERAL may be active at once
+  (parallel tracks in one worktree); `run=<slug>` selects one and is required when
+  several match. `run list` enumerates them all with their state.
 - **`riel_note` runs gates.** `gates: ["G1"], command: "<real command>", covering:
   "<scope>", claims: ["P1"]` — the ENGINE executes the command, captures the real exit
   code and records `E#` evidence. Nobody passes an exit code.
@@ -148,7 +149,7 @@ a failed load does not poison the loader: the next call retries it.
 
 `desktop/plugin.js` registers one chip in `statusBar.right`, and it is the only one:
 
-- **It exists only when there is a run**: an active or draft `.riel/run.md` in the
+- **It exists only when there is a run**: an active or draft `.riel/runs/<slug>.md` in the
   focused worktree. With no run, the status bar shows nothing.
 - **At rest**: `Riel` — the run exists; one click opens a modal with the run rendered
   (Streamdown draws the sections and the mermaid graph).
@@ -180,7 +181,7 @@ as the tools) and returns `{"action": "continue", …}`.
 
 | Limit | How |
 |---|---|
-| Opt-in per worktree | no `.riel/run.md` above the edited files → no nudge; an old state file alone does NOT enable the gate |
+| Opt-in per worktree | no `.riel/runs/<slug>.md` above the edited files → no nudge; an old state file alone does NOT enable the gate |
 | Active runs only | a run written but not `activate`d is the agent's business, not the gate's |
 | One nudge per turn | `plugins.entries.riel.settings.gate_attempts` (int, 0–10, default 1); above that Hermes caps at `agent.max_verify_nudges` (3) |
 | Never blocks | any failure (no run, no engine, unreadable state) returns `None` and the turn closes |

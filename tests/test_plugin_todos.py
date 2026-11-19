@@ -87,8 +87,8 @@ class RunOwnsTodoTest(unittest.TestCase):
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "hermes_plugin", "riel", "engine", "run.py"))
         tools._ENGINE["module"] = None
-        os.makedirs(os.path.join(self.tmp, ".riel"))
-        with open(os.path.join(self.tmp, ".riel", "run.md"), "w", encoding="utf-8") as fh:
+        os.makedirs(os.path.join(self.tmp, ".riel", "runs"))
+        with open(os.path.join(self.tmp, ".riel", "runs", "engine.md"), "w", encoding="utf-8") as fh:
             fh.write(LIST_RUN)
         self.store = FakeStore()
 

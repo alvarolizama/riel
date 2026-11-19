@@ -1,7 +1,7 @@
 # Spec 1 — Hermes projections
 
 A session todo and the Riel status document are projections. Neither stores
-accepted execution state: `.riel/run.md` does. They may be regenerated freely
+accepted execution state: `.riel/runs/<slug>.md` does. They may be regenerated freely
 from the run and never re-imported as evidence.
 
 ## Session checklist
@@ -18,7 +18,7 @@ belonging to the user or another tool are preserved.
 
 The write goes to the live TodoStore of the session id on the tool call, never
 a process-global store. If that session exposes no store, the envelope reports
-`todo_sync: {status: "unavailable", reason: …}`; `.riel/run.md` remains the
+`todo_sync: {status: "unavailable", reason: …}`; `.riel/runs/<slug>.md` remains the
 source of truth. A checklist checkbox never writes back to the run.
 
 `riel_run(verb="status")` includes the same `todos` array, so a resumed session

@@ -108,15 +108,15 @@ class TempDirTest(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def activate(self, text=LIST_RUN, shaping=None, slug="engine"):
-        os.makedirs(os.path.join(self.tmp, ".riel"), exist_ok=True)
+        os.makedirs(os.path.dirname(self.run_path()), exist_ok=True)
         if shaping:
             os.makedirs(os.path.dirname(self.shaping_path(slug)), exist_ok=True)
             with open(self.shaping_path(slug), "w", encoding="utf-8") as fh:
                 fh.write(shaping)
             text = self.declared(text, slug)
-        with open(self.run_path(), "w", encoding="utf-8") as fh:
+        with open(self.run_path(slug), "w", encoding="utf-8") as fh:
             fh.write(text)
-        rc, out, err = run("run", "activate", cwd=self.tmp)
+        rc, out, err = run("run", "activate", "--run", slug, cwd=self.tmp)
         self.assertEqual(rc, 0, err)
         return rc, out, err
 
@@ -126,8 +126,9 @@ class TempDirTest(unittest.TestCase):
             "- riel → repo\n",
             "- riel → repo\n\n### Shaping\n- shaping: .riel/shapings/{}.md\n".format(slug))
 
-    def run_path(self):
-        return os.path.join(self.tmp, ".riel", "run.md")
+    def run_path(self, slug="engine"):
+        """Contracts are executed IN PLACE at .riel/runs/<slug>.md."""
+        return os.path.join(self.tmp, ".riel", "runs", slug + ".md")
 
     def shaping_path(self, slug="engine"):
         return os.path.join(self.tmp, ".riel", "shapings", slug + ".md")
@@ -135,13 +136,14 @@ class TempDirTest(unittest.TestCase):
     def loose_shaping_path(self):
         return os.path.join(self.tmp, ".riel", "shaping.md")
 
-    def status(self):
-        rc, out, err = run("run", "status", cwd=self.tmp)
+    def status(self, slug=None):
+        argv = ["run", "status"] + (["--run", slug] if slug else [])
+        rc, out, err = run(*argv, cwd=self.tmp)
         self.assertEqual(rc, 0, err)
         return json.loads(out)
 
-    def read_run(self):
-        with open(self.run_path(), encoding="utf-8") as fh:
+    def read_run(self, slug="engine"):
+        with open(self.run_path(slug), encoding="utf-8") as fh:
             return fh.read()
 
 
@@ -155,7 +157,7 @@ class FormatTests(TempDirTest):
 
     def test_old_state_files_are_invisible(self):
         """No legacy machinery: without run.md there is simply no run state."""
-        os.makedirs(os.path.join(self.tmp, ".riel"))
+        os.makedirs(os.path.join(self.tmp, ".riel", "runs"))
         for name in ("contract.md", "ledger.md"):
             with open(os.path.join(self.tmp, ".riel", name), "w") as fh:
                 fh.write("# old state\n")
@@ -171,7 +173,7 @@ class FormatTests(TempDirTest):
         self.assertIn("riel-run/v1", err)
 
     def test_draft_and_active_validate(self):
-        os.makedirs(os.path.join(self.tmp, ".riel"))
+        os.makedirs(os.path.join(self.tmp, ".riel", "runs"))
         with open(self.run_path(), "w", encoding="utf-8") as fh:
             fh.write(LIST_RUN)
         rc, out, _err = run("run", "validate", cwd=self.tmp)
@@ -190,7 +192,7 @@ class FormatTests(TempDirTest):
         body = self.read_run()
         self.assertIn("definition_sha256", body)
         self.assertIn("## Evidence", body)
-        rc, out, err = run("run", "activate", cwd=self.tmp)
+        rc, out, err = run("run", "activate", "--run", "engine", cwd=self.tmp)
         self.assertEqual(rc, 2, out + err)
         self.assertIn("already active", out + err)
 
@@ -199,7 +201,7 @@ class FormatTests(TempDirTest):
             "- P2: evidence closes gates — anchor: §F2#2",
             "<!-- - P2: commented out — anchor: §F2#2 -->\n"
             "- P2: evidence closes gates — anchor: §F2#2")
-        os.makedirs(os.path.join(self.tmp, ".riel"))
+        os.makedirs(os.path.join(self.tmp, ".riel", "runs"))
         with open(self.run_path(), "w", encoding="utf-8") as fh:
             fh.write(text)
         rc, out, _err = run("run", "validate", cwd=self.tmp)
@@ -480,7 +482,7 @@ class PhasesTests(TempDirTest):
         return mod
 
     def validate(self, text):
-        os.makedirs(os.path.join(self.tmp, ".riel"), exist_ok=True)
+        os.makedirs(os.path.join(self.tmp, ".riel", "runs"), exist_ok=True)
         with open(self.run_path(), "w", encoding="utf-8") as fh:
             fh.write(text)
         return run("run", "validate", cwd=self.tmp)
@@ -636,7 +638,7 @@ class PlaceholderGuardTests(TempDirTest):
     """A Definition still carrying {{…}} is a skeleton, not a Contract."""
 
     def write(self, text):
-        os.makedirs(os.path.join(self.tmp, ".riel"), exist_ok=True)
+        os.makedirs(os.path.join(self.tmp, ".riel", "runs"), exist_ok=True)
         with open(self.run_path(), "w", encoding="utf-8") as fh:
             fh.write(text)
 
@@ -671,6 +673,90 @@ class PlaceholderGuardTests(TempDirTest):
         rc, out, err = run("run", "validate", cwd=self.tmp)
         self.assertEqual(rc, 0, out + err)
         self.assertNotIn("unfilled placeholder", out)
+
+
+class ParallelTracksTests(TempDirTest):
+    """Several active contracts in ONE worktree, executed in place."""
+
+    def track(self, slug, finish=False):
+        self.activate(text=LIST_RUN,
+                      shaping=shaping_text(name=slug, uid=slug_uid(slug)), slug=slug)
+        if finish:
+            for gate, claim in (("G1", "P1"), ("G2", "P2")):
+                rc, _o, err = run("note", "--run", slug, "--gate", gate,
+                                  "--claim", claim, "--command", "true",
+                                  "--covering", claim, cwd=self.tmp)
+                self.assertEqual(rc, 0, err)
+
+    def test_tracks_progress_independently(self):
+        self.track("a", finish=True)
+        self.track("b")
+        self.assertTrue(self.status("a")["done"])
+        self.assertFalse(self.status("b")["done"])
+        self.assertEqual(self.status("b")["current_phase"], "F1")
+
+    def test_list_enumerates_every_contract(self):
+        self.track("a"); self.track("b")
+        rc, out, err = run("run", "list", cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        rows = json.loads(out)["contracts"]
+        self.assertEqual([r["slug"] for r in rows], ["a", "b"])
+        self.assertTrue(all(r["status"] == "active" for r in rows))
+        self.assertEqual(rows[0]["run"], ".riel/runs/a.md")
+
+    def test_list_reports_an_unreadable_contract_instead_of_skipping_it(self):
+        self.track("a")
+        with open(self.run_path("broken"), "w", encoding="utf-8") as fh:
+            fh.write("# Run: broken\n\nno marker here\n")
+        rc, out, err = run("run", "list", cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        rows = {r["slug"]: r for r in json.loads(out)["contracts"]}
+        self.assertIn("broken", rows, "a silent omission would look like finished work")
+        self.assertIn("error", rows["broken"])
+
+    def test_backups_are_not_contracts(self):
+        self.track("a")
+        backups = [f for f in os.listdir(os.path.join(self.tmp, ".riel", "runs"))
+                   if f.endswith(".bak.md")]
+        self.assertTrue(backups, "activation backs the draft up next to the contract")
+        rc, out, err = run("run", "list", cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        self.assertEqual([r["slug"] for r in json.loads(out)["contracts"]], ["a"])
+        rc, _o, err = run("run", "status", cwd=self.tmp)
+        self.assertEqual(rc, 0, "one contract plus its backup is still unambiguous: " + err)
+
+    def test_a_selector_accepts_a_path(self):
+        self.track("a"); self.track("b")
+        rc, out, err = run("run", "status", "--run", ".riel/runs/b.md", cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(json.loads(out)["shaping"]["path"], ".riel/shapings/b.md")
+
+    def test_an_unknown_selector_names_what_exists(self):
+        self.track("a")
+        rc, _o, err = run("run", "status", "--run", "nope", cwd=self.tmp)
+        self.assertEqual(rc, 2)
+        self.assertIn("no contract named 'nope'", err)
+        self.assertIn("have: a", err)
+
+    def test_note_needs_a_selector_when_several_are_active(self):
+        self.track("a"); self.track("b")
+        rc, _o, err = run("note", "--gate", "G1", "--claim", "P1",
+                          "--command", "true", "--covering", "x", cwd=self.tmp)
+        self.assertEqual(rc, 2)
+        self.assertIn("pass run=<slug>", err)
+        rc, _o, err = run("note", "--run", "b", "--gate", "G1", "--claim", "P1",
+                          "--command", "true", "--covering", "x", cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(self.status("b")["gates"]["G1"], "passed")
+        self.assertEqual(self.status("a")["gates"]["G1"], "pending",
+                         "evidence for one track never advances another")
+
+    def test_a_contract_is_never_moved(self):
+        self.track("a", finish=True)
+        self.assertTrue(os.path.isfile(self.run_path("a")))
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, ".riel", "run.md")))
+        rc, _o, err = run("run", "archive", cwd=self.tmp)
+        self.assertEqual(rc, 2, "archive is gone: there is nothing to move")
 
 
 class FailedEvidenceTests(TempDirTest):
@@ -795,7 +881,7 @@ The cut is `## Metadata`.
 
     def test_activate_requires_shaping_when_anchored(self):
         text = self.anchored(LIST_RUN)
-        os.makedirs(os.path.join(self.tmp, ".riel"), exist_ok=True)
+        os.makedirs(os.path.join(self.tmp, ".riel", "runs"), exist_ok=True)
         with open(self.run_path(), "w", encoding="utf-8") as fh:
             fh.write(text)
         rc, out, err = run("run", "activate", cwd=self.tmp)
@@ -896,7 +982,7 @@ class ShapingBindingTests(TempDirTest):
         return path
 
     def write_run(self, text):
-        os.makedirs(os.path.join(self.tmp, ".riel"), exist_ok=True)
+        os.makedirs(os.path.join(self.tmp, ".riel", "runs"), exist_ok=True)
         with open(self.run_path(), "w", encoding="utf-8") as fh:
             fh.write(text)
 
@@ -1027,7 +1113,7 @@ class ShapingBindingTests(TempDirTest):
 
     # ------------------------------------------------------- migration ----
     def loose(self, text):
-        os.makedirs(os.path.join(self.tmp, ".riel"), exist_ok=True)
+        os.makedirs(os.path.join(self.tmp, ".riel", "runs"), exist_ok=True)
         with open(self.loose_shaping_path(), "w", encoding="utf-8") as fh:
             fh.write(text)
 
@@ -1203,7 +1289,7 @@ class ShapingV3Tests(TempDirTest):
         text = LIST_RUN.replace(
             "- P1: the parser reads the phase outline — anchor: §F1#1",
             "- P1: the parser reads the list register — anchor: shaping:F1")
-        os.makedirs(os.path.join(self.tmp, ".riel"), exist_ok=True)
+        os.makedirs(os.path.join(self.tmp, ".riel", "runs"), exist_ok=True)
         with open(self.run_path(), "w", encoding="utf-8") as fh:
             fh.write(self.declared(text))
         rc, out, err = run("run", "activate", cwd=self.tmp)
@@ -1226,7 +1312,7 @@ class CleanAndArchiveTests(TempDirTest):
         extra = {
             "project.md": "# Project: demo\n",
             "shapings/sibling.md": shaping_text(name="sibling", uid="shp_0000000f"),
-            "runs/old.md": "# Run: an older proof\n",
+            "runs/old.txt": "# an older proof, not a contract\n",
             "shaping.md": shaping_text(name="loose", uid="shp_0000000e"),
             "contract.md": "# old state\n",
             "ledger.md": "# old state\n",
@@ -1297,38 +1383,42 @@ class CleanAndArchiveTests(TempDirTest):
         self.assertEqual(st["status"], "active", "the restore brings the run back")
         self.assertEqual(st["shaping"]["id"], "shp_0a1b2c3d")
 
-    def test_run_archive_moves_the_run_and_keeps_the_binding(self):
+    def test_a_contract_stays_in_place_and_keeps_the_binding(self):
+        """Executed where it was authored: there is no live file and no move."""
         self.activate(text=self.declared(LIST_RUN), shaping=shaping_text())
-        rc, out, err = run("run", "archive", cwd=self.tmp)
-        self.assertEqual(rc, 0, out + err)
-        self.assertFalse(os.path.exists(self.run_path()))
-        archived = os.path.join(self.tmp, ".riel", "runs", "engine.md")
-        self.assertTrue(os.path.isfile(archived))
-        with open(archived, encoding="utf-8") as fh:
+        path = self.run_path()
+        self.assertTrue(os.path.isfile(path))
+        self.assertEqual(os.path.basename(os.path.dirname(path)), "runs")
+        with open(path, encoding="utf-8") as fh:
             body = fh.read()
         self.assertIn("- shaping_id: shp_0a1b2c3d", body)
         self.assertIn("- shaping: .riel/shapings/engine.md", body)
-        self.assertIn("NOT done", out, "an unfinished run archives as pending proof")
+        self.assertFalse(self.status()["done"], "an unfinished contract is not proof yet")
 
-    def test_run_archive_refuses_to_overwrite_the_same_shaping(self):
-        self.activate(text=self.declared(LIST_RUN), shaping=shaping_text())
-        rc, _out, err = run("run", "archive", cwd=self.tmp)
+    def test_two_tracks_coexist_in_one_worktree(self):
+        """Parallel tracks: several active contracts, one selector to pick."""
+        self.activate(text=LIST_RUN, shaping=shaping_text(name="a", uid=slug_uid("a")), slug="a")
+        self.activate(text=LIST_RUN, shaping=shaping_text(name="b", uid=slug_uid("b")), slug="b")
+        rc, out, err = run("run", "list", cwd=self.tmp)
         self.assertEqual(rc, 0, err)
-        self.activate(text=self.declared(LIST_RUN), shaping=shaping_text())
-        rc, out, err = run("run", "archive", cwd=self.tmp)
-        self.assertEqual(rc, 2)
-        self.assertIn("already exists", out + err)
-        self.assertTrue(os.path.exists(self.run_path()), "the live run is untouched")
+        contracts = json.loads(out)["contracts"]
+        self.assertEqual([c["slug"] for c in contracts], ["a", "b"])
+        self.assertTrue(all(c["status"] == "active" for c in contracts))
+        rc, _out, err = run("run", "status", cwd=self.tmp)
+        self.assertEqual(rc, 2, "two active contracts need a selector")
+        self.assertIn("pass run=<slug>", err)
+        rc, out, err = run("run", "status", "--run", "b", cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(json.loads(out)["shaping"]["path"], ".riel/shapings/b.md")
 
-    def test_archived_runs_are_never_pruned(self):
+    def test_contracts_are_never_pruned(self):
         for i in range(5):
             slug = "track{}".format(i)
             self.activate(text=LIST_RUN,
                           shaping=shaping_text(name=slug, uid="shp_%08x" % i),
                           slug=slug)
-            rc, _out, err = run("run", "archive", cwd=self.tmp)
-            self.assertEqual(rc, 0, err)
-        runs = sorted(os.listdir(os.path.join(self.tmp, ".riel", "runs")))
+        runs = sorted(f for f in os.listdir(os.path.join(self.tmp, ".riel", "runs"))
+                      if not f.endswith(".bak.md"))
         self.assertEqual(runs, ["track{}.md".format(i) for i in range(5)],
                          "a project derives its progress from these — none may be pruned")
 
@@ -1350,7 +1440,7 @@ class ProjectTests(TempDirTest):
         return path
 
     def project(self, body=None):
-        os.makedirs(os.path.join(self.tmp, ".riel"), exist_ok=True)
+        os.makedirs(os.path.join(self.tmp, ".riel", "runs"), exist_ok=True)
         text = body if body is not None else (
             "# Project: demo\n\n<!-- riel-project/v1 -->\n\n"
             "## Objective\nShip the demo in two tracks.\n\n"
@@ -1361,17 +1451,16 @@ class ProjectTests(TempDirTest):
         return path
 
     def run_for(self, slug, finish=False):
+        """Author a contract for one shaping — it stays in runs/, no move."""
         self.activate(text=LIST_RUN, shaping=shaping_text(
             name=slug, uid=slug_uid(slug)), slug=slug)
         if finish:
             for gate, claim in (("G1", "P1"), ("G2", "P2")):
-                rc, _out, err = run("note", "--gate", gate, "--claim", claim,
-                                    "--command", "true", "--covering", claim,
-                                    cwd=self.tmp)
+                rc, _out, err = run("note", "--run", slug, "--gate", gate,
+                                    "--claim", claim, "--command", "true",
+                                    "--covering", claim, cwd=self.tmp)
                 self.assertEqual(rc, 0, err)
-            self.assertTrue(self.status()["done"])
-        rc, out, err = run("run", "archive", cwd=self.tmp)
-        self.assertEqual(rc, 0, out + err)
+            self.assertTrue(self.status(slug)["done"])
 
     def pstatus(self):
         rc, out, err = run("project", "status", cwd=self.tmp)
@@ -1458,13 +1547,14 @@ class ProjectTests(TempDirTest):
         self.assertEqual(st["next"], "S2")
         self.assertFalse(st["done"])
 
-    def test_an_unfinished_archive_does_not_complete_the_node(self):
+    def test_an_unfinished_contract_is_active_not_done(self):
         self.shaping("a"); self.shaping("b")
         self.project()
         self.run_for("a", finish=False)
         st = self.pstatus()
-        self.assertEqual(st["nodes"]["S1"]["status"], "pending")
-        self.assertEqual(st["next"], "S1")
+        self.assertEqual(st["nodes"]["S1"]["status"], "active")
+        self.assertEqual(st["nodes"]["S1"]["run"], ".riel/runs/a.md")
+        self.assertFalse(st["done"])
 
     def test_the_live_run_makes_its_shaping_active(self):
         self.shaping("a"); self.shaping("b")
@@ -1473,7 +1563,7 @@ class ProjectTests(TempDirTest):
             name="a", uid=slug_uid("a")), slug="a")
         st = self.pstatus()
         self.assertEqual(st["nodes"]["S1"]["status"], "active")
-        self.assertEqual(st["nodes"]["S1"]["run"], ".riel/run.md")
+        self.assertEqual(st["nodes"]["S1"]["run"], ".riel/runs/a.md")
 
     def test_deleting_the_proof_reopens_the_node(self):
         self.shaping("a"); self.shaping("b")

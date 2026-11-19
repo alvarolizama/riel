@@ -8,7 +8,7 @@ symlinks, root skills, PATH entries or generated build copies.
 ## Product and operational state
 
 Only the package is installed. Task-local `.riel/` remains in its worktree and
-outside the package. The engine exclusively writes `.riel/run.md` and new
+outside the package. The engine exclusively writes `.riel/runs/<slug>.md` and new
 `.riel/shapings/<slug>.md`, optionally ordered by `.riel/project.md`. The
 previous contract and ledger files are unsupported as
 inputs or state, without migration; state resolution cannot silently fall back
@@ -54,7 +54,7 @@ verified lines. It is bounded, switchable and scoped away from inactive runs.
 The desktop client reads a single `/api/plugins/riel/run` resource with the
 confined Markdown and structured state it needs. The worktree URL parameter is
 The worktree parameter is not arbitrary filesystem authority: the target remains
-exactly `.riel/run.md` without symlink escapes. Responses are bounded and carry
+exactly `.riel/runs/<slug>.md` without symlink escapes. Responses are bounded and carry
 explicit missing/error states. Synchronous routes let FastAPI use its threadpool
 instead of blocking the event loop. The chip does not reimplement validation.
 

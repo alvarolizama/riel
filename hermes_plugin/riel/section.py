@@ -51,7 +51,7 @@ settings = _load.settings()
 PLUGIN_DIR = Path(__file__).resolve().parent
 
 HEAD = (
-    "Riel — steering for long tasks: externalized state (.riel/run.md: the contract's definition, "
+    "Riel — steering for long tasks: externalized state (.riel/runs/<slug>.md: the contract's definition, "
     "execution state, typed gate evidence) fed by the shaping. The prose ships "
     "with this plugin and is read through the riel_guide tool."
 )
@@ -80,7 +80,7 @@ def _door_line() -> str:
         "Door: everything Riel does is a tool — riel_guide, riel_project "
         "(new|validate|status), riel_shape "
         "(new|validate), riel_run (new|validate|activate|rebase|status|"
-        "slice|archive), riel_note, riel_clean, riel_check (deferred: "
+        "list|slice), riel_note, riel_clean, riel_check (deferred: "
         "reach them with tool_search \"riel\"). No command line, no PATH."
     )
 
@@ -102,57 +102,57 @@ def _ledger_status():
     return _LEDGER_STATUS
 
 
-def _read_run(worktree: str) -> Optional[dict]:
-    """`ledger_status.read_run`; `None` when unavailable."""
+def _read_runs(worktree: str) -> Optional[dict]:
+    """`ledger_status.read_runs`; `None` when unavailable."""
     module = _ledger_status()
     if module is None:
         return None
     try:
-        return module.read_run(worktree)
+        return module.read_runs(worktree)
     except Exception:
         return None
 
 
 def state_line(worktree: str) -> str:
-    """One line about the worktree's active run, or `""` (no run, slow)."""
+    """One line per ACTIVE contract, or `""` (no contracts, slow).
+
+    Several tracks may be active at once: the model needs each one's cursor
+    and what it still owes, with the slug that selects it.
+    """
     worktree = str(worktree or "").strip()
     if not worktree:
         return ""
-    report = _read_run(worktree)
+    report = _read_runs(worktree)
     if not isinstance(report, dict) or not report.get("present") or report.get("error"):
         return ""
-    status = report.get("status")
-    if not isinstance(status, dict) or status.get("error"):
+    rows = [c for c in (report.get("contracts") or [])
+            if isinstance(c, dict) and c.get("active")]
+    lines: List[str] = []
+    for contract in rows:
+        status = contract.get("status")
+        if not isinstance(status, dict) or status.get("error"):
+            continue
+        parts: List[str] = ["`{}`".format(contract.get("slug") or "?")]
+        goal = _cap(status.get("title") or status.get("goal"), STATE_FIELD_CHARS)
+        if goal:
+            parts.append(f"Goal: {goal}")
+        nxt = _cap(status.get("next"), STATE_FIELD_CHARS)
+        if nxt:
+            parts.append(f"Next: {nxt}")
+        evidence = status.get("evidence")
+        total = evidence.get("total", 0) if isinstance(evidence, dict) else 0
+        parts.append("{} claims ({} open) · {} gates ({} pending) · {} evidence".format(
+            len(status.get("claims") or {}), contract.get("pending_claims", 0),
+            len(status.get("gates") or {}), contract.get("pending_gates", 0),
+            total))
+        if contract.get("done"):
+            parts.append("done")
+        lines.append("Worktree state — " + " · ".join(parts))
+    if not lines:
         return ""
-    parts: List[str] = []
-    goal = _cap(status.get("goal"), STATE_FIELD_CHARS)
-    if not goal:
-        # the engine's status does not carry the goal: the run's own H1 does
-        first = (report.get("markdown") or "").lstrip().splitlines()
-        if first and first[0].startswith("# Run:"):
-            goal = _cap(first[0][len("# Run:"):].strip(), STATE_FIELD_CHARS)
-    if goal:
-        parts.append(f"Goal: {goal}")
-    nxt = _cap(status.get("next"), STATE_FIELD_CHARS)
-    if nxt:
-        parts.append(f"Next: {nxt}")
-    parts.append(
-        "{} claims · {} gates · {} evidence".format(
-            len(status.get("claims") or {}),
-            len(status.get("gates") or {}),
-            (status.get("evidence") or {}).get("total", 0)
-            if isinstance(status.get("evidence"), dict)
-            else len(status.get("evidence") or []) if isinstance(status.get("evidence"), list)
-            else status.get("evidence") or 0,
-        )
-    )
-    if not (status.get("status") == "active" or status.get("active") is True):
-        parts.append("no activado")
-    return (
-        "Worktree state — "
-        + " · ".join(parts)
-        + "  →  re-read with riel_run status, write with riel_note."
-    )
+    return "\n".join(lines) + (
+        "\n  →  re-read with riel_run status, write with riel_note "
+        "(pass run=<slug> when several contracts are active).")
 
 
 def render(session_info: Any = None) -> str:

@@ -58,9 +58,9 @@ Questions are never copied into the project: they live in each shaping's
 
 Progress is computed from the runs' own evidence, never declared:
 
-- a node is `done` when `.riel/runs/<slug>.md` exists and that run's `done` is
-  true — its claims covered and its gates passed, computed by the run engine;
-- a node is `active` when the live `.riel/run.md` binds that shaping;
+- a node is `done` when a contract in `.riel/runs/` binds that shaping and its
+  `done` is true — its claims covered and its gates passed, computed by the engine;
+- a node is `active` when a contract binds that shaping and is activated but not done;
 - a node is `blocked` when any predecessor is not done;
 - otherwise it is `pending`.
 
@@ -69,8 +69,9 @@ the first `pending` node in that order. The project's `done` is true when every
 node is done. Each node reports its shaping path, uid, slug, question, status,
 the run file that proves it and that run's revision.
 
-Deleting an archived run reopens its node: the proof was the file, not a
-checkpoint. Archived runs are never pruned.
+Contracts are matched to nodes by their `### Shaping` declaration (path or uid),
+NOT by filename: the author names the contract freely. Deleting a contract reopens
+its node — the proof was the file, not a checkpoint. Contracts are never pruned.
 
 ## Verbs
 
@@ -85,8 +86,7 @@ checkpoint. Archived runs are never pruned.
 
     project.md   orders the shapings
     shapings/    one question each, with sourced findings
-    run.md       executes ONE shaping, records typed evidence
-    runs/        the archived proof a project derives its progress from
+    runs/        one contract per track, executed in place, holding its evidence
 
-`run archive` is the transition from the third to the fourth. `clean` removes
-all of them (archiving opt-in), which resets the project too.
+A contract is authored in `runs/` and stays there; its evidence is what the project
+reads. `clean` removes all of them (archiving opt-in), which resets the project too.

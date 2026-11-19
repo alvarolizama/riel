@@ -73,7 +73,7 @@ class SectionTest(unittest.TestCase):
 
     def test_the_run_verbs_travel_in_the_door_line(self):
         block = self.block()
-        self.assertIn("new|validate|activate|rebase|status|slice|archive", block)
+        self.assertIn("new|validate|activate|rebase|status|list|slice", block)
         self.assertIn("riel_project (new|validate|status)", block)
         self.assertIn("riel_shape (new|validate)", block)
 
@@ -160,7 +160,7 @@ class SectionTest(unittest.TestCase):
         state = section.state_line(self.tmp)
         self.assertIn("Goal: ship the package", state)
         self.assertIn("Next: run the suite", state)
-        self.assertIn("0 claims · 0 gates · 0 evidence", state)
+        self.assertIn("0 claims (0 open) · 0 gates (0 pending) · 0 evidence", state)
 
     def test_no_run_means_no_state_line(self):
         self.assertEqual(section.state_line(self.tmp), "")
@@ -171,7 +171,7 @@ class SectionTest(unittest.TestCase):
 
     def test_the_block_carries_the_state_when_there_is_a_run(self):
         stub.seed(self.tmp, goal="ship the package")
-        self.assertIn("Worktree state — Goal: ship the package", self.render())
+        self.assertIn("Worktree state — `run` · Goal: ship the package", self.render())
 
 
 class GuideWiringTest(unittest.TestCase):

@@ -153,7 +153,7 @@ class GuideHandlerTest(unittest.TestCase):
         body = self.payload({"topic": RUN, "full": True})
         self.assertTrue(body["passed"], body)
         self.assertGreater(body["bytes"], outline["bytes"])
-        self.assertIn("run.md", body["content"])
+        self.assertIn("runs/<slug>.md", body["content"])
 
     def test_a_section_returns_just_that_slice(self):
         whole = self.payload({"topic": RUN, "full": True})

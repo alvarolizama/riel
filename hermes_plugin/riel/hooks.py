@@ -1,7 +1,7 @@
 """`pre_verify` — the Riel gate on the ACTIVE run, enforced by the runtime.
 
 Riel's rule (v2): while a run is ACTIVE in the worktree, the turn does not
-close with pending claims or gates. The run state (`.riel/run.md`) carries the
+close with pending claims or gates. The contracts (`.riel/runs/<slug>.md`) carry the
 claims and the gates; the engine's `run status` knows which ones are done.
 This hook asks the engine — IN-PROCESS, through the same safe path the tools
 use (explicit worktree, explicit sinks; never a subprocess fallback) — and if
@@ -10,8 +10,8 @@ the agent keeps going instead of closing the turn.
 
 Bounds that keep it honest:
 
-  * **Opt-in per worktree.** No active `.riel/run.md` anywhere above the
-    edited files → never nudge. A worktree with no `.riel/run.md`
+  * **Opt-in per worktree.** No contract in `.riel/runs/` anywhere above the
+    edited files → never nudge. A worktree with no `.riel/runs/` contract
     is NOT gated: the v2 gate reads the run state, nothing else.
   * **Only an ACTIVE run.** A run that exists but is not activated (draft,
     written by hand, awaiting validate) is the agent's business, not the gate's.
@@ -43,7 +43,7 @@ except ImportError:  # … and a by-path load when it did not (repo suite, dashb
     _spec.loader.exec_module(_load)
     tools = _load.sibling("riel_plugin_tools", "tools.py")
 
-RUN_PARTS = (".riel", "run.md")
+RUN_PARTS = (".riel", "runs")
 MAX_ANCESTOR_DEPTH = 12
 
 # Install defaults, filled by register(); the live value is read per call so a
@@ -77,8 +77,14 @@ def gate_attempts() -> int:
 
 
 def _has_run(directory: Path) -> bool:
+    """True when .riel/runs/ holds at least one contract (backups don't count)."""
     try:
-        return directory.joinpath(*RUN_PARTS).is_file()
+        folder = directory.joinpath(*RUN_PARTS)
+        if not folder.is_dir():
+            return False
+        return any(p.is_file() and p.suffix == ".md"
+                   and not p.name.endswith(".bak.md")
+                   for p in folder.iterdir())
     except (OSError, ValueError):
         # ValueError: a NUL byte or an unrepresentable path — never our problem.
         return False
@@ -118,7 +124,7 @@ def find_worktree(changed_paths, session_cwd=None, max_depth: int = MAX_ANCESTOR
     a tracked worktree.
 
     Both are guesses that only count when an ACTIVE RUN is actually there —
-    "no run.md" means "not a Riel task", never "use the gateway's cwd",
+    "no contract" means "not a Riel task", never "use the gateway's cwd",
     and a worktree without one is left alone. Blanks and relative
     paths are skipped for the same reason: `Path("")` is `.`, which would
     silently answer about whatever directory the process runs in.
@@ -188,13 +194,14 @@ def assess(worktree) -> dict:
     explicit worktree, explicit sinks — so a gate turn never shells out.
     """
     facts = {"present": False, "active": False, "claims": 0, "gates": 0,
-             "pending_claims": 0, "pending_gates": 0, "error": None}
+             "pending_claims": 0, "pending_gates": 0, "contracts": 0,
+             "pending_slugs": [], "error": None}
     root = _normalize(worktree)
     if root is None or not root.is_dir() or not _has_run(root):
         return facts
     facts["present"] = True
     try:
-        payload = json.loads(tools.riel_run({"verb": "status", "worktree": str(root)}))
+        payload = json.loads(tools.riel_run({"verb": "list", "worktree": str(root)}))
     except Exception as exc:
         facts["error"] = f"the gate could not read the run state: {exc}"
         return facts
@@ -202,21 +209,37 @@ def assess(worktree) -> dict:
         facts["error"] = payload["error"]
         return facts
     if payload.get("exit_code") != 0:
-        facts["error"] = (payload.get("stderr") or "").strip() or "the engine's status call failed"
+        facts["error"] = (payload.get("stderr") or "").strip() or "the engine's list call failed"
         return facts
     try:
-        state = json.loads(payload.get("stdout") or "{}")
+        listing = json.loads(payload.get("stdout") or "{}")
     except ValueError:
-        facts["error"] = "the engine's status call did not return JSON"
+        facts["error"] = "the engine's list call did not return JSON"
         return facts
-    if not isinstance(state, dict):
-        facts["error"] = "the engine's status call did not return an object"
+    contracts = listing.get("contracts") if isinstance(listing, dict) else None
+    if not isinstance(contracts, list):
+        facts["error"] = "the engine's list call did not return contracts"
         return facts
-    facts["active"] = _is_active(state)
-    facts["claims"] = len(state.get("claims") or {})
-    facts["gates"] = len(state.get("gates") or {})
-    facts["pending_claims"] = _pending(state, "claims", "covered")
-    facts["pending_gates"] = _pending(state, "gates", "passed")
+    facts["contracts"] = len(contracts)
+    # Several tracks may be active at once: the gate holds the turn while ANY
+    # of them has work without evidence. An unreadable contract is an error,
+    # never a silent "finished".
+    for state in contracts:
+        if not isinstance(state, dict):
+            continue
+        if state.get("error"):
+            facts["error"] = state["error"]
+            return facts
+        if _is_active(state):
+            facts["active"] = True
+        facts["claims"] += len(state.get("claims") or {})
+        facts["gates"] += len(state.get("gates") or {})
+        pending_claims = _pending(state, "claims", "covered")
+        pending_gates = _pending(state, "gates", "passed")
+        facts["pending_claims"] += pending_claims
+        facts["pending_gates"] += pending_gates
+        if (pending_claims or pending_gates) and _is_active(state):
+            facts["pending_slugs"].append(state.get("slug") or "?")
     return facts
 
 
@@ -234,9 +257,14 @@ def nudge_message(worktree: str, facts: dict) -> str | None:
         parts.append(f"{pending_gates} gate(s) sin evidencia")
     if pending_claims:
         parts.append(f"{pending_claims} claim(s) pendiente(s)")
+    slugs = facts.get("pending_slugs") or []
+    which = ("el run activo tiene" if len(slugs) <= 1 else
+             "los runs activos " + ", ".join("`" + s + "`" for s in slugs) + " tienen")
+    selector = "" if len(slugs) <= 1 else (
+        " Pasa `run: \"" + slugs[0] + "\"` (o el slug que toque) para elegir el contrato.")
     return (
-        f"Riel: este turno editó código dentro de `{worktree}` y el run activo tiene "
-        f"{', '.join(parts)}.\n"
+        f"Riel: este turno editó código dentro de `{worktree}` y {which} "
+        f"{', '.join(parts)}.{selector}\n"
         "Antes de cerrar: ejecuta los gates reales con "
         "`riel_note(gates: [\"G#\"], command: \"<el comando real>\", covering: "
         "\"<alcance>\", claims: [\"P#\"])` — el motor corre el comando y registra la "

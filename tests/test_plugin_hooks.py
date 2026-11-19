@@ -6,11 +6,11 @@ side dispatch (signature inspection, `invoke_hook`, the continue directive) is
 exercised separately by `hermes_plugin/probe-session-cwd.py`, which needs a
 real Hermes install.
 
-The gate reads the ACTIVE run (`.riel/run.md`) through the engine's safe
+The gate reads the ACTIVE contracts (`.riel/runs/<slug>.md`) through the engine's safe
 in-process path — the suite points `hooks.tools` at the stub engine and drives
 real gate commands (`true` / `false`) through `riel_note`. Claims and gates
 are created by the DEFINITION (`stub.seed`); the note only ever executes gates and
-records evidence. A worktree with no `.riel/run.md` is NEVER
+records evidence. A worktree with no contract in `.riel/runs/` is NEVER
 gated.
 
 Run:
@@ -89,7 +89,7 @@ class FindWorktreeTest(GateTestCase):
         self.assertIsNone(self.hooks.find_worktree([str(Path(other) / "a.py")]))
 
     def test_a_worktree_without_a_run_is_never_gated(self):
-        """An old .riel/ledger.md with no run.md is invisible to the gate."""
+        """An old .riel/ledger.md with no contract is invisible to the gate."""
         ledger = Path(self.tmp) / ".riel" / "ledger.md"
         ledger.parent.mkdir(parents=True)
         ledger.write_text("# Riel ledger\n\n## Goal\nold world\n", encoding="utf-8")
@@ -136,7 +136,7 @@ class AssessTest(GateTestCase):
         self.assertEqual(facts["pending_gates"], 0)
 
     def test_reports_whether_the_run_is_active(self):
-        run = Path(self.tmp) / ".riel" / "run.md"
+        run = Path(self.tmp) / ".riel" / "runs" / "engine.md"
         run.parent.mkdir(parents=True)
         draft = {"active": False, "goal": "g", "next": "", "phase": "",
                  "claims": [], "gates": [], "evidence": [], "open": []}
@@ -163,7 +163,7 @@ class AssessTest(GateTestCase):
 
     def test_the_engine_status_shape_is_consumed(self):
         """The REAL `run status` shape: a status word + dict registers."""
-        run = Path(self.tmp) / ".riel" / "run.md"
+        run = Path(self.tmp) / ".riel" / "runs" / "engine.md"
         run.parent.mkdir(parents=True)
 
         def fence(status, claims, gates):
@@ -184,7 +184,7 @@ class AssessTest(GateTestCase):
         self.assertFalse(self.hooks.assess(self.tmp)["active"])
 
     def test_a_corrupt_run_never_raises(self):
-        run = Path(self.tmp) / ".riel" / "run.md"
+        run = Path(self.tmp) / ".riel" / "runs" / "engine.md"
         run.parent.mkdir(parents=True)
         run.write_text("# Run\n\n```riel-state\n{not json\n```\n", encoding="utf-8")
         facts = self.hooks.assess(self.tmp)
@@ -211,7 +211,7 @@ class NudgeMessageTest(GateTestCase):
 
     def test_an_inactive_run_is_not_the_gates_business(self):
         """The gate is opt-in per ACTIVATED run: a draft is never nudged."""
-        run = Path(self.tmp) / ".riel" / "run.md"
+        run = Path(self.tmp) / ".riel" / "runs" / "engine.md"
         run.parent.mkdir(parents=True)
         draft = {"active": False, "goal": "g", "next": "", "phase": "",
                  "claims": [{"id": "P1", "text": "", "done": False}],

@@ -1,14 +1,17 @@
 // Riel — desktop half: ONE statusbar chip for the focused session's worktree.
 //
-//   Riel ● riel_note   — only when an ACTIVE RUN exists (.riel/run.md). Click:
-//                        modal with the run rendered as Markdown (Streamdown
-//                        draws the contract, the sections and the mermaid graph —
-//                        the chat pipeline). While the turn runs: a pulsing
-//                        dot plus the live tool name. No run: no chip at all.
+//   Riel ● 2/3         — only when a contract exists in .riel/runs/. The
+//                        counter is `pending/active`: how many active tracks
+//                        still owe evidence, over how many are active. Click:
+//                        a modal LISTS the contracts with their state; picking
+//                        one renders it as Markdown (Streamdown draws the
+//                        contract, the sections and the mermaid graph — the
+//                        chat pipeline). While the turn runs: a pulsing dot
+//                        plus the live tool name. No contract: no chip at all.
 //
-// The run's detailed state is NOT in the bar: the model re-reads it with
-// `riel_run status` and the gate enforces it — the bar only says whether this
-// worktree has a run and whether it is being executed.
+// Several tracks may be active at once in one worktree. The detailed state is
+// NOT in the bar: the model re-reads it with `riel_run status` and the gate
+// enforces it — the bar only says how much work still owes evidence.
 //
 // Style: native statusbar vocabulary — Capitalized label in
 // text-(--ui-text-tertiary) at 0.6875rem, color ONLY on the live mark
@@ -42,22 +45,58 @@ function truncate(text, max) {
 
 /* ------------------------------------------------------------------ run ---- */
 
+function ContractRow({ contract, onPick }) {
+  const pending = (contract.pending_claims || 0) + (contract.pending_gates || 0)
+  const badge = contract.done
+    ? 'done'
+    : (pending ? `${contract.pending_gates || 0} gates · ${contract.pending_claims || 0} claims` : 'al día')
+  return jsx('button', {
+    type: 'button',
+    onClick: () => onPick(contract.slug),
+    className: 'w-full rounded-md border border-(--ui-stroke-secondary) px-3 py-2 text-left hover:bg-(--chrome-action-hover) transition-colors',
+    children: jsxs('span', {
+      className: 'flex items-center justify-between gap-3',
+      children: [
+        jsxs('span', {
+          className: 'flex flex-col',
+          children: [
+            jsx('span', { className: 'text-sm font-medium', children: contract.slug }),
+            jsx('span', {
+              className: 'text-xs text-(--ui-text-tertiary)',
+              children: [contract.revision || 'draft', contract.current_phase, contract.next]
+                .filter(Boolean).join(' · ')
+            })
+          ]
+        }),
+        jsx('span', {
+          className: pending && !contract.done ? 'text-xs text-primary' : 'text-xs text-(--ui-text-tertiary)',
+          children: badge
+        })
+      ]
+    })
+  })
+}
+
 function RunDialog({ open, onOpenChange, ctx, cwd, sessionId }) {
-  const [run, setRun] = useState(null)
+  const [listing, setListing] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [slug, setSlug] = useState(null)
+  const [detail, setDetail] = useState(null)
 
   useEffect(() => {
     if (!open) return
     let alive = true
     setLoading(true)
-    setRun(null)
+    setListing(null)
+    setSlug(null)
+    setDetail(null)
     const load = async () => {
       try {
         const data = await ctx.rest('/run?worktree=' + encodeURIComponent(cwd || ''))
-        if (alive) setRun(data)
+        if (alive) setListing(data)
       } catch (error) {
         if (alive) {
-          setRun({ present: false, error: String((error && error.message) || error) })
+          setListing({ present: false, error: String((error && error.message) || error) })
         }
       } finally {
         if (alive) setLoading(false)
@@ -69,24 +108,72 @@ function RunDialog({ open, onOpenChange, ctx, cwd, sessionId }) {
     }
   }, [open, cwd, sessionId, ctx])
 
+  useEffect(() => {
+    if (!open || !slug) return
+    let alive = true
+    setDetail(null)
+    const load = async () => {
+      try {
+        const data = await ctx.rest('/run?worktree=' + encodeURIComponent(cwd || '')
+          + '&slug=' + encodeURIComponent(slug))
+        if (alive) setDetail(data)
+      } catch (error) {
+        if (alive) setDetail({ present: false, error: String((error && error.message) || error) })
+      }
+    }
+    load()
+    return () => {
+      alive = false
+    }
+  }, [open, slug, cwd, ctx])
+
+  const markdown = (text) => jsx('div', {
+    className: 'max-h-[70vh] overflow-y-auto rounded-md border border-(--ui-stroke-secondary) bg-(--ui-background) p-4 text-sm',
+    children: jsx(Streamdown, {
+      // mermaid is OFF by default in Streamdown (context default `void 0` —
+      // the fence then falls through to a plain code block). Passing the
+      // options object turns the lazy diagram renderer on.
+      mermaid: {},
+      children: text
+    })
+  })
+
   const body = () => {
-    if (loading) return jsx('div', { className: 'py-8 text-center text-sm text-(--ui-text-tertiary)', children: 'Cargando run…' })
-    if (!run) return null
-    if (!run.present) {
-      return jsx('div', {
-        className: 'py-8 text-center text-sm text-(--ui-text-tertiary)',
-        children: run.error || 'Sin run activo en este worktree'
+    if (loading) return jsx('div', { className: 'py-8 text-center text-sm text-(--ui-text-tertiary)', children: 'Cargando contratos…' })
+    if (slug) {
+      if (!detail) return jsx('div', { className: 'py-8 text-center text-sm text-(--ui-text-tertiary)', children: 'Cargando contrato…' })
+      if (!detail.present) {
+        return jsx('div', { className: 'py-8 text-center text-sm text-(--ui-text-tertiary)', children: detail.error || 'Contrato no disponible' })
+      }
+      return jsxs('div', {
+        className: 'flex flex-col gap-2',
+        children: [
+          jsx('button', {
+            type: 'button',
+            onClick: () => setSlug(null),
+            className: 'self-start text-xs text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) rounded px-1.5 py-0.5',
+            children: '← todos los contratos'
+          }),
+          markdown(detail.markdown)
+        ]
       })
     }
-    return jsx('div', {
-      className: 'max-h-[70vh] overflow-y-auto rounded-md border border-(--ui-stroke-secondary) bg-(--ui-background) p-4 text-sm',
-      children: jsx(Streamdown, {
-        // mermaid is OFF by default in Streamdown (context default `void 0` —
-        // the fence then falls through to a plain code block). Passing the
-        // options object turns the lazy diagram renderer on.
-        mermaid: {},
-        children: run.markdown
+    if (!listing) return null
+    if (!listing.present) {
+      return jsx('div', {
+        className: 'py-8 text-center text-sm text-(--ui-text-tertiary)',
+        children: listing.error || 'Sin contratos en este worktree'
       })
+    }
+    return jsxs('div', {
+      className: 'flex flex-col gap-2',
+      children: [
+        jsx('div', {
+          className: 'text-xs text-(--ui-text-tertiary)',
+          children: `${listing.pending}/${listing.active} con pendientes · ${listing.total} contrato(s)`
+        }),
+        ...(listing.contracts || []).map(c => jsx(ContractRow, { key: c.slug, contract: c, onPick: setSlug }))
+      ]
     })
   }
 
@@ -99,7 +186,7 @@ function RunDialog({ open, onOpenChange, ctx, cwd, sessionId }) {
         jsx(DialogHeader, {
           key: 'head',
           children: [
-            jsx(DialogTitle, { key: 't', children: 'Riel · Run' }),
+            jsx(DialogTitle, { key: 't', children: slug ? `Riel · ${slug}` : 'Riel · Contratos' }),
             jsx(DialogDescription, {
               key: 'd',
               className: 'truncate text-(--ui-text-tertiary)',
@@ -113,14 +200,14 @@ function RunDialog({ open, onOpenChange, ctx, cwd, sessionId }) {
   })
 }
 
-/** The one chip: it only exists when the worktree has an active run.
+/** The one chip: it only exists when the worktree has a contract.
 
- *  - idle: `Riel` — the run exists; a click opens it.
- *  - turn running: `Riel ● <tool>` — the pulsing dot plus the live tool name.
- *  - no run: nothing at all.
+ *  - idle: `Riel 2/3` — pending/active tracks; a click lists them.
+ *  - turn running: the pulsing dot plus the live tool name.
+ *  - no contract: nothing at all.
  */
 function RunChip({ ctx, cwd, sessionId, busy, tool, revision }) {
-  const [hasRun, setHasRun] = useState(null)
+  const [counts, setCounts] = useState(null)
   const [open, setOpen] = useState(false)
 
   // Probe for the run once per worktree/session (and again whenever a tool
@@ -128,17 +215,21 @@ function RunChip({ ctx, cwd, sessionId, busy, tool, revision }) {
   // when there is something to show.
   useEffect(() => {
     let alive = true
-    setHasRun(null)
+    setCounts(null)
     if (!cwd) {
-      setHasRun(false)
+      setCounts({ present: false })
       return
     }
     const probe = async () => {
       try {
         const data = await ctx.rest('/run?worktree=' + encodeURIComponent(cwd))
-        if (alive) setHasRun(Boolean(data && data.present))
+        if (alive) {
+          setCounts(data && data.present
+            ? { present: true, pending: data.pending || 0, active: data.active || 0 }
+            : { present: false })
+        }
       } catch {
-        if (alive) setHasRun(false)
+        if (alive) setCounts({ present: false })
       }
     }
     probe()
@@ -147,10 +238,10 @@ function RunChip({ ctx, cwd, sessionId, busy, tool, revision }) {
     }
   }, [cwd, sessionId, revision, ctx])
 
-  if (!hasRun) return null
+  if (!counts || !counts.present) return null
 
   const title = () => {
-    const lines = ['Ver el run de esta tarea (contrato + estado)']
+    const lines = [`Ver los contratos de este worktree (${counts.pending}/${counts.active} con pendientes)`]
     if (busy) lines.push('Turno en curso' + (tool ? `: ${tool.name}` : ''))
     return lines.join('\n')
   }
@@ -168,6 +259,20 @@ function RunChip({ ctx, cwd, sessionId, busy, tool, revision }) {
           className: 'inline-flex items-center gap-1',
           children: [
             jsx('span', { children: 'Riel' }),
+            counts.active > 0
+              ? jsxs('span', {
+                  className: 'inline-flex items-center gap-1',
+                  children: [
+                    counts.pending > 0
+                      ? jsx('span', { className: 'text-primary', children: '●' })
+                      : null,
+                    jsx('span', {
+                      className: counts.pending > 0 ? 'text-primary' : '',
+                      children: `${counts.pending}/${counts.active}`
+                    })
+                  ]
+                })
+              : null,
             busy
               ? jsxs('span', {
                   className: 'inline-flex items-center gap-1',

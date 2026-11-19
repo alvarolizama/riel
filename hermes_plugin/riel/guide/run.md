@@ -1,12 +1,15 @@
 ---
 topic: run
-trigger: "Use when authoring and executing a contract with Riel: one .riel/run.md holds the Contract — its immutable Definition plus the engine-managed State and Evidence."
+trigger: "Use when authoring and executing a contract with Riel: one .riel/runs/<slug>.md holds the Contract — its immutable Definition plus the engine-managed State and Evidence."
 version: 1.2.0
 ---
 # run — A contract and its evidence
 
-A run is the execution of a **Contract**, and `.riel/run.md` is the file that
-holds it. The Contract has three parts:
+A run is the execution of a **Contract**, and `.riel/runs/<slug>.md` is the file
+that holds it — authored there and EXECUTED there, with no live copy and no
+archive move. Several contracts may be active at once in one worktree (parallel
+tracks); `run=<slug>` selects one, and with a single match it is optional.
+The Contract has three parts:
 
 - **Definition** — exactly what will be done. Authored by hand, frozen at
   activation, hashed.
@@ -18,27 +21,29 @@ holds it. The Contract has three parts:
 They are not peer copies: Objective, Phases and their claims are authored once
 in the Definition, and status, phase, Next and done are derived from Evidence.
 
-`.riel/run.md` is the only state file. Any other file in `.riel/` is invisible
-to the engine — there is no migration and no automatic merge of old state.
+`.riel/runs/` holds every contract. Any other file in `.riel/` is invisible to
+the engine — there is no migration and no automatic merge of old state.
 
 ## Lifecycle
 
 1. Assemble evidence first when needed (the shaping guide). When the work is
    several questions, `riel_project(verb="status")` names the next shaping.
 2. `riel_run(verb="new", template="run")` returns a draft Definition; write it to
-   `.riel/run.md`, fill every field, and declare its ONE shaping under
+   `.riel/runs/<slug>.md`, fill every field, and declare its ONE shaping under
    `### Shaping` in Context.
 3. Validate it, then `riel_run(verb="activate")`. Activation freezes the
    Contract's revision and the bound shaping, then creates empty State.
 4. Work the graph. Each `riel_note` gate call executes its command in the
    worktree and appends typed Evidence only after the process returns.
-5. Read `riel_run(verb="status")`; it returns the same nested checks it keeps
-   synchronized in the session checklist after activation and every mutation.
-   meaningful changes. Repeat until `done` is computed true by the engine.
+5. Read `riel_run(verb="status")` (pass `run=<slug>` when several contracts are
+   active); it returns the same nested checks it keeps synchronized in the
+   session checklist after activation and every mutation. Repeat until `done`
+   is computed true by the engine.
 
-When the run is done, `riel_run(verb="archive")` moves it to
-`.riel/runs/<slug>.md` so the next shaping can activate. A project derives its
-progress from those archived runs.
+The contract stays where it was authored. A project derives each shaping's
+progress from these files — a done contract is its node's proof, and deleting
+one reopens the node. `riel_run(verb="list")` enumerates every contract with its
+state, which is what the gate and the desktop chip read.
 
 Activation is explicit. Writing or validating a draft does not activate it.
 

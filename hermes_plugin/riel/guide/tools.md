@@ -25,7 +25,7 @@ call rather than diverting process-wide stdout or stderr.
 activation stay distinct. Riel explains the formats and validates them — it
 never authors a shaping or a project, and it fetches nothing.
 
-`run archive` moves the finished run to `.riel/runs/<slug>.md`, which is where
+`run list` enumerates every contract in `.riel/runs/`, which is where
 `project status` reads a shaping's proof. Those files are never pruned.
 
 ## Evidence call

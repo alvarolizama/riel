@@ -454,14 +454,14 @@ class ReadRunTest(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_absent_run_is_reported_not_invented(self):
-        report = self.status.read_run(self.tmp)
+        report = self.status.read_run(self.tmp, "run")
         self.assertFalse(report["present"])
         self.assertEqual(report["markdown"], "")
         self.assertIsNone(report["status"])
         self.assertNotIn("error", report)
 
     def test_directory_that_does_not_exist_reports_an_error(self):
-        report = self.status.read_run(str(Path(self.tmp) / "nope"))
+        report = self.status.read_run(str(Path(self.tmp) / "nope"), "run")
         self.assertFalse(report["present"])
         self.assertIn("not a directory", report["error"])
 
@@ -472,7 +472,7 @@ class ReadRunTest(unittest.TestCase):
             "gates": ["G1"], "command": "true", "covering": "all",
             "claims": ["P1"], "worktree": self.tmp}))
         self.assertEqual(payload["exit_code"], 0, payload)
-        report = self.status.read_run(self.tmp)
+        report = self.status.read_run(self.tmp, "run")
         self.assertTrue(report["present"])
         self.assertIn("# Run:", report["markdown"])
         self.assertIn("```riel-state", report["markdown"])
@@ -491,7 +491,7 @@ class ReadRunTest(unittest.TestCase):
         stub.seed(real, goal="via symlink")
         link = Path(self.tmp) / "link"
         link.symlink_to(real, target_is_directory=True)
-        report = self.status.read_run(str(link))
+        report = self.status.read_run(str(link), "run")
         self.assertTrue(report["present"])
         self.assertEqual(report["worktree"], os.path.realpath(real),
                          "the report names the resolved worktree")
@@ -500,7 +500,7 @@ class ReadRunTest(unittest.TestCase):
     def test_never_raises_on_a_junk_worktree_argument(self):
         for value in ("", "   ", "/dev/null", "\x00"):
             with self.subTest(value=value):
-                report = self.status.read_run(value)
+                report = self.status.read_run(value, "run")
                 self.assertFalse(report["present"])
                 self.assertIsInstance(report, dict)
 
@@ -550,12 +550,19 @@ class PluginApiRouteTest(unittest.TestCase):
             stub.install(tools)
             stub.seed(tmp, goal="route goal")
             client = self._client()
-            ok = client.get("/run", params={"worktree": tmp})
-            self.assertEqual(ok.status_code, 200)
-            body = ok.json()
+            listing = client.get("/run", params={"worktree": tmp})
+            self.assertEqual(listing.status_code, 200)
+            body = listing.json()
             self.assertTrue(body["present"])
-            self.assertIn("# Run:", body["markdown"])
-            self.assertEqual(body["status"]["goal"], "route goal")
+            self.assertEqual(body["total"], 1)
+            self.assertEqual(body["contracts"][0]["slug"], "run")
+            self.assertEqual(body["contracts"][0]["status"]["goal"], "route goal")
+            one = client.get("/run", params={"worktree": tmp, "slug": "run"})
+            self.assertEqual(one.status_code, 200)
+            detail = one.json()
+            self.assertTrue(detail["present"])
+            self.assertIn("# Run:", detail["markdown"])
+            self.assertEqual(detail["status"]["goal"], "route goal")
 
             missing = client.get("/run", params={"worktree": ""})
             self.assertEqual(missing.status_code, 200)

@@ -136,8 +136,8 @@ class TypedToolsTest(unittest.TestCase):
         self.assertIn("# Run:", payload["stdout"])
         self.assertEqual(payload["tool"], "riel_run")
         self.assertEqual(payload["verb"], "new")
-        self.assertFalse((Path(self.tmp) / ".riel" / "run.md").exists(),
-                         "the tool returns the draft; the agent writes .riel/run.md itself")
+        self.assertFalse((Path(self.tmp) / ".riel" / "runs").exists(),
+                         "the tool returns the draft; the agent writes .riel/runs/<slug>.md itself")
 
     def test_run_new_rejects_a_parameter_that_is_not_key_equals_value(self):
         payload = self.call("riel_run", {"verb": "new", "params": ["name"]})

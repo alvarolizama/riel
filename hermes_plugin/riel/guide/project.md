@@ -45,13 +45,13 @@ in each shaping's `## Question`, and `project status` reads them from there.
 
 ## Progress is derived, never written
 
-A node is `done` when the run archived at `.riel/runs/<slug>.md` is done — that
-file's own claims and gates, computed by the run engine. The live `.riel/run.md`
+A node is `done` when a contract bound to that shaping is done — that file's
+own claims and gates, computed by the run engine. An active `.riel/runs/<slug>.md`
 makes its shaping `active`. A node whose predecessors are not done is
 `blocked`; the rest are `pending`.
 
 `riel_project(verb="status")` returns the nodes, the dependency order, the next
-shaping to run and the project's `done`. Delete an archived run and its node
+shaping to run and the project's `done`. Delete a contract and its node
 reopens: the progress was never a declaration.
 
 ## Executing a project
@@ -59,12 +59,14 @@ reopens: the progress was never a declaration.
 One worktree holds one active run, so a project executes as a sequence:
 
 1. `project status` names the next shaping.
-2. Write `.riel/run.md` declaring that shaping under `### Shaping`.
+2. Write `.riel/runs/<slug>.md` declaring that shaping under `### Shaping`.
+   The contract is matched to its node by that binding, not by filename.
 3. `run validate`, `run activate`, work the graph, record gates with `note`.
-4. `run archive` moves the finished run to `.riel/runs/<slug>.md`.
+4. The contract stays in `.riel/runs/`; when its evidence makes it done, the
+   node is done. Several tracks may be active at once.
 5. Repeat. Parallel tracks run in separate worktrees, one PR each.
 
-Archived runs are never pruned: they are the project's proof, and deleting one
+Contracts are never pruned: they are the project's proof, and deleting one
 would silently reopen a finished track.
 
 ## Authoring outside Riel

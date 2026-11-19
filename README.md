@@ -29,8 +29,8 @@ Everything lives in one directory inside your repository:
 .riel/
   project.md            optional — the order of the questions
   shapings/<slug>.md    one question each, with its evidence
-  run.md                the ONE active contract
-  runs/<slug>.md        finished contracts, kept as proof
+  runs/<slug>.md        one contract per track, executed IN PLACE —
+                        live and finished alike, never pruned
 ```
 
 `.riel/` is gitignored. It is working state, not source.
@@ -72,10 +72,12 @@ Keeping them apart lets a shaping evolve without silently rewriting what was pro
 
 ### 2. Run — one contract, executed
 
-`.riel/run.md` · format `riel-run/v1`
+`.riel/runs/<slug>.md` · format `riel-run/v1`
 
-A run executes **exactly one shaping** and delivers one PR. The file holds three parts
-with different owners:
+A run executes **exactly one shaping** and delivers one PR. It is authored in
+`.riel/runs/` and **executed in place** — no live copy, no archive move. Several
+contracts may be active at once in one worktree, so parallel tracks need no
+separate worktrees. The file holds three parts with different owners:
 
 - **Definition** — authored by you, frozen and hashed at activation.
 - **State** — written only by the engine.
@@ -85,9 +87,11 @@ with different owners:
 cut is `## Metadata`: everything above it is the promise, everything below it is the
 record. One file, one hash, one revision.
 
-**Why one active run per worktree?** `activate` refuses while a revision exists. Parallel
-tracks belong in separate worktrees, one PR each. Several live runs in one directory
-would make every verb ambiguous about which contract it is writing.
+**Why a selector instead of one live file?** Encoding "which run is active" as a
+location forces a move when the work finishes, and makes parallel tracks impossible
+without separate worktrees. A contract's state is already derivable from its evidence,
+so the location carries no information. With several active contracts a verb refuses
+and names them rather than guessing which one it is writing.
 
 ### 3. Project — the order of the questions
 
@@ -95,10 +99,10 @@ would make every verb ambiguous about which contract it is writing.
 
 A project orders several shapings. It is **not** another execution engine: it has no
 gates and writes no state. `project status` derives each node's progress from the
-archived run that finished it.
+contract bound to that shaping.
 
 **Why derive instead of record?** Because a recorded "done" is a claim, and a derived
-"done" is a fact. Delete an archived run and its node reopens — the project cannot lie
+"done" is a fact. Delete a contract and its node reopens — the project cannot lie
 about work whose proof is gone.
 
 ## Install
@@ -148,7 +152,7 @@ riel_project(verb="status")     # names the next shaping to run
 
 ```python
 riel_run(verb="new", template="run")
-# save at .riel/run.md, fill it, declare its shaping under ### Shaping
+# save at .riel/runs/<slug>.md, fill it, declare its shaping under ### Shaping
 riel_run(verb="validate")
 riel_run(verb="activate")
 ```
@@ -172,14 +176,17 @@ The engine **runs** that command in the worktree and records the actual exit cod
 `E#` evidence. You never pass an exit code — the schema does not accept one. A checkpoint
 for another claim or gate cannot advance this work.
 
-### Read the result, then archive
+### Read the result
 
 ```python
-riel_run(verb="status")     # one JSON object: cursor, claims, gates, next, done
-riel_run(verb="archive")    # → .riel/runs/<slug>.md, frees the worktree
+riel_run(verb="status", run="storage")   # one JSON object: cursor, claims, gates, done
+riel_run(verb="list")                    # every contract in .riel/runs/, with its state
 ```
 
-Archives are never pruned: they are the project's proof. To delegate a phase:
+The contract stays where you authored it — there is no archive step and no live
+copy. Contracts are never pruned: they are the project's proof. Several tracks may
+be active at once; `run=<slug>` picks one, and with a single match it is optional.
+To delegate a phase:
 
 ```python
 riel_run(verb="slice", phase="F1")
@@ -196,7 +203,7 @@ and re-runs the gate before accepting evidence.
 | `riel_guide` | `topic`, `section`, `full` | The prose, on demand. No topic → index; a topic → one guide; a section → just that slice |
 | `riel_project` | `new` · `validate` · `status` | Order several shapings and derive their progress |
 | `riel_shape` | `new` · `validate` | Render and validate one question's evidence |
-| `riel_run` | `new` · `validate` · `activate` · `rebase` · `status` · `slice` · `archive` | The contract's whole lifecycle |
+| `riel_run` | `new` · `validate` · `activate` · `rebase` · `status` · `list` · `slice` | The contract's whole lifecycle |
 | `riel_note` | `gates[]`, `claims[]`, `command`, `covering`, `confidence`, `core[]`, `core_slot`, `open[]`, `settled_by[]`, `close`, `evidence` | The only writer of State. Runs gates, records evidence |
 | `riel_clean` | `archive` | Wipe `.riel/`. With `archive=true`, keep a sha256-verified copy outside it first |
 | `riel_check` | `file`, `mermaid` | Check any Markdown for dense-register markers and graph validity |
@@ -375,8 +382,9 @@ Ship the contract model in three tracks.
 ```
 
 `S#` nodes are shapings. A linear list chains them; a mermaid flowchart branches them.
-`project status` marks a node done when its archived run in `.riel/runs/<slug>.md` is
-done, and names the next one to run.
+`project status` marks a node done when a contract bound to that shaping is done,
+and names the next one to run. The match is by the contract's `### Shaping`
+declaration, not by filename — you name the contract freely.
 
 ## How verification actually works
 
@@ -395,7 +403,7 @@ done, and names the next one to run.
 
 **The gate hook.** `pre_verify` fires after a turn that edited code in a worktree with an
 active run. While claims or gates lack evidence, it keeps the agent going. A worktree
-without `.riel/run.md` is never gated, and a draft is never gated — only an active run.
+without `.riel/runs/<slug>.md` is never gated, and a draft is never gated — only an active run.
 
 **The session checklist.** Riel owns its rows in the session todo list: the goal, phases
 as checks, steps as subchecks, gates as checks. Only passing evidence completes them.
@@ -431,7 +439,7 @@ that still carries `{{placeholder}}` text, and name every field left to author.
 a template would freeze and hash as if it were a decision.
 
 **No legacy support.** Only `riel-shaping/v3` and `riel-run/v1` are read. Old formats are
-refused, not converted; there is no converter and no migration verb. `.riel/run.md` is
+refused, not converted; there is no converter and no migration verb. `.riel/runs/<slug>.md` is
 the only state file, so any other file in `.riel/` is invisible. Compatibility readers
 are how a format quietly stops meaning anything.
 

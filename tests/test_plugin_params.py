@@ -137,7 +137,7 @@ class WorktreeIsExplicitTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, elsewhere, True)
         payload = json.loads(tools.riel_note({"core": "fact — x", "worktree": self.tmp}))
         self.assertEqual(payload["exit_code"], 0, payload)
-        self.assertTrue((Path(self.tmp) / ".riel" / "run.md").is_file())
+        self.assertTrue((Path(self.tmp) / ".riel" / "runs" / "run.md").is_file())
         self.assertFalse((Path(elsewhere) / ".riel").exists(),
                          "the engine wrote into the caller's cwd")
 

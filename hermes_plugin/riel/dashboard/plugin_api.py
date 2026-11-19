@@ -3,16 +3,17 @@
 Read-only plus the settings writer, answering the statusbar chip:
 
   GET /health            → is the backend up and does it have its bundled engine
-  GET /run?worktree=     → the ACTIVE RUN for one worktree: verbatim markdown
-                           (the chip's click dialog) + the engine's `run
-                           status` object (the state the gate folds)
+  GET /run?worktree=     → the worktree's CONTRACTS: the listing the chip's
+                           counter and dialog list use (slug, status, pending)
+  GET /run?worktree=&slug= → ONE contract: verbatim markdown (the dialog) +
+                           the engine's `run status` object
   GET/POST /settings     → the switch surface (read), validated writes
   GET /session_cwd       → the FOCUSED session's stored worktree
 
 The mount is the dashboard plugin API, which runs inside the gateway process.
-Bound by construction: the only task path this ever reads is
-`<worktree>/.riel/run.md` — resolved against symlinks, capped, and the engine
-reached the safe in-process way. Every route is a SYNC def: FastAPI runs sync
+Bound by construction: the only task paths this ever reads are
+`<worktree>/.riel/runs/<slug>.md` — resolved against symlinks, capped, and the
+engine reached the safe in-process way. Every route is a SYNC def: FastAPI runs sync
 handlers on its threadpool, so a bounded engine call never blocks the event
 loop (the gateway serves every session from it).
 """
@@ -61,16 +62,22 @@ def health() -> dict:
 
 
 @router.get("/run")
-def run_state(worktree: str = Query("", max_length=MAX_WORKTREE_CHARS)) -> dict:
-    """The worktree's active run — `{present, worktree, markdown, status}`.
+def run_state(worktree: str = Query("", max_length=MAX_WORKTREE_CHARS),
+              slug: str = Query("", max_length=256)) -> dict:
+    """The worktree's contracts — the listing, or ONE contract with `slug`.
 
-    Absent, empty and error states included; a worktree without `.riel/run.md`
-    is a normal `present: false`, not a failure.
+    Without `slug`: `{present, worktree, contracts, active, pending, total}` —
+    what the chip's counter (`pending/active`) and the dialog's list render.
+    With `slug`: `{present, worktree, slug, markdown, status}` — the contract
+    the dialog opens. Absent, empty and error states included; a worktree
+    without contracts is a normal `present: false`, not a failure.
     """
     if not worktree.strip():
-        return {"present": False, "worktree": "", "markdown": "", "status": None,
+        return {"present": False, "worktree": "", "contracts": [],
                 "error": "worktree query parameter is required"}
-    return _ledger_status.read_run(worktree)
+    if slug.strip():
+        return _ledger_status.read_run(worktree, slug)
+    return _ledger_status.read_runs(worktree)
 
 
 @router.get("/settings")
