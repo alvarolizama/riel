@@ -1,7 +1,7 @@
 ---
 topic: project
 trigger: "Use when a project is several questions: .riel/project.md orders the shapings, and each shaping runs once and delivers one PR."
-version: 1.1.0
+version: 1.1.1
 ---
 # project — The order of the questions
 
@@ -59,7 +59,9 @@ reopens: the progress was never a declaration.
 Several contracts may be active at once in one worktree, so independent tracks
 can run in parallel; `run=<slug>` selects one on every verb:
 
-1. `project status` names the next shaping (or several, when they are independent).
+1. `project status` names the next shaping in dependency order. Every node whose
+   predecessors are done is `pending`, and every `pending` node is ready — so
+   independent tracks start in parallel; `run=<slug>` picks one per verb.
 2. Write `.riel/runs/<slug>.md` declaring that shaping under `### Shaping`.
    The contract is matched to its node by that binding, not by filename.
 3. `run validate`, `run activate`, work the phase DAG, record gates with `note`.

@@ -8,8 +8,9 @@ of its own, and it never writes state.
 
 `.riel/project.md` in the worktree's gitignored `.riel/`. Each node is one
 shaping from `.riel/shapings/`; each shaping runs once and delivers one PR.
-Parallel tracks execute in separate worktrees, because one worktree holds one
-active run.
+Independent nodes — a branch in the graph — may execute in parallel: a worktree
+holds several active runs at once, and every run verb takes `run=<slug>` to pick
+one.
 
 ## File anatomy
 

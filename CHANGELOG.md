@@ -13,6 +13,10 @@ packaged guides carry their own versions.
   worktree therefore holds ALL of Riel's local state inside `.riel/`, and nothing
   is written beside it. A later `clean` appends a snapshot; archives are never
   nested and never pruned.
+- **The project prose matches the engine again.** `specs/spec-project.md` claimed
+  parallel tracks need separate worktrees because a worktree holds one active run
+  (false since 4.0.0), and `guide/project.md` said `project status` names "the next
+  shaping (or several)": `next` is ONE id, and every `pending` node is ready.
 - **Delegation briefs carry absolute paths only** (`guide/delegate.md` 2.2.1):
   inside a worktree nothing a child leaves behind may live outside `.riel/`, and
   the parent checks `git status --porcelain` after every child — an unexpected
