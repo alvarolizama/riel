@@ -1352,10 +1352,6 @@ class CleanAndArchiveTests(TempDirTest):
 
     def test_clean_archive_is_verified_and_restorable(self):
         extra = self.seed_layout()
-        home = os.environ.get("HOME")
-        os.environ["HOME"] = self.tmp        # never write into the operator's home
-        self.addCleanup(lambda: os.environ.__setitem__("HOME", home)
-                        if home else os.environ.pop("HOME", None))
         before = {}
         for root, _dirs, files in os.walk(os.path.join(self.tmp, ".riel")):
             for name in files:
@@ -1366,13 +1362,13 @@ class CleanAndArchiveTests(TempDirTest):
         self.assertEqual(rc, 0, out + err)
         self.assertIn("archived", out)
         self.assertIn("restore:", out)
-        archives = list(Path(self.tmp).glob(".hermes/riel/archive/*/*"))
+        archives = list(Path(self.tmp).glob(".riel/archive/*"))
         self.assertEqual(len(archives), 1, out)
         archive = archives[0]
         for rel, body in before.items():
             with open(os.path.join(str(archive), rel), "rb") as fh:
                 self.assertEqual(fh.read(), body, "archive byte mismatch: " + rel)
-        self.assertEqual(self.entries(), [".run.lock"])
+        self.assertEqual(self.entries(), [".run.lock", "archive"])
         shutil.copytree(str(archive), os.path.join(self.tmp, ".riel"),
                         dirs_exist_ok=True)
         # the restore is byte-complete, old files included — and state
@@ -1382,6 +1378,27 @@ class CleanAndArchiveTests(TempDirTest):
         st = self.status()
         self.assertEqual(st["status"], "active", "the restore brings the run back")
         self.assertEqual(st["shaping"]["id"], "shp_0a1b2c3d")
+
+    def test_clean_writes_nothing_outside_riel(self):
+        self.seed_layout()
+        rc, out, err = run("clean", "--archive", cwd=self.tmp)
+        self.assertEqual(rc, 0, out + err)
+        self.assertEqual(sorted(os.listdir(self.tmp)), [".riel"],
+                         "the archive lands inside .riel/, not beside the worktree")
+
+    def test_a_later_clean_keeps_the_earlier_archive_and_never_nests_it(self):
+        self.seed_layout()
+        run("clean", "--archive", cwd=self.tmp)
+        with open(os.path.join(self.tmp, ".riel", "project.md"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("# Project: second\n")
+        rc, out, err = run("clean", "--archive", cwd=self.tmp)
+        self.assertEqual(rc, 0, out + err)
+        archives = sorted(Path(self.tmp, ".riel", "archive").iterdir())
+        self.assertEqual(len(archives), 2, "an earlier snapshot is history, not state")
+        self.assertTrue(all((a / "project.md").is_file() for a in archives))
+        self.assertFalse((archives[-1] / "archive").exists(),
+                         "an archive never copies itself into the next one")
 
     def test_a_contract_stays_in_place_and_keeps_the_binding(self):
         """Executed where it was authored: there is no live file and no move."""

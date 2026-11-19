@@ -306,8 +306,8 @@ recording evidence. A child's "passed" is never proof.
 
 > Clean this worktree, but keep a copy.
 
-`riel_clean(archive=true)` copies `.riel/` outside the worktree, verifies every sha256,
-and only then wipes it. Say just "clean this worktree" and there is no copy and no way
+`riel_clean(archive=true)` copies `.riel/` into `.riel/archive/<ts>/`, verifies every
+sha256, and only then wipes the rest. Say just "clean this worktree" and there is no copy and no way
 back — `.riel/` is gitignored, so the agent should confirm before doing it.
 
 ### Read the prose yourself
@@ -327,7 +327,7 @@ The prose ships with the plugin, so the agent reads the rules it is being held t
 | `riel_shape` | `new` · `validate` | Render and validate one question's evidence |
 | `riel_run` | `new` · `validate` · `activate` · `rebase` · `status` · `list` · `slice` | The contract's whole lifecycle |
 | `riel_note` | `run`, `gates[]`, `claims[]`, `command`, `covering`, `confidence`, `core[]`, `core_slot`, `open[]`, `settled_by[]`, `close`, `evidence` | The only writer of State. Runs gates, records evidence. `run` picks the contract when several are active |
-| `riel_clean` | `archive` | Wipe `.riel/`. With `archive=true`, keep a sha256-verified copy outside it first |
+| `riel_clean` | `archive` | Wipe `.riel/`. With `archive=true`, keep a sha256-verified copy inside it first |
 | `riel_check` | `file`, `mermaid` | Check any Markdown for dense-register markers and graph validity |
 
 Guides ship with the package: `run`, `shaping`, `project`, `delegate`, `tools`. The
@@ -576,8 +576,9 @@ makes the run stale (exit 3) until an explicit `rebase`. Editing a *sibling* sha
 never does — it is another track's evidence.
 
 **Destructive operations are opt-in and verified.** `riel_clean` wipes everything in
-`.riel/` and keeps only the lock. With `archive=true` it copies the tree outside `.riel/`
-and verifies every sha256 **before** removing anything. Without it there is no way back.
+`.riel/` and keeps only the lock and `archive/`. With `archive=true` it copies the tree
+into `.riel/archive/<ts>/` and verifies every sha256 **before** removing anything.
+Without it there is no way back.
 
 **The engine owns the record.** Comments and prose cannot create checkpoints. State
 below `## Metadata` is written only by `riel_note`, and evidence is append-only.

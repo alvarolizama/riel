@@ -3,6 +3,21 @@
 Notable changes to Riel. Version numbers refer to `hermes_plugin/riel/plugin.yaml`;
 packaged guides carry their own versions.
 
+## 4.1.0
+
+### Changed
+- **`clean --archive` keeps its copy INSIDE `.riel/`.** The snapshot used to land
+  in `~/.hermes/riel/archive/<worktree>/<timestamp>/`, outside the worktree; it
+  now lands in `.riel/archive/<timestamp>/`, is sha256-verified before anything
+  is removed, and survives the wipe (`clean` keeps the lock and `archive/`). A
+  worktree therefore holds ALL of Riel's local state inside `.riel/`, and nothing
+  is written beside it. A later `clean` appends a snapshot; archives are never
+  nested and never pruned.
+- **Delegation briefs carry absolute paths only** (`guide/delegate.md` 2.2.1):
+  inside a worktree nothing a child leaves behind may live outside `.riel/`, and
+  the parent checks `git status --porcelain` after every child — an unexpected
+  `?? <dir>/` is a failed wave, not noise.
+
 ## 4.0.0
 
 ### Changed

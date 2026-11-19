@@ -61,13 +61,14 @@ try:
 except ImportError:  # pragma: no cover - non-POSIX fallback
     fcntl = None
 
-VERSION = "4.0.0"
+VERSION = "4.1.0"
 RUN_FORMAT = "riel-run/v1"
 
 RIEL_DIR = ".riel"
 PROJECT_MD = "project.md"
 SHAPINGS_DIR = "shapings"
 RUNS_DIR = "runs"
+ARCHIVE_DIR = "archive"
 LOCK_NAME = ".run.lock"
 SHAPING_FORMAT = "riel-shaping/v3"
 SHAPING_ID_RE = re.compile(r"^shp_[0-9a-f]{8}$")
@@ -2532,22 +2533,28 @@ def cmd_project(args, out, err):
 # -------------------------------------------------------------- clean ----
 
 def _archive_root(worktree):
-    """Where an opt-in clean archive lands: OUTSIDE .riel/, which clean wipes."""
-    real = os.path.realpath(worktree)
-    tag = "{}-{}".format(os.path.basename(real) or "worktree",
-                         hashlib.sha256(real.encode("utf-8")).hexdigest()[:8])
-    return os.path.join(os.path.expanduser("~/.hermes/riel/archive"), tag)
+    """Where an opt-in clean archive lands: .riel/archive/, the local state root.
+
+    The archive is the ONE thing clean does not wipe: the snapshot is verified
+    before anything is removed and `archive/` survives, so a wipe can be walked
+    back without writing a byte outside the worktree.
+    """
+    return os.path.join(_worktree_paths(worktree)["dir"], ARCHIVE_DIR)
 
 
-def _copy_verified(src_dir, dest_dir):
+def _copy_verified(src_dir, dest_dir, skip=()):
     """Copy every file under src_dir to dest_dir, verifying sha256 per file.
 
     Nothing is removed until every byte is confirmed at the destination.
     Symlinks are not followed (clean unlinks them, it never reads through).
+    `skip` names top-level entries that are NOT copied — `archive/` lives inside
+    the tree it would otherwise copy, and recursing into it is unbounded.
     """
     copied = []
     for root, dirs, files in os.walk(src_dir):
-        dirs[:] = [d for d in dirs if not os.path.islink(os.path.join(root, d))]
+        top = os.path.abspath(root) == os.path.abspath(src_dir)
+        dirs[:] = [d for d in dirs if not os.path.islink(os.path.join(root, d))
+                   and not (top and d in skip)]
         for name in sorted(files):
             src = os.path.join(root, name)
             if os.path.islink(src):
@@ -2569,11 +2576,12 @@ def _copy_verified(src_dir, dest_dir):
 
 
 def cmd_clean(args, out, err):
-    """Remove EVERYTHING inside .riel/. Archiving is opt-in, never the default.
+    """Remove EVERYTHING inside .riel/ except the lock and the archive.
 
     run.md, project.md, shapings/, runs/, any other file
     and every backup go. The lock file stays (it is coordination, not state,
-    and unlinking a held flock would let two writers in). Without --archive
+    and unlinking a held flock would let two writers in) and `archive/` stays
+    too: an earlier opt-in snapshot is history, not state. Without --archive
     there is no way back: .riel/ is gitignored local state.
     """
     paths = _worktree_paths(args.worktree)
@@ -2583,19 +2591,25 @@ def cmd_clean(args, out, err):
         return 0
     copied, archive_dest = [], ""
     with _Locked(paths["lock"]):
-        entries = [e for e in sorted(os.listdir(riel_dir)) if e != LOCK_NAME]
+        entries = [e for e in sorted(os.listdir(riel_dir))
+                   if e not in (LOCK_NAME, ARCHIVE_DIR)]
         if not entries:
             print("nothing to clean", file=out)
             return 0
         if args.archive:
+            root = _archive_root(args.worktree)
+            if os.path.islink(root):
+                raise EngineError(
+                    "archive root is a symlink: {} — refusing to write through "
+                    "it".format(root))
             stamp = time.strftime("%Y%m%d-%H%M%S")
-            archive_dest = os.path.join(_archive_root(args.worktree), stamp)
+            archive_dest = os.path.join(root, stamp)
             n = 1
             while os.path.exists(archive_dest):
-                archive_dest = os.path.join(_archive_root(args.worktree),
-                                            "{}-{}".format(stamp, n))
+                archive_dest = os.path.join(root, "{}-{}".format(stamp, n))
                 n += 1
-            copied = _copy_verified(riel_dir, archive_dest)
+            os.makedirs(archive_dest, exist_ok=True)
+            copied = _copy_verified(riel_dir, archive_dest, skip=(ARCHIVE_DIR,))
         removed = []
         for name in entries:
             path = os.path.join(riel_dir, name)
@@ -2609,7 +2623,7 @@ def cmd_clean(args, out, err):
                     os.unlink(path)
             removed.append(name)
     if archive_dest:
-        print("cleaned {} entry(ies) from .riel/ — archived {} file(s) to {}"
+        print("cleaned {} entry(ies) from .riel/ — archived {} file(s) into {}"
               .format(len(removed), len(copied), archive_dest), file=out)
         print("restore: cp -R '{}/.' '{}'".format(archive_dest, riel_dir), file=out)
     else:
@@ -2900,7 +2914,7 @@ def build_parser(out=None, err=None):
     cl = sub.add_parser(
         "clean", help="remove EVERYTHING inside .riel/ (archiving is opt-in)")
     cl.add_argument("--archive", action="store_true",
-                    help="copy .riel/ outside the worktree and verify every "
+                    help="copy .riel/ into .riel/archive/ and verify every "
                          "sha256 BEFORE removing anything")
     cl.set_defaults(fn=cmd_clean)
 

@@ -284,9 +284,10 @@ limit.
 - `todo` — JSON mirror: goal, phases with nested steps and statuses, next,
   claims, open questions.
 - `clean [--archive]` — remove EVERY entry inside `.riel/` (contracts, project,
-  shapings, backups, any other file); only the lock file stays.
-  `--archive` first copies the tree to `~/.hermes/riel/archive/<worktree>/<ts>/`
-  and verifies every sha256. Without it there is no backup and no way back.
+  shapings, backups, any other file); only the lock file and `archive/` stay.
+  `--archive` first copies the tree to `.riel/archive/<ts>/` and verifies every
+  sha256; that copy survives the wipe. Without it there is no backup and no way
+  back. Nothing is ever written outside `.riel/`.
 - `check FILE [--mermaid]` — dense-register markers + graph digest (+mmdc)
   as one JSON envelope (the riel_check behavior, unchanged).
 

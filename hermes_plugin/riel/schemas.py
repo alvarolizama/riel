@@ -176,9 +176,10 @@ RIEL_CLEAN = {
         "Riel housekeeping — remove EVERYTHING inside the worktree's .riel/ "
         "(run.md, project.md, shapings/, runs/, backups and any other file) so a "
         "new task starts clean. Archiving is OPT-IN: archive=true copies the "
-        "tree outside .riel/ and verifies every sha256 BEFORE removing anything. "
-        "Without it the removal is NOT recoverable (.riel/ is gitignored). Ask "
-        "the user before cleaning a worktree whose state is not yours."
+        "tree into .riel/archive/ and verifies every sha256 BEFORE removing "
+        "anything; that copy survives the wipe. Without it the removal is NOT "
+        "recoverable (.riel/ is gitignored). Ask the user before cleaning a "
+        "worktree whose state is not yours."
     ),
     "parameters": {
         "type": "object",
@@ -186,8 +187,8 @@ RIEL_CLEAN = {
             "archive": {
                 "type": "boolean",
                 "description": (
-                    "Keep a verified copy outside .riel/ before wiping it "
-                    "(default false: clean removes without a backup)."
+                    "Keep a verified copy in .riel/archive/ before wiping the "
+                    "rest (default false: clean removes without a backup)."
                 ),
             },
             "worktree": _WORKTREE,

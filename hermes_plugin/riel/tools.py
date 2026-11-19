@@ -432,11 +432,11 @@ def riel_note(args: dict, **kwargs) -> str:
 
 def riel_clean(args: dict, **kwargs) -> str:
     """Remove EVERYTHING inside the worktree's `.riel/`: the run, project.md,
-    shapings/, the contracts and any other file. Archiving is OPT-IN
-    (`archive=true`) and lands OUTSIDE `.riel/`, verified by sha256 before
-    anything is removed. Without it the removal is not recoverable — `.riel/`
-    is gitignored local state. Ask the user before cleaning a worktree whose
-    state is not yours.
+    shapings/, the contracts and any other file. Only the lock and `archive/`
+    stay. Archiving is OPT-IN (`archive=true`) and lands in `.riel/archive/`,
+    verified by sha256 before anything is removed. Without it the removal is not
+    recoverable — `.riel/` is gitignored local state. Ask the user before
+    cleaning a worktree whose state is not yours.
     """
     if "scope" in args:
         return _error(

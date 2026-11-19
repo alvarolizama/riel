@@ -1,4 +1,4 @@
-# Riel — Hermes plugin (v4.0.0)
+# Riel — Hermes plugin (v4.1.0)
 
 The package **is** the product: the prose, the engine, the tools, the gate and the
 desktop chip. State lives in `.riel/runs/<slug>.md` (`riel-run/v1`), one question's evidence in
@@ -85,10 +85,10 @@ never reaches the model, and a repeatable parameter reaches it as ONE array (`cl
 - **`run status`** answers ONE JSON object with the run's state, including the bound
   shaping (`path`, `id`, `sha256`).
 - **`riel_clean`** removes EVERYTHING inside `.riel/` (run, project, shapings, runs,
-  backups, any other file); only the lock stays. Archiving is opt-in: `archive=true`
-  copies the tree outside `.riel/` (`~/.hermes/riel/archive/<worktree>/<ts>/`) and
-  verifies every sha256 BEFORE removing anything. Without it there is no way back —
-  `.riel/` is gitignored.
+  backups, any other file); only the lock and `archive/` stay. Archiving is opt-in:
+  `archive=true` copies the tree into `.riel/archive/<ts>/`, verifies every sha256
+  BEFORE removing anything, and that copy survives the wipe. Without it there is no
+  way back — `.riel/` is gitignored.
 - **No old versions.** Only `riel-shaping/v3` is read; a v1/v2 shaping is refused, not
   converted, and a loose `.riel/shaping.md` is not read at all. A run without
   `definition_sha256` is stale. Upgrading means re-authoring, not migrating.

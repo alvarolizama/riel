@@ -1,5 +1,5 @@
 name: riel
-version: 4.0.0
+version: 4.1.0
 description: "Riel — steering for long tasks: a project orders shapings (.riel/project.md), each shaping answers ONE question (.riel/shapings/), and each contract executes one shaping with typed gate evidence (.riel/runs/<slug>.md, executed in place — several may be active at once, run=<slug> selects one). Seven typed tools, the pre_verify gate across the active contracts, automatic session checks and the desktop chip. Riel explains the formats and validates them; it never authors them. No command line and no skills: the tools are the surface."
 author: Álvaro Lizama
 license: MIT

@@ -1,7 +1,7 @@
 ---
 topic: delegate
 trigger: "Use when splitting a Riel run into subagents: immutable run slices, isolated worktrees, candidate JSON results and parent-side re-verification before Evidence."
-version: 2.2.0
+version: 2.2.1
 ---
 # delegate — One run, several workers
 
@@ -18,6 +18,14 @@ Only graph-independent work with disjoint files may execute in parallel. Give
 each child its own git worktree, an exact file allowlist and one structured
 return schema. The parent re-checks the current contract revision before dispatch;
 work outside those constraints is escalated instead of reinterpreted.
+
+Every path a brief hands a child is absolute, and inside a worktree NOTHING may
+live outside `.riel/`: a relative `backup-runs/<slug>.bak.md` resolves against the
+child's cwd — the worktree root — and drops an untracked directory there. Session
+artifacts go under `.riel/` (`.riel/backups/<slug>.bak.md`) or to an absolute
+scratch path outside any worktree, never beside `.riel/` and never at its root.
+After every child require `git status --porcelain` to show only the allowlisted
+files: an unexpected `?? <dir>/` is a failed wave, not noise.
 
 A slice is generated with `riel_run(verb="slice", phase="F2", run="<slug>")` after
 its predecessors pass; `run` is required when several contracts are active. The child must know the `run_revision`, gate and claim IDs,

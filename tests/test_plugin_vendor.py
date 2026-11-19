@@ -9,8 +9,8 @@ Stdlib-only and Hermes-free on purpose. Two kinds of tests live here:
     is the sole writer of the formats and has its own suite; pinning the
     plugin layer to it would couple two suites two workers move at once.
 
-Version contract (v4.0.0, contracts executed in place): the manifest, the
-package README and the engine's VERSION all say 4.0.0 — asserted here so the three cannot
+Version contract (v4.1.0, contracts executed in place): the manifest, the
+package README and the engine's VERSION all say 4.1.0 — asserted here so the three cannot
 drift apart.
 
 Run:
@@ -38,7 +38,7 @@ sys.path.insert(0, str(HERE))
 import _stub_engine as stub  # noqa: E402
 
 MANIFEST = PLUGIN / "plugin.yaml"
-VERSION = "4.0.0"
+VERSION = "4.1.0"
 
 # The package's own tree: the prose (`guide/`), the engine the tools run
 # (`engine/`) and the run/shaping templates (`templates/`). They live here and
@@ -170,13 +170,13 @@ class PackageTest(unittest.TestCase):
 
 
 class VersionContractTest(unittest.TestCase):
-    """4.0.0 — said identically by manifest, README and engine."""
+    """4.1.0 — said identically by manifest, README and engine."""
 
     def test_the_manifest_is_3_0_0(self):
         self.assertEqual(_manifest_field("version"), VERSION, MANIFEST)
 
     def test_the_package_readme_says_the_same_version(self):
-        """The package's own README (the installed user's doc) names v4.0.0."""
+        """The package's own README (the installed user's doc) names v4.1.0."""
         readme = (PLUGIN / "README.md").read_text(encoding="utf-8")
         self.assertIn(f"v{VERSION}", readme,
                       f"hermes_plugin/riel/README.md does not say v{VERSION}")
@@ -478,19 +478,15 @@ class EngineIntegrationTest(unittest.TestCase):
 
     def test_clean_archive_flag_reaches_the_engine(self):
         stub.seed(self.tmp, goal="old task")
-        # The real engine archives under ~/.hermes/riel/archive — point HOME at
-        # the temp dir so a test never writes into the operator's home.
-        home = os.environ.get("HOME")
-        os.environ["HOME"] = self.tmp
-        self.addCleanup(lambda: os.environ.__setitem__("HOME", home)
-                        if home else os.environ.pop("HOME", None))
         payload = self.payload(self.tools.riel_clean,
                                {"archive": True, "worktree": self.tmp})
         self.assertTrue(payload["passed"], payload)
         self.assertIn("archived", payload["stdout"])
         self.assertFalse((Path(self.tmp) / ".riel" / "runs").exists())
-        self.assertTrue(list(Path(self.tmp).glob(".hermes/riel/archive/**/*.md")),
-                        "the archive lands OUTSIDE .riel/, which clean wipes")
+        self.assertTrue(list(Path(self.tmp).glob(".riel/archive/**/*.md")),
+                        "the verified copy stays inside .riel/")
+        self.assertFalse((Path(self.tmp) / ".hermes").exists(),
+                         "clean writes nothing outside the worktree")
 
     def test_check_answers_the_engine_json_through_the_envelope(self):
         doc = Path(self.tmp) / "doc.md"
