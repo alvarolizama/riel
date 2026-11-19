@@ -209,6 +209,115 @@ The child receives an immutable packet — the global sections plus that one pha
 verbatim, with the frozen Basis. No other phase travels. The parent integrates the code
 and re-runs the gate before accepting evidence.
 
+## Talking to the agent
+
+You do not call these tools by hand — you talk to the agent in a Hermes chat and it
+drives them. What follows is what you say and what actually happens.
+
+One thing to expect: **the agent asks you the decisions it cannot make.** Which command
+proves a claim, where the scope boundary sits, which tradeoff wins — those are yours.
+It renders, writes and validates; it does not invent your answers.
+
+### Shape a question before committing
+
+> I need to decide where the contract state lives. Shape it before we build anything.
+
+The agent renders the skeleton with `riel_shape(verb="new")`, asks you the open
+decisions, writes `.riel/shapings/state.md`, and validates it. You get one question, one
+answer backed by a finding, sourced evidence, what was rejected and why, and what stays
+open. Two questions in your request become two shapings — it will tell you to split them.
+
+### Order several tracks
+
+> This feature is three tracks: storage, verbs, docs. Set up the project and tell me
+> what to run first.
+
+`riel_project(verb="new")` → the agent writes `.riel/project.md` listing the three
+shapings → `validate` → `status`. You get: *S1 storage is next; S2 and S3 are blocked
+behind it.* Nothing is marked done by hand.
+
+### Run one track
+
+> Run the storage track.
+
+`riel_run(verb="new")` → the agent saves `.riel/runs/storage.md`, declares the shaping
+under `### Shaping`, and asks you for the gate commands and the `DO NOT` boundary →
+`validate` → `activate`. You get: *activated r1, current_phase F1, next: READ the spec.*
+
+If it tries to activate with a field still unfilled, the engine refuses and names the
+field. A skeleton never becomes a contract by accident.
+
+### Work, and prove it
+
+> Implement the parser and prove it.
+
+The agent edits the code, then calls:
+
+```python
+riel_note(run="storage", gates=["G1"], claims=["P1"],
+          command="make test", covering="the parser and its neighbouring regressions")
+```
+
+You get: *E1 recorded, exit 0, G1 passed, P1 covered, phase advanced to F2.* The engine
+ran `make test` itself and captured the real exit code. An agent saying "tests pass"
+records nothing.
+
+### The gate catches a premature close
+
+> That's done, wrap up.
+
+…but `P2` still has no evidence. You do not have to remember to check: `pre_verify`
+fires on the turn that edited code and answers *this contract still owes 1 claim and
+1 gate — run them or update the state, then close.* The agent keeps going. A worktree
+with no contract, or a draft, is never gated.
+
+### Resume after a gap
+
+> Where was I on this repo?
+
+`riel_run(verb="list")` → `riel_run(verb="status", run="storage")`. You get the derived
+cursor, the open claims and the pending gates — computed from evidence, not summarised
+from chat history. A new session starts oriented instead of guessing.
+
+### Two tracks at once
+
+> Start the verbs track too, in parallel.
+
+The agent authors `.riel/runs/verbs.md` and activates it. Now two contracts are active
+in the same worktree, no second worktree needed.
+
+> How's the verbs track?
+
+`riel_run(verb="status", run="verbs")`. Without the selector the verb refuses and names
+both — it will not guess which contract you meant. Evidence for one track never advances
+the other.
+
+### Delegate a phase
+
+> Delegate phase F1 to a subagent.
+
+`riel_run(verb="slice", phase="F1", run="storage")` produces an immutable packet: the
+global sections plus that one phase block verbatim, with the frozen Basis. The agent
+gives the child the packet and an exact file allowlist. The child returns a diff and a
+self-report; the parent integrates the code and **re-runs the gate itself** before
+recording evidence. A child's "passed" is never proof.
+
+### Clean up
+
+> Clean this worktree, but keep a copy.
+
+`riel_clean(archive=true)` copies `.riel/` outside the worktree, verifies every sha256,
+and only then wipes it. Say just "clean this worktree" and there is no copy and no way
+back — `.riel/` is gitignored, so the agent should confirm before doing it.
+
+### Read the prose yourself
+
+> Who is allowed to write the contract's state?
+
+`riel_guide(topic="run", section="State and Evidence")` returns just that slice. No topic
+gives the index; a topic gives its section outline; `full=true` gives the whole guide.
+The prose ships with the plugin, so the agent reads the rules it is being held to.
+
 ## The seven tools
 
 | Tool | Verbs / flags | What it is for |

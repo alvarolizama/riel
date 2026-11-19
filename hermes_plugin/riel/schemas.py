@@ -246,7 +246,7 @@ RIEL_GUIDE = {
                 "type": "string",
                 "description": (
                     "A '## <heading>' of that guide, matched case-insensitively, "
-                    "e.g. 'Claim anchors' — the slice you need, not the whole body."
+                    "e.g. 'State and Evidence' — the slice you need, not the whole body."
                 ),
             },
             "full": {
