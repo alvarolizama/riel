@@ -1,176 +1,196 @@
-# Riel — plugin de Hermes (v3.0.0)
+# Riel — Hermes plugin (v3.0.0)
 
-El paquete ES el producto: la prosa, el motor, las tools, el gate y el chip.
-El estado vive en `.riel/run.md` (riel-run/v1), la evidencia de una pregunta en
-`.riel/shapings/<slug>.md` (riel-shaping/v3) y el orden de varias preguntas en
-`.riel/project.md` (riel-project/v1). No hay conversor ni compatibilidad con las
-tools v1 (`riel_plan`, `riel_seam`).
+The package **is** the product: the prose, the engine, the tools, the gate and the
+desktop chip. State lives in `.riel/run.md` (`riel-run/v1`), one question's evidence in
+`.riel/shapings/<slug>.md` (`riel-shaping/v3`), and the order of several questions in
+`.riel/project.md` (`riel-project/v1`). There is no converter and no compatibility with
+the v1 tools (`riel_plan`, `riel_seam`).
 
-**La superficie son tools, nunca una línea de comandos.** Siete tools tipadas —
-`riel_guide` (la prosa), `riel_project` (`new|validate|status`, el orden de los
-shapings), `riel_shape` (`new|validate`, una pregunta), `riel_run`
-(`new|validate|activate|rebase|status|slice|archive`, una sola puerta para
-`.riel/run.md`), `riel_note` (el estado y sus gates), `riel_clean`, `riel_check`
-— sobre el motor (stdlib, sin deps, que viaja dentro del paquete y decide nada:
-el formato tiene un solo dueño). Ninguna tool recibe argv; el campo `tool` de la
-respuesta es provenance (qué tool contestó) y el `verb` cuando la tool lo lleva,
-nunca una interfaz. Toda respuesta — positivas y negativas — habla el mismo
-sobre de seis llaves (`tool, worktree, exit_code, passed, stdout, stderr`).
+The user-facing introduction — what Riel is for, the formats and the reason behind each
+part — is the repository's root `README.md`. This document is about the package itself.
 
-## El modelo project / shaping / run
+## The surface is tools, never a command line
 
-- **Riel explica y valida; no authora.** `project new`, `shape new` y `run new`
-  IMPRIMEN sus plantillas (el editor es el camino de escritura). Un sistema de
-  proyectos, un MCP, una API o un copy-paste escribe los bytes; `validate`
-  decide si están bien formados. No hay fetch: el transporte es asunto del
-  productor, el Markdown es el contrato.
-- **Un shaping = una pregunta y una respuesta.** `.riel/shapings/<slug>.md` con
-  marker `<!-- riel-shaping/v3 id:shp_xxxxxxxx -->`. El uid es la identidad
-  (sobrevive un rename), el slug la ubicación y el sha256 la revisión. Siete
-  secciones en orden: `Question` (UNA línea, UN `?`), `Answer` (UNA línea, sin
-  `?`, con `— supported by F#` o `— decided by: owner`), `Findings` (dossiers
-  `### F#` con cuerpo, source y su `#### Diagram` opcional), `Facts`,
-  `Not wanted` (lo que NO queremos, con la razón), `What we want` (We need ·
-  Claim seeds · Scope) y `Open` AL FINAL (el residuo, con su test más barato).
-  El Basis congela el heading + source + confidence, nunca el cuerpo.
-- **Las fases son secciones.** `## Phases` carga el DAG general en su preámbulo
-  (mermaid entre fases, lista `- F1 → F2`, o el orden de los headings) y luego un
-  `### F#: <título>` por fase, cada una con sus steps y sus propios `#### Claims`,
-  `#### Gates` y `#### Deliverable`. La membresía es ESTRUCTURAL: no hay sufijo
-  `— phase:` ni gates globales. Los steps se numeran por fase (`F1S1`, `F1S2`…),
-  así que insertar un step no renumera los anchors de otra fase: `§F1#2` es estable.
-  `Constraints` y `DO NOT` son globales — un run es un shaping es un PR.
-- **Un run ejecuta un shaping.** La Definition lo declara en `### Shaping` (path o
-  uid); `activate` valida ese shaping, resuelve los anchors `shaping:F#` contra
-  él, congela los findings en `### Basis` y registra path + uid + sha256 en
-  Metadata. Editar el shaping ligado marca stale (exit 3) y pide `rebase`;
-  editar un shaping hermano no.
-- **Un project ordena los shapings.** `.riel/project.md` con `## Objective` y
-  `## Graph` (nodos `S#` que son shapings, lista lineal o mermaid con ramas).
-  `project status` DERIVA el progreso: un nodo está done cuando el run archivado
-  en `.riel/runs/<slug>.md` está done. No escribe estado, no tiene gates propios.
-- **`run archive`** mueve el run terminado a `.riel/runs/<slug>.md` (verificado,
-  sin poda) y libera el worktree para el siguiente shaping. Un worktree sostiene
-  un solo run activo: los tracks paralelos van en worktrees aparte, un PR cada uno.
-- **`riel_note` ejecuta gates**: `gates: ["G1"], command: "<comando real>",
-  covering: "<alcance>", claims: ["P1"]` — el MOTOR corre el comando, captura
-  el exit code real y registra la evidencia `E#`. Nadie pasa un exit code.
-- **`run status`** responde UN objeto JSON del estado del run, incluido el
-  shaping ligado (`path`, `id`, `sha256`).
-- **`riel_clean`** borra TODO lo que está dentro de `.riel/` (run, project,
-  shapings, runs, backups y cualquier otro archivo); solo queda el lock. El archivado es
-  opt-in: `archive=true` copia el árbol fuera de `.riel/`
-  (`~/.hermes/riel/archive/<worktree>/<ts>/`) y verifica cada sha256 ANTES de
-  borrar. Sin eso no hay vuelta: `.riel/` está gitignored. Ya no hay `scope`.
-- **Sin versiones viejas**: solo se lee `riel-shaping/v3`. Un shaping v1/v2 se
-  rechaza, no se convierte; un `.riel/shaping.md` suelto no se lee. Un run sin
-  `definition_sha256` es stale. Actualizar es re-authorar, no migrar.
+Seven typed tools over one engine (stdlib, no dependencies, shipped inside the package):
 
-## La prosa viaja acá, y se lee por una sola puerta, por secciones
+| Tool | Verbs |
+|---|---|
+| `riel_guide` | the prose, by topic and section |
+| `riel_project` | `new` · `validate` · `status` |
+| `riel_shape` | `new` · `validate` |
+| `riel_run` | `new` · `validate` · `activate` · `rebase` · `status` · `slice` · `archive` |
+| `riel_note` | the only writer of State; runs gates |
+| `riel_clean` | wipe `.riel/`, optionally archiving first |
+| `riel_check` | dense-register and graph checks on any Markdown |
 
-`guide/` trae los topics que el índice lista (`project`, `run`, `shaping`,
-`delegate`, `tools`): sin argumento `riel_guide()` devuelve el índice; con
-`topic` devuelve el **índice de secciones** de esa guía; con `section` sólo esa
-rebanada, y `full=true` el cuerpo entero. La sección `riel` del prompt publica
-lo que el catálogo de tools no puede —que la prosa existe— más el estado del
-worktree. **No se registra ningún skill**: un skill de plugin nunca entra en
-`<available_skills>`, así que habría dos puertas y dos formas de que la prosa se
-desincronice.
+No tool takes argv. The `tool` field in a response is provenance — which tool answered —
+and `verb` when the tool carries one; neither is an interface. Every response, positive
+or negative, speaks the same six-key envelope:
 
-## Instalación (usuario)
+```
+tool, worktree, exit_code, passed, stdout, stderr
+```
+
+The format has one owner. `schemas.py` derives its properties from `engine/params.py`,
+the handler's flag map derives from the same declaration, and so does the engine's
+argparse. Two structural rules follow from that: an engine-owned parameter (`exit_code`)
+never reaches the model, and a repeatable parameter reaches it as ONE array (`claims`).
+
+## The model
+
+- **Riel explains and validates; it never authors.** `project new`, `shape new` and
+  `run new` PRINT their skeletons — the editor is the writing path. A project system, an
+  MCP server, an API or a copy-paste writes the bytes; `validate` decides whether they
+  are well formed. There is no fetch: transport is the producer's business, and the
+  Markdown is the contract.
+- **An unfilled skeleton is refused.** `run validate`/`activate` and `shape validate`
+  reject any `{{placeholder}}` left in the artifact and name every field still to author.
+  Placeholders inside HTML comments are documentation and do not count.
+- **One shaping = one question and one answer.** Marker
+  `<!-- riel-shaping/v3 id:shp_xxxxxxxx -->`. The uid is the identity (it survives a
+  rename), the slug the location, the sha256 the revision. Seven sections in order:
+  `Question` (ONE line, ONE `?`) · `Answer` (ONE line, no `?`, with `— supported by F#`
+  or `— decided by: owner`) · `Findings` (`### F#` dossiers with body, source and an
+  optional `#### Diagram`) · `Facts` · `Not wanted` (what we do NOT want, with the
+  reason) · `What we want` (We need · Claim seeds · Scope) · `Open` LAST (the residue,
+  each item with its cheapest settling test). The Basis freezes heading + source +
+  confidence, never the body.
+- **Phases are sections.** `## Phases` carries the general DAG in its preamble (mermaid
+  between phases, an arrow list `- F1 → F2`, or the authored heading order), then one
+  `### F#: <title>` per phase with its steps and its OWN `#### Claims`, `#### Gates` and
+  `#### Deliverable`. Membership is STRUCTURAL: no `— phase:` suffix, no run-global gate.
+  Steps number PER PHASE (`F1S1`, `F1S2`…), so inserting a step never renumbers another
+  phase's anchors and `§F1#2` is stable. `Constraints` and `DO NOT` are global — one run
+  is one shaping is one PR.
+- **A run executes one shaping.** The Definition declares it under `### Shaping` (path or
+  uid). `activate` validates that shaping, resolves every `shaping:F#` anchor against it,
+  freezes the cited findings into `### Basis`, and records path + uid + sha256 in
+  Metadata. Editing the bound shaping marks the run stale (exit 3) and asks for `rebase`;
+  editing a sibling shaping does not.
+- **A project orders shapings.** `.riel/project.md` with `## Objective` and `## Graph`
+  (`S#` nodes that are shapings; a linear list or a branching mermaid flowchart).
+  `project status` DERIVES progress: a node is done when the run archived at
+  `.riel/runs/<slug>.md` is done. It writes no state and has no gates of its own.
+- **`run archive`** moves the finished run to `.riel/runs/<slug>.md` (byte-verified, never
+  pruned) and frees the worktree for the next shaping. One worktree holds ONE active run:
+  parallel tracks go in separate worktrees, one PR each.
+- **`riel_note` runs gates.** `gates: ["G1"], command: "<real command>", covering:
+  "<scope>", claims: ["P1"]` — the ENGINE executes the command, captures the real exit
+  code and records `E#` evidence. Nobody passes an exit code.
+- **`run status`** answers ONE JSON object with the run's state, including the bound
+  shaping (`path`, `id`, `sha256`).
+- **`riel_clean`** removes EVERYTHING inside `.riel/` (run, project, shapings, runs,
+  backups, any other file); only the lock stays. Archiving is opt-in: `archive=true`
+  copies the tree outside `.riel/` (`~/.hermes/riel/archive/<worktree>/<ts>/`) and
+  verifies every sha256 BEFORE removing anything. Without it there is no way back —
+  `.riel/` is gitignored.
+- **No old versions.** Only `riel-shaping/v3` is read; a v1/v2 shaping is refused, not
+  converted, and a loose `.riel/shaping.md` is not read at all. A run without
+  `definition_sha256` is stale. Upgrading means re-authoring, not migrating.
+
+## The prose ships here, behind one door, by sections
+
+`guide/` holds the topics the index lists: `project`, `run`, `shaping`, `delegate`,
+`tools`. With no argument `riel_guide()` returns the index; with `topic` it returns that
+guide's **section outline**; with `section` just that slice; with `full=true` the whole
+body.
+
+The `riel` prompt section publishes what the tool catalogue cannot — that the prose
+exists — plus the worktree's state. **No skill is registered**: a plugin skill never
+enters `<available_skills>`, so registering one would create two doors and two ways for
+the prose to fall out of sync.
+
+## Install (user)
 
 ```bash
 hermes plugins install "git@github.com:alvarolizama/riel.git#hermes_plugin/riel" --enable
 hermes plugins update riel
 ```
 
-El instalador clona el repo y **mueve solo este subdirectorio** a
-`~/.hermes/plugins/riel` — el checkout no sobrevive. Por eso el paquete es
-autocontenido: `guide/`, `engine/` y `templates/` viajan adentro y **son la
-fuente** — no hay copia ni paso de build. Se editan acá y el suite
-(`tests/test_plugin_vendor.py`) verifica que no reaparezca un árbol duplicado,
-y que manifiesto, README y motor digan todos `3.0.0`.
+The installer clones the repo and **moves only this subdirectory** to
+`~/.hermes/plugins/riel` — the checkout does not survive. That is why the package is
+self-contained: `guide/`, `engine/` and `templates/` travel inside and **are the source**.
+There is no copy and no build step. Edit them here; `tests/test_plugin_vendor.py`
+verifies that no duplicate tree reappears and that manifest, README and engine all say
+`3.0.0`.
 
-## Instalación (desarrollo)
+## Install (development)
 
 ```bash
 HERMES_HOME=~/.hermes/profiles/coder hermes plugins install \
   "file://$(pwd)#hermes_plugin/riel" --enable
 ```
 
-Los plugins son **por perfil** (`$HERMES_HOME/plugins/`) y la instalación es
-siempre una copia de un commit: no hay symlink, ni en dev.
+Plugins are **per profile** (`$HERMES_HOME/plugins/`) and an install is always a copy of
+a commit: there is no symlink, not even in development.
 
-## Cómo resuelve el worktree
+## How the worktree resolves
 
-El motor resuelve `.riel/` desde el parámetro explícito, nunca del cwd del
-proceso. Cada llamada resuelve la raíz así:
+The engine resolves `.riel/` from the explicit parameter, never from the process cwd.
+Each call resolves the root in this order:
 
-1. argumento `worktree` de la tool (ruta explícita),
-2. el cwd registrado de la sesión (el mismo que usa el tool `terminal`),
+1. the tool's `worktree` argument (an explicit path),
+2. the session's registered cwd (the same one the `terminal` tool uses),
 3. `TERMINAL_CWD`,
-4. el cwd del proceso (solo fuera de un gateway multiplex).
+4. the process cwd (only outside a multiplexed gateway).
 
-Y corre el motor **en el mismo proceso** con `run_verb(argv, worktree=…,
-out=…, err=…)`: sinks de texto explícitos por llamada (nunca un redirect
-global), sin chdir compartido entre sesiones concurrentes. Solo cuando el
-motor no puede cargarse en ese intérprete cae al subproceso con
-`--worktree <worktree>` — y una carga que falla no envenena el loader: la
-llamada siguiente lo reintenta.
+It then runs the engine **in the same process** via
+`run_verb(argv, worktree=…, out=…, err=…)`: explicit text sinks per call (never a global
+redirect), no shared chdir between concurrent sessions. Only when the engine cannot load
+in that interpreter does it fall back to a subprocess with `--worktree <worktree>` — and
+a failed load does not poison the loader: the next call retries it.
 
-## Mitad desktop — un chip en el statusbar
+## Desktop half — a chip in the status bar
 
-`desktop/plugin.js` registra un chip en `statusBar.right`, y es el único:
+`desktop/plugin.js` registers one chip in `statusBar.right`, and it is the only one:
 
-- **Solo existe si hay un run**: `.riel/run.md` activo o draft en el worktree en foco.
-  Sin run, el statusbar no muestra nada.
-- **En reposo**: `Riel` — el run existe; un clic abre el modal con el run
-  renderizado (Streamdown dibuja las secciones y el grafo mermaid).
-- **Turno en curso**: `Riel ● <tool>` — el punto pulsa en color de acento y
-  nombra la tool viva del chat enfocado (p. ej. `Riel ● riel_note`).
+- **It exists only when there is a run**: an active or draft `.riel/run.md` in the
+  focused worktree. With no run, the status bar shows nothing.
+- **At rest**: `Riel` — the run exists; one click opens a modal with the run rendered
+  (Streamdown draws the sections and the mermaid graph).
+- **During a turn**: `Riel ● <tool>` — the dot pulses in the accent colour and names the
+  live tool of the focused chat (e.g. `Riel ● riel_note`).
 
-El estado detallado del run no vive en la barra: lo relee el modelo con
-`riel_run status` y lo hace cumplir el gate. Los dos datos entran por caminos
-distintos:
+Detailed run state does not live in the bar: the model re-reads it with `riel_run status`
+and the gate enforces it. The two facts arrive by different paths:
 
-| Dato | Camino |
+| Fact | Path |
 |---|---|
-| Run | `host.state.cwd` / `session.info` → `GET /api/plugins/riel/run?worktree=<cwd>` (al abrir, al cambiar de foco y de inmediato al terminar un tool) |
-| Ejecución | `host.onEvent('tool.start' \| 'tool.complete')` — el tap del gateway — más `host.state.busy` para el turno en curso |
+| Run | `host.state.cwd` / `session.info` → `GET /api/plugins/riel/run?worktree=<cwd>` (on open, on focus change, and immediately when a tool completes) |
+| Execution | `host.onEvent('tool.start' \| 'tool.complete')` — the gateway tap — plus `host.state.busy` for the turn in flight |
 
-`GET /run` responde `{present, worktree, markdown, status}`: el markdown
-verbatim (acotado, resuelto contra symlinks) para el modal y el objeto JSON de
-`run status` para el estado. Las rutas viejas (`/ledger`, `/contract`) ya no
-existen, y `/health` no filtra el cwd del gateway. Todas las rutas son `def`
-síncronas: FastAPI las corre en su threadpool y una llamada acotada al motor
-nunca bloquea el event loop.
+`GET /run` answers `{present, worktree, markdown, status}`: the verbatim markdown
+(bounded, symlink-resolved) for the modal, and the `run status` JSON object for state.
+The old routes (`/ledger`, `/contract`) no longer exist, and `/health` does not leak the
+gateway's cwd. Every route is a sync `def`: FastAPI runs them in its threadpool, so a
+bounded engine call never blocks the event loop.
 
-Los interruptores siguen vivos como comandos de ⌘K:
-`Riel: encender/apagar el gate` y `… el bloque del prompt`.
+The switches remain available as ⌘K commands: `Riel: turn the gate on/off` and
+`… the prompt block`.
 
-## El gate (`pre_verify`)
+## The gate (`pre_verify`)
 
-Mientras haya un run ACTIVO en el worktree editado, el turno no cierra con
-claims o gates pendientes: el plugin consulta `run status` (en-proceso, por el
-mismo camino seguro que las tools) y devuelve `{"action": "continue", …}`.
+While an ACTIVE run exists in the edited worktree, the turn does not close with claims
+or gates pending: the plugin queries `run status` (in-process, through the same safe path
+as the tools) and returns `{"action": "continue", …}`.
 
-| Límite | Cómo |
+| Limit | How |
 |---|---|
-| Opt-in por worktree | sin `.riel/run.md` encima de los archivos editados no hay aviso; un ledger v1 solo NO habilita el gate |
-| Solo runs activos | un run escrito pero sin `activate` es asunto del agente, no del gate |
-| Un solo aviso por turno | `plugins.entries.riel.settings.gate_attempts` (int, 0–10, default 1); por encima de eso Hermes corta en `agent.max_verify_nudges` (3) |
-| Nunca bloquea | cualquier fallo (sin run, sin motor, estado ilegible) devuelve `None` y el turno cierra |
-| Sin subproceso | el gate usa el motor en-proceso (cargador seguro), nunca un fallback de subproceso |
-| Apagable | `plugins.entries.riel.settings.gate: false` |
+| Opt-in per worktree | no `.riel/run.md` above the edited files → no nudge; an old state file alone does NOT enable the gate |
+| Active runs only | a run written but not `activate`d is the agent's business, not the gate's |
+| One nudge per turn | `plugins.entries.riel.settings.gate_attempts` (int, 0–10, default 1); above that Hermes caps at `agent.max_verify_nudges` (3) |
+| Never blocks | any failure (no run, no engine, unreadable state) returns `None` and the turn closes |
+| No subprocess | the gate uses the in-process engine (safe loader), never a subprocess fallback |
+| Switchable | `plugins.entries.riel.settings.gate: false` |
 
-Qué worktree se juzga: primero el de los **archivos editados** (un turno puede
-editar otro repo), y si ninguno es un worktree con run, el cwd de la sesión.
+Which worktree is judged: first the one containing the **edited files** (a turn may edit
+another repo), and if none of them is a worktree with a run, the session's cwd.
 
-## Verificación
+## Verification
 
 ```bash
-make test          # incluye tests/test_plugin_*.py (paquete + handlers + chip)
-make lint          # byte-compile de motor, paquete, scripts y tests
-make validate      # dense-register + grafo + mmdc sobre README, specs, guides y templates
-hermes plugins validate hermes_plugin/riel   # mismo discovery/registro que usa Hermes
+make test          # includes tests/test_plugin_*.py (package + handlers + chip)
+make lint          # byte-compile engine, package, scripts and tests
+make validate      # dense-register + graph + mmdc over README, specs, guides, templates
+hermes plugins validate hermes_plugin/riel   # the same discovery/registration Hermes uses
 ```
