@@ -51,8 +51,14 @@ def _note_properties():
                 "description": param["help"],
             }
         else:
+            kind = param.get("kind")
+            prop_type = (
+                "integer" if kind == "int"
+                else "boolean" if kind == "bool"
+                else "string"
+            )
             props[caller_name] = {
-                "type": "integer" if param.get("kind") == "int" else "string",
+                "type": prop_type,
                 "description": param["help"],
             }
     props["worktree"] = _WORKTREE
@@ -62,10 +68,13 @@ def _note_properties():
 RIEL_NOTE = {
     "name": "riel_note",
     "description": (
-        "Write to the Riel run state (.riel/runs/<slug>.md) and run its gates. For a gate, "
-        "pass gates=['G1'], command='<the real command>' and claims=['P1']; the "
-        "engine RUNS the command and records E# evidence. Never pass an exit code. "
-        "Core facts, open questions and closures ride the same tool with their own flags."
+        "Write to the Riel run state (.riel/runs/<slug>.md) and run its gates. "
+        "For a gate, pass gates=['G1'], covering='<scope>', claims=['P1'], and "
+        "command='<cmd>' (omit command when G1 declares a frozen '— cmd:'; "
+        "mismatches are refused). The engine runs the command, captures the real "
+        "exit code, and records E# evidence; pass partial=true for intermediate "
+        "runs that should not close gates/claims. Never pass exit_code or confidence. "
+        "Core facts, open questions and closures ride the same tool."
     ),
     "parameters": {
         "type": "object",

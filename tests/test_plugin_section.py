@@ -173,6 +173,58 @@ class SectionTest(unittest.TestCase):
         stub.seed(self.tmp, goal="ship the package")
         self.assertIn("Worktree state — `run` · Goal: ship the package", self.render())
 
+    def test_state_line_renders_focus_alerts_and_sublines(self):
+        stub.seed(
+            self.tmp,
+            goal="ship v5",
+            dirty_since_evidence=True,
+            scope_violations=["bad/file.py"],
+            stuck_gates={"G1": 3},
+            focus={
+                "phase": "F1",
+                "deliverable": ["ship"],
+                "pending_gates": [],
+                "open_claims": [],
+                "do_not": ["never touch prod", "never skip checks"],
+                "core": ["db — sqlite in .riel"],
+            },
+        )
+        state = section.state_line(self.tmp)
+        self.assertIn("dirty since evidence", state)
+        self.assertIn("scope violations: 1", state)
+        self.assertIn("stuck: G1(3)", state)
+        self.assertIn("  DO NOT: never touch prod; never skip checks", state)
+        self.assertIn("  Core: db — sqlite in .riel", state)
+
+    def test_state_line_renders_stale_contract(self):
+        stub.seed(self.tmp, error="stale state: definition changed since r1")
+        state = section.state_line(self.tmp)
+        self.assertIn("Worktree state — `run` · STALE (run riel_run rebase)", state)
+
+    def test_focus_sublines_respect_section_budget(self):
+        stub.seed(
+            self.tmp,
+            goal="ship v5",
+            focus={
+                "do_not": ["rule " + ("x" * 200)],
+                "core": ["fact — " + ("y" * 200)],
+            },
+        )
+        block = self.render()
+        self.assertLessEqual(len(block), section.SECTION_MAX_CHARS)
+        self.assertIn("  DO NOT:", block)
+        self.assertIn("  Core:", block)
+
+        original = section.SECTION_MAX_CHARS
+        try:
+            core_len = len(section.HEAD) + len(section.index_line()) + len(section._door_line()) + 4
+            section.SECTION_MAX_CHARS = core_len + 20
+            tight = self.render()
+            self.assertLessEqual(len(tight), section.SECTION_MAX_CHARS)
+            self.assertNotIn("Worktree state —", tight)
+        finally:
+            section.SECTION_MAX_CHARS = original
+
 
 class GuideWiringTest(unittest.TestCase):
     """The section reads the guide's own files — the index cannot drift from them."""

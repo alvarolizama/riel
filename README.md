@@ -5,7 +5,7 @@
 ### The rail a coding agent runs on. Steering, not horsepower.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-4.0.0-FF6B00.svg)](./hermes_plugin/riel/plugin.yaml)
+[![Version](https://img.shields.io/badge/version-5.0.0-FF6B00.svg)](./hermes_plugin/riel/plugin.yaml)
 [![Python](https://img.shields.io/badge/Python-3-3776AB?logo=python&logoColor=white)](https://www.python.org)
 [![Hermes](https://img.shields.io/badge/Hermes-plugin-5B8DEF)](https://www.nousresearch.com)
 
@@ -31,6 +31,7 @@ Everything lives in one directory inside your repository:
   shapings/<slug>.md    one question each, with its evidence
   runs/<slug>.md        one contract per track, executed IN PLACE —
                         live and finished alike, never pruned
+  logs/<E#>.log         full raw output when a gate fails or output is large
 ```
 
 `.riel/` is gitignored. It is working state, not source.
@@ -180,19 +181,22 @@ path, uid and sha256. After this the contract is self-contained.
 riel_note(
     gates=["G1"],
     claims=["P1"],
-    command="make test",
     covering="the parser and its neighbouring regressions",
 )
 ```
 
-The engine **runs** that command in the worktree and records the actual exit code as
-`E#` evidence. You never pass an exit code — the schema does not accept one. A checkpoint
-for another claim or gate cannot advance this work.
+When `G1` declares a frozen command in `#### Gates` (e.g.
+`- G1: parser tests pass — cmd: make test` or ``- G1: `make test` ``), the
+engine **runs** that frozen command automatically in the worktree and refuses
+substituting a different command (edit Definition and `rebase` to change it).
+Gates without a frozen command require `command=…`. You never pass an exit code
+— the schema does not accept one. Pass `partial=True` to log intermediate
+evidence without passing the gate or covering claims.
 
 ### Read the result
 
 ```python
-riel_run(verb="status", run="storage")   # one JSON object: cursor, claims, gates, done
+riel_run(verb="status", run="storage")   # one JSON object: cursor, ready_phases, focus, done
 riel_run(verb="list")                    # every contract in .riel/runs/, with its state
 ```
 
@@ -255,21 +259,26 @@ The agent edits the code, then calls:
 
 ```python
 riel_note(run="storage", gates=["G1"], claims=["P1"],
-          command="make test", covering="the parser and its neighbouring regressions")
+          covering="the parser and its neighbouring regressions")
 ```
 
-You get: *E1 recorded, exit 0, G1 passed, P1 covered, phase advanced to F2.* The engine
-ran `make test` itself and captured the real exit code. An agent saying "tests pass"
-records nothing.
+You get: *E1 recorded, gate_exit_code: 0 | gate_passed: true, diff_stat,
+Focus Card for the next phase, phase advanced to F2.* The engine ran the
+frozen `make test` command itself and captured the real exit code. On failure,
+it prints up to 3,000 chars of newline-preserved output directly and saves the
+full log to `.riel/logs/E1.log`; 3+ consecutive failures trigger a
+`STUCK WARNING`. An agent saying "tests pass" records nothing.
 
 ### The gate catches a premature close
 
 > That's done, wrap up.
 
-…but `P2` still has no evidence. You do not have to remember to check: `pre_verify`
-fires on the turn that edited code and answers *this contract still owes 1 claim and
-1 gate — run them or update the state, then close.* The agent keeps going. A worktree
-with no contract, or a draft, is never gated.
+…but `P2` still has no evidence, or a tracked file was edited after the last
+passing gate (`dirty_since_evidence`), or an `allow:`/`deny:` rule was violated.
+You do not have to remember to check: `pre_verify` fires on the turn that edited
+code, catches pending work, `stale`, `dirty_since_evidence`, and
+`scope_violations`, and prints the pending gates/claims plus `DO NOT`. The agent
+keeps going. A worktree with no contract, or a draft, is never gated.
 
 ### Resume after a gap
 
@@ -326,7 +335,7 @@ The prose ships with the plugin, so the agent reads the rules it is being held t
 | `riel_project` | `new` · `validate` · `status` | Order several shapings and derive their progress |
 | `riel_shape` | `new` · `validate` | Render and validate one question's evidence |
 | `riel_run` | `new` · `validate` · `activate` · `rebase` · `status` · `list` · `slice` | The contract's whole lifecycle |
-| `riel_note` | `run`, `gates[]`, `claims[]`, `command`, `covering`, `confidence`, `core[]`, `core_slot`, `open[]`, `settled_by[]`, `close`, `evidence` | The only writer of State. Runs gates, records evidence. `run` picks the contract when several are active |
+| `riel_note` | `run`, `gates[]`, `claims[]`, `command`, `covering`, `partial`, `core[]`, `core_slot`, `open[]`, `settled_by[]`, `close`, `evidence` | The only writer of State. Runs gates (auto-running frozen gate commands), records evidence. `run` picks the contract when several are active |
 | `riel_clean` | `archive` | Wipe `.riel/`. With `archive=true`, keep a sha256-verified copy inside it first |
 | `riel_check` | `file`, `mermaid` | Check any Markdown for dense-register markers and graph validity |
 
@@ -413,9 +422,11 @@ The engine reads one contract file.
 
 ## Constraints
 - stdlib only
+- allow: engine/**, tests/**
 
 ## DO NOT
 - touch the ui
+- deny: assets/**
 
 ## Phases
 <!-- general DAG here: mermaid between phases, `- F1 → F2`, or the heading order -->
@@ -429,7 +440,7 @@ The engine reads one contract file.
 - P1: the parser cuts at Metadata — anchor: §F1#2
 
 #### Gates
-- G1: make test
+- G1: parser tests pass — cmd: make test
 
 #### Deliverable
 - engine/run.py reads one file
@@ -438,10 +449,10 @@ The engine reads one contract file.
 - VERIFY make lint
 
 #### Claims
-- P2: the seven tools resolve — anchor: §F2#1
+- P2: the verbs resolve — anchor: §F2#1
 
 #### Gates
-- G2: make lint
+- G2: `make lint`
 
 #### Deliverable
 - tools.py without the old register
@@ -461,14 +472,14 @@ The engine reads one contract file.
 | `### Shaping` | The binding: one path or uid. One run, one shaping, one question, one PR |
 | `### Basis` | Engine-frozen at activation: the cited findings, with source and confidence. This is why a delegated slice needs no external file |
 | `Deliverable` | The CONCRETE artifacts of the whole run: paths, files, endpoints. What a reviewer can point at |
-| `Constraints` | Hard rules, **global**. They bind every phase |
-| `DO NOT` | Scope enforcement for the whole PR, **global**. No phase may relax it — the diff is reviewed as a whole |
+| `Constraints` | Hard rules, **global**. They bind every phase; supports optional enforceable `- allow: path/**` globs |
+| `DO NOT` | Scope enforcement for the whole PR, **global**. No phase may relax it; supports optional `- deny: path/**` globs |
 | `Phases` | The execution structure, in two levels (below). Each phase carries its own `#### Deliverable` — its step of the staircase |
 | `Metadata` | `format`, `revision`, `activated`, `definition_sha256`, `shaping`, `shaping_id`, `shaping_sha256`. The hashes are what make drift detectable |
 | `Execution state` | `current_phase`, derived — never asserted |
 | `Core` | At most two load-bearing working facts, 1-based slots. A small working memory, not a dump |
 | `Open` | `Q#` with the test that settles them; each closes against a real `E#` |
-| `Evidence` | Append-only `E#` rows: gate, claims, revision, command (base64), **real exit code**, covering scope |
+| `Evidence` | Append-only `E#` rows: gate, claims, revision, command (base64), **real exit code**, covering scope, optional `partial:true`, git `tree` + `files` |
 
 **Why phases are sections.** `## Phases` holds the general DAG in its preamble, then one
 `### F#: <title>` per phase carrying its own steps and its own `#### Claims`,
@@ -484,9 +495,11 @@ inserting a step in F1 renumbered F2's steps, and a claim anchored to `S3` silen
 pointed at a different step while still resolving. Per-phase ids plus `§F1#2` anchors
 make that class of silent failure impossible.
 
-**Why decisions and loops live in the general DAG.** A phase's step list is linear.
-Branching needs labeled edges and bounded counter guards (`< 3`, `>= 3`), which only a
-parsed DAG can express. So mermaid between phases, bullets inside them.
+**Why dependencies and parallelism live in the general DAG.** A phase's step list is
+linear. Parallel branches, joins, and bounded retries (`< 3`, `>= 3`) need a parsed
+DAG between phases; changing direction uses `run rebase` rather than leaving dead
+conditional branches whose unreachable gates prevent `done`. So mermaid between phases,
+bullets inside them.
 
 ### Project — `riel-project/v1`
 
@@ -512,21 +525,38 @@ declaration, not by filename — you name the contract freely.
 
 - **Evidence counts only at the current revision.** A rebase bumps the revision; older
   evidence is retained verbatim for audit but no longer counts.
-- **A gate passes** when its command exited 0 and its confidence (if given) is ≥ 12.
-- **A phase completes** when every gate inside its block has passing, counted evidence
-  and all earlier phases are complete. Gate completion drives the phase — never a count
-  of evidence rows.
-- **A claim closes** only against evidence that names it, at the current revision.
-- **`done`** is true when every claim is covered by passing evidence and every gate has
-  passed. Open questions do not block `done`; an empty Open section is fine by design.
+- **Frozen gate commands.** Gates declared with `— cmd: <command>` (or backticks) run
+  automatically in `riel_note` and refuse substituting a different command; unfrozen
+  gates emit a validation warning and still require `command`.
+- **A gate passes** iff its command exited 0 and `partial` is not set — purely
+  objective verification (there is no `confidence` parameter on `riel_note`).
+  `partial=true` logs intermediate evidence without passing the gate or covering claims.
+- **Transparent failure output, logs, and Stuck Breaker.** `riel_note` reports
+  `gate_exit_code`, `gate_passed`, `diff_stat` (warning if test files changed), Focus
+  Card lines, and up to 3,000 chars of newline-preserved failure tail; full large or
+  failing outputs land in `.riel/logs/<E#>.log`. At 3+ consecutive failures on the same
+  gate, `stuck_gates` populates and `STUCK WARNING` urges reassessment or `ASK`.
+- **Git `tree_sha`, `dirty_since_evidence`, and `allow`/`deny` scope rules.** In a git
+  worktree, `E#` pins `tree:<12hex>` and `files:<N>`; editing files outside `.riel/`
+  after the last passing evidence sets `dirty_since_evidence: true` and blocks `done`
+  until re-verified. Violations of `allow:` / `deny:` globs (`*`, `?`, `**`) populate
+  `scope_violations`, print `SCOPE VIOLATION`, and block `done`.
+- **Real DAG phase derivation.** `ready_phases` and phase completion follow real DAG
+  predecessors (parallel phases become ready together; linear authored order when no
+  preamble edges exist).
+- **A claim closes** only against passing evidence that names it, at the current revision.
+- **`done`** is true when every claim is covered by passing evidence, every gate has
+  passed, `scope_violations` is empty, and `dirty_since_evidence` is false. Open
+  questions do not block `done`; an empty Open section is fine by design.
 - **A failed command never covers its claim.** The exit code is captured, not supplied.
 
 ## Around the contract
 
 **The gate hook.** `pre_verify` fires after a turn that edited code in a worktree with an
-active contract. It aggregates across ALL of them: while any track owes claims or gates,
-it keeps the agent going and names the pending slugs. A worktree with no contract is never
-gated, and a draft is never gated — only activated contracts.
+active contract. It aggregates across ALL of them: while any track is `stale`, has
+`dirty_since_evidence`, has `scope_violations`, or owes claims or gates, it keeps the
+agent going and prints the pending gates/claims plus `DO NOT` (and `STUCK WARNING` when
+stuck). A worktree with no contract, or a draft, is never gated.
 
 **The session checklist.** Riel owns its rows in the session todo list: the goal, phases
 as checks, steps as subchecks, gates as checks. Only passing evidence completes them.
@@ -535,9 +565,10 @@ With several active contracts the checklist holds them all, each namespaced by s
 never collide. A contract that cannot be read is reported, not dropped. Your own todos
 are untouched.
 
-**The prompt section.** A small `riel` section points at the prose and lists every active
-contract with its cursor and pending counts, one line each, so a new session starts
-oriented instead of guessing.
+**The prompt section.** A small `riel` section (`section.py`) points at the prose,
+lists every active contract with its cursor and pending counts, and surfaces `DO NOT`,
+`Core`, and stale, dirty, or scope alerts so a new session starts oriented instead of
+guessing.
 
 **The desktop chip and `/riel`.** Three switches — `gate`, `tools`, `context` — plus an
 operator note. A switch written now applies to the **next** session: the prompt and tool
@@ -573,7 +604,9 @@ are how a format quietly stops meaning anything.
 **Drift is detectable, not assumed.** `definition_sha256` covers the authored half
 including the frozen Basis; `shaping_sha256` pins the bound research. Editing either
 makes the run stale (exit 3) until an explicit `rebase`. Editing a *sibling* shaping
-never does — it is another track's evidence.
+never does — it is another track's evidence. `shape validate` and `run activate`
+also verify repository `— source:` file/line/symbol citations against the worktree, and
+clause separators accept ` — `, ` -- `, and ` – ` (normalized to ` — ` on write).
 
 **Destructive operations are opt-in and verified.** `riel_clean` wipes everything in
 `.riel/` and keeps only the lock and `archive/`. With `archive=true` it copies the tree

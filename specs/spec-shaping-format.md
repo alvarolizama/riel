@@ -85,12 +85,24 @@ The heading is the claim; a `#### Diagram` (four hashes) stays inside its
 finding, while the next `###` ends it. The frozen Basis copies heading, source
 and confidence — never the body or the diagram — so a slice stays small.
 
-Only dossiers are parsed; the old one-line bullet register is not read.
+Only dossiers are parsed; the old one-line bullet register is not read. Clause
+separators accept ` — `, ` -- `, and ` – `.
 
-Repository evidence should record `repository@observed-commit:path:lines#symbol`.
-URLs include a retrieval date. Benchmarks identify exact command and output. The
-observed commit pins what was investigated; it does not imply current code is
-unchanged. A reference being syntactically valid establishes location, not truth.
+Repository evidence should record `repository@observed-commit:path:lines#symbol`
+(or worktree-relative `path:lines#symbol`). URLs include a retrieval date.
+Benchmarks identify exact command and output. The observed commit pins what was
+investigated; it does not imply current code is unchanged. A reference being
+syntactically valid establishes location, not truth.
+
+`shape validate` and `run activate` verify repository source references
+(`repo@<rev>:<path>[:start[-end]][#symbol]` and local
+`<path>:start[-end][#symbol]`) against the actual worktree:
+
+- missing files, paths escaping the worktree, out-of-range line numbers, or a
+  missing `#symbol` in the target file FAIL validation;
+- a `#symbol` found in the file outside the cited line range emits a warning;
+- non-file sources (URLs, `cmd:`, `benchmark:`, etc.) are accepted without file
+  checks.
 
 ## Identity, location and revision
 

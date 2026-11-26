@@ -31,7 +31,7 @@ Yes — supported by F1
 ## Findings
 ### F1: status is derived from evidence
 The status verb reads the contract and computes the cursor.
-— source: repo@HEAD:hermes_plugin/riel/engine/run.py:1-9#run_verb, confidence high
+— source: repo@HEAD:src/status.py:1-5#run_verb, confidence high
 
 ## Facts
 - The benchmark stays inside its own worktree.
@@ -82,7 +82,7 @@ A latency measurement.
 - P1: status parses — anchor: shaping:F1
 
 #### Gates
-- G1: true
+- G1: bench — cmd: true
 
 #### Deliverable
 - The measured latency.
@@ -107,6 +107,9 @@ def main():
         shapings = os.path.join(worktree, ".riel", "shapings")
         os.makedirs(runs)
         os.makedirs(shapings)
+        os.makedirs(os.path.join(worktree, "src"))
+        with open(os.path.join(worktree, "src", "status.py"), "w", encoding="utf-8") as fh:
+            fh.write("# status helper\n\ndef run_verb():\n    return 0\n\n# end\n")
         with open(os.path.join(shapings, "bench.md"), "w", encoding="utf-8") as fh:
             fh.write(SHAPING)
         with open(os.path.join(runs, "bench.md"), "w", encoding="utf-8") as fh:

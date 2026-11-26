@@ -30,7 +30,7 @@
 #### Diagram
 <!-- OPTIONAL — delete it when the prose already carries the point. This
      finding's own diagram, NOT the execution DAG (that one is the Contract's
-     ## Graph). -->
+     ## Phases). -->
 
 ## Facts
 <!-- What the design must RESPECT: established constraints, invariants,

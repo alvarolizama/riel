@@ -1,4 +1,4 @@
-# Riel — Hermes plugin (v4.1.0)
+# Riel — Hermes plugin (v5.0.0)
 
 The package **is** the product: the prose, the engine, the tools, the gate and the
 desktop chip. State lives in `.riel/runs/<slug>.md` (`riel-run/v1`), one question's evidence in
@@ -79,11 +79,17 @@ never reaches the model, and a repeatable parameter reaches it as ONE array (`cl
   there — no live file, no archive move, never pruned. SEVERAL may be active at once
   (parallel tracks in one worktree); `run=<slug>` selects one and is required when
   several match. `run list` enumerates them all with their state.
-- **`riel_note` runs gates.** `gates: ["G1"], command: "<real command>", covering:
-  "<scope>", claims: ["P1"]` — the ENGINE executes the command, captures the real exit
-  code and records `E#` evidence. Nobody passes an exit code.
-- **`run status`** answers ONE JSON object with the run's state, including the bound
-  shaping (`path`, `id`, `sha256`).
+- **`riel_note` runs frozen gates.** Gates declare their frozen command (`— cmd: <cmd>`
+  or backticks); `riel_note(gates: ["G1"], covering: "<scope>", claims: ["P1"])` executes
+  it automatically and refuses mismatched `--command` overrides. The ENGINE captures the
+  real exit code, exposes `gate_exit_code` / `gate_passed`, prints failure output tails
+  (with full logs under `.riel/logs/<E#>.log`), flags consecutive failures (`STUCK WARNING`),
+  and tracks git `tree_sha` (`dirty_since_evidence`) plus enforceable `allow:`/`deny:`
+  scope globs. `partial: true` records intermediate evidence without closing gates or claims;
+  subjective `confidence` and caller-supplied exit codes do not exist.
+- **`run status`** answers ONE JSON object with the run's state, including `ready_phases`
+  (real DAG derivation), `dirty_since_evidence`, `scope_violations`, `stuck_gates`, a
+  compact `focus` card, and the bound shaping (`path`, `id`, `sha256`).
 - **`riel_clean`** removes EVERYTHING inside `.riel/` (run, project, shapings, runs,
   backups, any other file); only the lock and `archive/` stay. Archiving is opt-in:
   `archive=true` copies the tree into `.riel/archive/<ts>/`, verifies every sha256
@@ -117,7 +123,7 @@ The installer clones the repo and **moves only this subdirectory** to
 self-contained: `guide/`, `engine/` and `templates/` travel inside and **are the source**.
 There is no copy and no build step. Edit them here; `tests/test_plugin_vendor.py`
 verifies that no duplicate tree reappears and that manifest, README and engine all say
-`4.0.0`.
+`5.0.0`.
 
 ## Install (development)
 

@@ -8,7 +8,7 @@ Each record is:
 
     name    — the tool parameter and the schema property
     flag    — the engine's CLI flag
-    kind    — "str" | "int" (the type both the schema and argparse use)
+    kind    — "str" | "int" | "bool" (the type both the schema and argparse use)
     repeat  — True when the flag may repeat (argparse action="append")
     help    — the schema description AND the argparse help, one text
     section — the run.md `## section` the entry lands in
@@ -44,7 +44,8 @@ NOTE_PARAMS = (
         "section": "## Evidence",
         "help": (
             "Gate id (G#) this evidence completes; repeatable. Requires "
-            "--command and --covering."
+            "--covering; --command is optional when the gate declares a "
+            "frozen '— cmd:' command."
         ),
     },
     {
@@ -65,7 +66,9 @@ NOTE_PARAMS = (
         "section": "## Evidence",
         "help": (
             "Shell command the engine executes in the worktree to produce "
-            "the evidence; the real exit code is captured, never supplied."
+            "the evidence; the real exit code is captured, never supplied. "
+            "Frozen gate commands ('— cmd:') run automatically and mismatches "
+            "are refused."
         ),
     },
     {
@@ -76,14 +79,11 @@ NOTE_PARAMS = (
         "help": "What scope the command actually covers.",
     },
     {
-        "name": "confidence",
-        "flag": "--confidence",
-        "kind": "int",
+        "name": "partial",
+        "flag": "--partial",
+        "kind": "bool",
         "section": "## Evidence",
-        "help": (
-            "Optional confidence 1..20 (default: absent). Exit 0 with "
-            "confidence >= 12 counts as passed."
-        ),
+        "help": "Record intermediate evidence without passing the gate or covering claims.",
     },
     {
         "name": "core",

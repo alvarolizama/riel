@@ -196,6 +196,42 @@ class TypedToolsTest(unittest.TestCase):
         payload = self.call("riel_note", {"claims": [1, 2]})
         self.assertIn("array of strings", payload["error"])
 
+    def test_note_rejects_confidence_and_exposes_partial_boolean(self):
+        described = self.schema("riel_note")["parameters"]["properties"]
+        self.assertNotIn("confidence", described)
+        self.assertIn("partial", described)
+        self.assertEqual(described["partial"]["type"], "boolean")
+        bad = self.call("riel_note", {"gates": ["G1"], "command": "true", "confidence": 15})
+        self.assertEqual(bad["exit_code"], 1)
+        self.assertIn("unknown parameter", bad["error"])
+
+    def test_note_elevates_gate_exit_code_and_gate_passed(self):
+        stub.seed(self.tmp, claims=["P1"], gates=["G1"])
+        ok = self.call("riel_note", {
+            "gates": ["G1"], "command": "true", "covering": "all", "claims": ["P1"],
+        })
+        for key in ("tool", "worktree", "exit_code", "passed", "stdout", "stderr"):
+            self.assertIn(key, ok)
+        self.assertEqual(ok["exit_code"], 0)
+        self.assertTrue(ok["passed"])
+        self.assertEqual(ok["gate_exit_code"], 0)
+        self.assertTrue(ok["gate_passed"])
+
+        partial = self.call("riel_note", {
+            "gates": ["G1"], "command": "true", "covering": "wip", "partial": True,
+        })
+        self.assertEqual(partial["exit_code"], 0)
+        self.assertTrue(partial["passed"])
+        self.assertEqual(partial["gate_exit_code"], 0)
+        self.assertFalse(partial["gate_passed"])
+
+        fail = self.call("riel_note", {
+            "gates": ["G1"], "command": "false", "covering": "all", "partial": False,
+        })
+        self.assertEqual(fail["exit_code"], 0)
+        self.assertEqual(fail["gate_exit_code"], 1)
+        self.assertFalse(fail["gate_passed"])
+
     def test_check_runs_both_halves_on_one_file(self):
         target = os.path.join(self.tmp, "doc.md")
         with open(target, "w", encoding="utf-8") as handle:

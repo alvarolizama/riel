@@ -1,7 +1,7 @@
 # Spec 8 — The Contract and its run format (`riel-run/v1`)
 
 This document specifies the Contract: the artifact a run executes. The format
-tag is `riel-run/v1`; the engine version that implements it is riel 4.0.0. Any
+tag is `riel-run/v1`; the engine version that implements it is riel 5.0.0. Any
 future incompatible change bumps the tag (and this spec gets a new version
 section). There is **no converter** and no legacy machinery: `.riel/runs/<slug>.md` is the only
 state file, so any other file in `.riel/` is simply invisible to the engine.
@@ -81,10 +81,15 @@ must know the target and the boundary before reading how the work is carried out
    done: paths, files, endpoints. The Objective says what result they add up to;
    this says what a reviewer can point at. The two are deliberately distinct.
 5. `## Constraints` — hard rules, at least one bullet. GLOBAL: they bind every
-   phase.
+   phase. Supports optional enforceable path glob rules (`- allow: path/**`,
+   comma-separated globs supporting `*`, `?`, `**`) checked against git
+   worktree changes.
 6. `## DO NOT` — scope enforcement for the whole PR, at least one bullet.
    GLOBAL: no phase may relax it. One run is one shaping is one PR, so the
-   boundary is reviewed as a whole, not per phase.
+   boundary is reviewed as a whole, not per phase. Supports optional enforceable
+   path glob rules (`- deny: path/**`, supporting `*`, `?`, `**`). Violations
+   populate `scope_violations`, print `SCOPE VIOLATION` in `note`, block
+   `done`, and trigger `pre_verify`.
 7. `## Phases` — the execution structure, in two levels (below). Each phase
    carries its own `#### Deliverable`: its step of the staircase, distinct from
    the run's final artifact.
@@ -110,7 +115,7 @@ per phase. Each phase block carries its own steps and its own `#### Claims`,
     - P1: the parser cuts at Metadata — anchor: §F1#2
 
     #### Gates
-    - G1: make test
+    - G1: parser tests pass — cmd: make test
 
     #### Deliverable
     - engine/run.py reads one file
@@ -122,16 +127,18 @@ per phase. Each phase block carries its own steps and its own `#### Claims`,
     - P2: the verbs resolve — anchor: §F2#1
 
     #### Gates
-    - G2: make lint
+    - G2: `make lint`
 
     #### Deliverable
     - tools.py rewired
 
 **Level 1 — the general DAG.** A ` ```mermaid ` flowchart between phases
-(decision nodes `{...}` whose outgoing edges all carry labels, loops with a
+(parallel branches become ready together when predecessors pass; loops need a
 bounded counter guard `< 3` / `>= 3`), or an arrow list `- F1 → F2 → F3`, or
 nothing: then the authored order of the `### F#` headings IS the order.
-Decisions and loops belong to this level.
+The phase graph models dependencies and parallelism; changing direction uses
+`run rebase` — do not leave dead conditional branches whose unreachable gates
+prevent `done`.
 
 **Level 2 — a phase's steps.** Bullets starting with the closed verbs
 READ/EDIT/CREATE/RUN/VERIFY/ASK, chained linearly. They are numbered PER PHASE
@@ -139,13 +146,24 @@ READ/EDIT/CREATE/RUN/VERIFY/ASK, chained linearly. They are numbered PER PHASE
 renumbers another phase's anchors. A phase has exactly ONE outgoing edge — to
 its first step; the last step edges to the next phase per the general DAG.
 
+**Frozen gate commands.** Inside `#### Gates`, each gate declares its frozen
+command via `— cmd: <command>` (or `-- cmd:` / `– cmd:`) or leading backticks
+(e.g. `- G1: parser tests pass — cmd: make test`, `- G1: \`make test\``, or
+`- G1: \`make test\` — parser tests pass`). When frozen, `note` executes that
+command automatically (so `--command` is optional) and REFUSES a different
+`--command` (edit the Definition and run `run rebase` to change it). A gate
+without a frozen command emits a validation warning and still requires
+`--command`.
+
 **Membership is structural.** A gate belongs to the phase whose block holds
 it; there is no `— phase:` suffix and no run-global gate. A leftover suffix
 that disagrees with its block is an error. `P#` and `G#` ids stay globally
 unique because Evidence rows reference them.
 
-**Anchors.** `§F1#2` names step 2 of phase F1 and is stable against edits in
-other phases. `§<Section>#n`, a node id, and `shaping:F#` work as before.
+**Anchors and clause separators.** `§F1#2` names step 2 of phase F1 and is
+stable against edits in other phases. `§<Section>#n`, a node id, and
+`shaping:F#` work as before. Clause separators accept ` — `, ` -- `, and ` – `
+(normalized to canonical ` — ` when the engine writes state).
 
 `-`, `*` and `1.` are all accepted as bullets; HTML comments are stripped
 before parsing, so a commented-out example never becomes data.
@@ -184,38 +202,55 @@ shaping, then:
   block done.
 - `## Evidence` — one record per line:
 
-      - E1 gate:G1 claims:P1,P2 revision:r1 command_b64:<base64-of-exact-UTF-8-command> exit_code:0 covering:parser confidence:14
+      - E1 gate:G1 claims:P1,P2 revision:r1 command_b64:<base64-of-exact-UTF-8-command> exit_code:0 covering:parser tree:a1b2c3d4e5f6 files:2
         out: make test … bounded captured output snippet
 
-  `gate:` is the G# (or comma list) this evidence completes; `claims:` the
+  `gate:` is the G# (or comma list) this evidence records; `claims:` the
   P# list it covers (`none` allowed); `revision:` the run revision the
   evidence was produced under. `command_b64:` is the base64 encoding of the
   exact UTF-8 command passed to the shell; Unicode and newlines survive byte
   for byte. State is an engine-written serialization, not an editable command
   list. Decode the field to display the executed command.
   `exit_code:` the REAL captured exit code — there is no flag to self-supply
-  one; `covering:` the scope; `confidence:` optional, 1..20. The indented
-  `out:` line carries a bounded output snippet.
+  one; `covering:` the scope; optional `partial:true` when `--partial` was
+  passed; inside a git worktree, `tree:<12hex>` (hash of `HEAD` plus
+  dirty/untracked files outside `.riel/`) and `files:<N>`. The indented `out:`
+  line carries a bounded output snippet (up to 240 chars); when output exceeds
+  240 chars or `exit_code != 0`, full raw output is written to
+  `.riel/logs/<E#>.log`.
 
 ## `note` — the only state writer
 
-    riel note --gate G1 --claim P1 --command CMD --covering WHAT [--confidence 1..20]
+    riel note --gate G1 --claim P1 [--command CMD] --covering WHAT [--partial]
     riel note --core "name — fact" [--core-slot N]
     riel note --open "question" --settled-by TEST
     riel note --close 1 --evidence 1
 
 Rules:
 
-- `--gate` (repeatable) records evidence; it requires `--command` (executed
-  via subprocess in the worktree, exit code captured, bounded output
-  snippet, bounded timeout — 124 on timeout) and `--covering`.
+- `--gate` (repeatable) records evidence; it requires `--covering` and runs the
+  command in the worktree (capturing the real exit code, bounded timeout — 124
+  on timeout).
+- When the target gate declares a frozen command in `#### Gates`, `--command` is
+  optional and the engine executes the frozen command automatically; passing a
+  different `--command` is REFUSED (edit Definition and run `run rebase` to
+  change it). Multiple gates in one `note` call without `--command` must share
+  the same frozen command. Gates without a frozen command require `--command`.
 - `--claim` (repeatable) must reference EXISTING P# ids; `--gate` must
   reference existing G# ids. Unknown ids are rejected.
-- `--confidence` is optional (absent by default), 1..20; anything outside
-  is rejected. `confidence > 20` and a `--source` flag do not exist.
+- `--partial` records intermediate evidence (`partial:true` on `E#`) without
+  passing the gate or covering claims. Evidence passes iff `exit_code == 0` and
+  not `partial`. There is no `--confidence` or `--source` flag.
+- Output feedback: `note` prints `gate_exit_code`, `gate_passed`, `diff_stat`
+  (with a warning when test files were modified), `SCOPE VIOLATION` on
+  `allow`/`deny` breaches, `STUCK WARNING` at 3+ consecutive failures on the
+  same gate in the current revision (`stuck_gates`), the active phase's Focus
+  Card (`focus phase`, `deliverable`, `pending_gates`, `open_claims`, `do_not`,
+  `core`), and on non-zero exit code prints the newline-preserved output tail
+  (up to 3,000 chars) directly plus `log: .riel/logs/<E#>.log`.
 - One note, one kind: gate evidence, or core, or open/close — never a mix.
 - `--core` writes `## Core`; `--core-slot N` is 1-based and replaces or
-  appends slot N.
+  appends slot N. Separators ` — `, ` -- `, and ` – ` are normalized to ` — `.
 - An open question closes only against existing evidence (`--evidence E#`).
 - note NEVER writes goals, nexts, phases or claims: those live in the Definition,
   or are derived.
@@ -226,18 +261,28 @@ Rules:
 ## Derivation (status, todo, done)
 
 - Evidence counts only when its `revision:` equals the current revision.
-  Evidence with exit 0 AND (no confidence or confidence >= 12) is passed.
-- A phase is complete when every gate INSIDE its block has passing, counted
-  evidence AND all earlier phases are complete. Membership is structural, so
-  every valid phase has at least one gate. `current_phase` is the first
-  incomplete phase; `next` is the first work step of that phase (its label),
-  or the phase label if it has no steps.
+  Evidence passes iff `exit_code == 0` AND not `partial`.
+- Phase completion and `ready_phases` follow the real DAG edges (topological
+  predecessors; parallel phases become ready together when predecessors pass;
+  linear authored order when no preamble edges exist). A phase is complete when
+  all its DAG predecessor phases are complete AND every gate INSIDE its block
+  has passing, counted evidence. `current_phase` is the first phase in
+  `ready_phases` (or first incomplete phase); `next` is the first work step of
+  that phase (its label), or the phase label if it has no steps.
 - Gate completion drives the phase — never counts of evidence lines.
-- done is true when ALL claims are covered by PASSING, counted evidence AND all
-  gates have passing evidence. With no gates at all, done is all claims
-  covered (the graph was already validated at activation). Open questions
-  do NOT block done — an Open section that empties is fine by design.
+- Inside a git worktree, if tracked or untracked files outside `.riel/` change
+  after the last passing evidence (`tree_sha` differs from the latest passing
+  `E#`), `dirty_since_evidence` becomes `true` and blocks `done` until a gate is
+  re-run (outside git repos, this degrades cleanly to off).
+- `scope_violations` (modified/untracked files outside `allow:` or matching
+  `deny:` rules in `## Constraints` / `## DO NOT`) also block `done`.
+- `done` is true when ALL claims are covered by PASSING, counted evidence, ALL
+  gates have passing evidence, `scope_violations` is empty, and
+  `dirty_since_evidence` is false. Open questions do NOT block `done`.
 - A run with no claims cannot be done.
+- `run status` includes `ready_phases`, `dirty_since_evidence`,
+  `scope_violations`, `stuck_gates`, and `focus` (`{phase, deliverable,
+  pending_gates, open_claims, do_not, core}`).
 
 ## Rebase
 
@@ -270,7 +315,8 @@ limit.
   question on ONE line, ONE answer on ONE line with no `?` and cited backing
   (`— supported by F#` or `— decided by: owner`), Findings with UNIQUE F# ids
   and a `— source:` on each (a finding without a source is a hypothesis, a hard
-  error), and the seven sections in order with Open last. Only v3 is read.
+  error), real worktree verification of repository `— source:` file/line/symbol
+  references, and the seven sections in order with Open last. Only v3 is read.
   With no PATH it answers for
   the only file in `.riel/shapings/`; with several, the caller must choose.
 - `shape new` / `run new` / `project new` — render the template to STDOUT with
@@ -284,7 +330,7 @@ limit.
 - `todo` — JSON mirror: goal, phases with nested steps and statuses, next,
   claims, open questions.
 - `clean [--archive]` — remove EVERY entry inside `.riel/` (contracts, project,
-  shapings, backups, any other file); only the lock file and `archive/` stay.
+  shapings, logs, backups, any other file); only the lock file and `archive/` stay.
   `--archive` first copies the tree to `.riel/archive/<ts>/` and verifies every
   sha256; that copy survives the wipe. Without it there is no backup and no way
   back. Nothing is ever written outside `.riel/`.

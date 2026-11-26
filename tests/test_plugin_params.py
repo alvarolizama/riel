@@ -79,6 +79,12 @@ class ParamsAreOneSourceTest(unittest.TestCase):
     def test_every_declared_parameter_reaches_the_handler(self):
         for param in PARAMS.NOTE_PARAMS:
             caller = _load.note_caller_name(param)
+            if param["kind"] == "bool":
+                self.assertEqual(tools._note_argv({caller: True}), [param["flag"]],
+                                 f"{caller}=True never reaches the engine")
+                self.assertEqual(tools._note_argv({caller: False}), [],
+                                 f"{caller}=False must be omitted from argv")
+                continue
             if param["kind"] == "int":
                 value, expected = 3, [param["flag"], "3"]
             elif param.get("repeat"):
@@ -114,8 +120,23 @@ class ParamsAreOneSourceTest(unittest.TestCase):
             if caller != param["name"]:
                 self.assertEqual(props[caller]["type"], "array", caller)
             else:
-                expected = "integer" if param["kind"] == "int" else "string"
+                expected = (
+                    "integer" if param["kind"] == "int"
+                    else "boolean" if param["kind"] == "bool"
+                    else "string"
+                )
                 self.assertEqual(props[caller]["type"], expected, caller)
+
+    def test_partial_replaces_confidence_with_boolean_flag(self):
+        props = schemas.RIEL_NOTE["parameters"]["properties"]
+        self.assertNotIn("confidence", caller_names())
+        self.assertNotIn("confidence", props)
+        self.assertIn("partial", caller_names())
+        self.assertEqual(props["partial"]["type"], "boolean")
+        with self.assertRaises(ValueError):
+            tools._note_argv({"partial": "true"})
+        with self.assertRaises(ValueError):
+            tools._note_argv({"partial": 1})
 
     def test_the_derived_surface_is_frozen_in_the_tests(self):
         self.assertIsInstance(PARAMS_FROZEN, MappingProxyType)

@@ -9,9 +9,9 @@ Public surface (nothing else exists; there is NO converter from riel v1):
     riel [--worktree DIR] run rebase
     riel [--worktree DIR] run status
     riel [--worktree DIR] run slice PHASE
-    riel [--worktree DIR] note [--gate G# ...] [--claim P# ...] --command CMD
-                        --covering WHAT [--confidence N]
-                        [--core "name -- fact"] [--core-slot N]
+    riel [--worktree DIR] note [--gate G# ...] [--claim P# ...] [--command CMD]
+                        --covering WHAT [--partial]
+                        [--core "name — fact"] [--core-slot N]
                         [--open Q --settled-by TEST] [--close N --evidence N]
     riel [--worktree DIR] todo
     riel [--worktree DIR] project [FILE] | project new | project status
@@ -23,7 +23,7 @@ in place; several may be active at once. It executes ONE
 shaping from `.riel/shapings/<slug>.md` (`riel-shaping/v3`: one question, one
 answer, a uid in its marker), optionally ordered by `.riel/project.md` (`riel-project/v1`),
 whose progress is derived from the contracts in `.riel/runs/`. The
-Definition (the title plus eight sections, ending at `## DO NOT`) is authored by
+Definition (the title plus six sections, ending at `## Phases`) is authored by
 hand —
 `run new` only renders the template to stdout; an editor, a project system or a
 copy-paste is the writing path. `run activate` freezes it: it computes
@@ -61,7 +61,7 @@ try:
 except ImportError:  # pragma: no cover - non-POSIX fallback
     fcntl = None
 
-VERSION = "4.1.0"
+VERSION = "5.0.0"
 RUN_FORMAT = "riel-run/v1"
 
 RIEL_DIR = ".riel"
@@ -69,6 +69,7 @@ PROJECT_MD = "project.md"
 SHAPINGS_DIR = "shapings"
 RUNS_DIR = "runs"
 ARCHIVE_DIR = "archive"
+LOGS_DIR = "logs"
 LOCK_NAME = ".run.lock"
 SHAPING_FORMAT = "riel-shaping/v3"
 SHAPING_ID_RE = re.compile(r"^shp_[0-9a-f]{8}$")
@@ -82,7 +83,7 @@ ANSWER_SUPPORT_RE = re.compile(r"supported by\s+(F\d+)", re.I)
 ANSWER_OWNER_RE = re.compile(r"decided by:\s*owner", re.I)
 MARKER_LINE = "<!-- {} -->".format(RUN_FORMAT)
 
-# The Definition: the level-1 title plus these eight level-2 sections, in order.
+# The Definition: the level-1 title plus these six level-2 sections, in order.
 # Activation appends five more (Metadata, Execution state, Core, Open,
 # Evidence).
 # The frame first, the execution last: a reader (or a delegated child) must know
@@ -96,8 +97,9 @@ VERIFY_CMD = os.environ.get("RIEL_MMDC", "mmdc")
 MMDC_TIMEOUT = float(os.environ.get("RIEL_MMDC_TIMEOUT", "20"))
 NOTE_TIMEOUT = float(os.environ.get("RIEL_NOTE_TIMEOUT", "120"))
 NOTE_SNIPPET_CHARS = 240
+NOTE_FAILURE_TAIL_CHARS = 3000
+STUCK_THRESHOLD = 3
 MAX_BACKUPS = 3
-CONFIDENCE_PASS = 12
 
 
 class EngineError(Exception):
@@ -159,8 +161,8 @@ def _first_line(text):
 
 
 def _clauses(text):
-    """Split 'a — b: c — d' on em-dashes into clause strings."""
-    return [c.strip() for c in re.split(r"\s+—\s+", text) if c.strip()]
+    """Split 'a — b: c — d' on em-dashes / double-hyphens / en-dashes into clause strings."""
+    return [c.strip() for c in re.split(r"\s+(?:—|--|–)\s+", text) if c.strip()]
 
 
 def context_keywords(text):
@@ -436,13 +438,15 @@ def _first_mermaid(text):
     return text[i:j].strip() if j != -1 else None
 
 
-def graph_back_edges(edges):
+def graph_back_edges(edges, roots=None):
     """Edges closing a cycle — ITERATIVE, so deep graphs never RecursionError."""
     adj = {}
     for u, _l, v in edges:
         adj.setdefault(u, []).append(v)
+    if roots is None:
+        roots = sorted({u for u, _l, _v in edges} | {v for _u, _l, v in edges})
     color, backs = {}, []
-    for root in sorted({u for u, _l, _v in edges} | {v for _u, _l, v in edges}):
+    for root in roots:
         if color.get(root):
             continue
         color[root] = 1
@@ -463,6 +467,50 @@ def graph_back_edges(edges):
                 color[node] = 2
                 stack.pop()
     return list(dict.fromkeys(backs))
+
+
+def _phase_deps(nodes, edges):
+    """Map each phase id -> set of predecessor phase ids in the general DAG.
+
+    Ignores back-edges/cycles via `graph_back_edges` (seeded from entry nodes
+    and authored phase order) and walks through decision/step nodes (`F1 -> D1
+    -> F2` makes F1 a predecessor of F2). Falls back to linear authored order
+    when there are no inter-phase edges.
+    """
+    order = _phase_order(nodes)
+    deps = {pid: set() for pid in order}
+    if not order:
+        return deps
+    indeg = {nid: 0 for nid in nodes}
+    adj = {}
+    for u, _l, v in edges:
+        adj.setdefault(u, []).append(v)
+        if v in indeg:
+            indeg[v] += 1
+    roots = ([nid for nid in nodes if indeg.get(nid, 0) == 0]
+             + order
+             + list(nodes))
+    backs = {(u, v) for u, _l, v in graph_back_edges(edges, roots=roots)}
+    phase_set = set(order)
+    for pid in order:
+        seen = {pid}
+        stack = [pid]
+        while stack:
+            cur = stack.pop()
+            for nxt in adj.get(cur, ()):
+                if (cur, nxt) in backs:
+                    continue
+                if nxt in phase_set:
+                    if nxt != pid:
+                        deps[nxt].add(pid)
+                    continue
+                if nxt not in seen:
+                    seen.add(nxt)
+                    stack.append(nxt)
+    if len(order) > 1 and all(not deps[pid] for pid in order):
+        for a, b in zip(order, order[1:]):
+            deps[b].add(a)
+    return deps
 
 
 def _phase_subgraph(nodes, edges, start):
@@ -540,7 +588,7 @@ def mmdc_issues(blocks, timeout=None):
 EVIDENCE_RE = re.compile(
     r"^E(?P<n>\d+)\s+gate:(?P<gate>G\d+(?:,G\d+)*)\s+claims:(?P<claims>[\w,]*)\s+"
     r"revision:(?P<rev>\S+)\s+command_b64:(?P<cmd>[A-Za-z0-9+/=]+)\s+exit_code:(?P<exit>\d+)\s+"
-    r"covering:(?P<covering>.*?)(?:\s+confidence:(?P<conf>\d+))?\s*$"
+    r"covering:(?P<tail>.*)$"
 )
 FROZEN_RE = re.compile(r"^shaping:F(\d+)$", re.I)
 SECTION_ANCHOR_RE = re.compile(r"^§\s*([^#]+?)\s*(?:#(\d+))?$")
@@ -603,10 +651,12 @@ def _parse_claims(text):
 
 
 def _parse_gates(text):
-    """[{id, label, phase}] from each phase's `#### Gates`.
+    """[{id, label, phase, declared_phase, command}] from each phase's `#### Gates`.
 
     Membership is structural: the phase is the one whose block holds the gate.
     A leftover `— phase: F#` suffix is stripped and reported when it disagrees.
+    Frozen commands come from `— cmd: <command>` (or `-- cmd:` / `– cmd:`)
+    or a leading backtick-wrapped command (`cmd` or `cmd` — label).
     """
     out = []
     for pid, _title, body in phase_blocks(text):
@@ -614,13 +664,27 @@ def _parse_gates(text):
             m = re.match(r"^(G\d+)\s*[:：]\s*(.*)$", item)
             if not m:
                 continue
-            label, declared = m.group(2).strip(), ""
-            cm = re.search(r"\s+—\s+phase:\s*(\S+)\s*$", label)
+            label, declared, command = m.group(2).strip(), "", ""
+            cm = re.search(r"\s+(?:—|--|–)\s+phase:\s*(\S+)\s*$", label)
             if cm:
                 declared = cm.group(1)
                 label = label[:cm.start()].strip()
+            cmd_m = re.search(r"\s+(?:—|--|–)\s*cmd:\s*(.+?)\s*$", label)
+            if cmd_m:
+                command = cmd_m.group(1).strip()
+                if (len(command) >= 2 and command.startswith("`")
+                        and command.endswith("`") and command.count("`") == 2):
+                    command = command[1:-1].strip()
+                label = label[:cmd_m.start()].strip()
+            else:
+                bt_m = re.match(
+                    r"^`([^`]+)`(?:\s+(?:—|--|–)\s+(.*))?$", label)
+                if bt_m:
+                    command = bt_m.group(1).strip()
+                    rest_lbl = (bt_m.group(2) or "").strip()
+                    label = rest_lbl or command
             out.append({"id": m.group(1), "label": label, "phase": pid,
-                        "declared_phase": declared})
+                        "declared_phase": declared, "command": command})
     return out
 
 
@@ -644,6 +708,25 @@ def _parse_evidence(text):
         if item and not line.startswith((" ", "\t")):
             m = EVIDENCE_RE.match(item.group(1))
             if m:
+                tail = m.group("tail").strip()
+                partial = False
+                tree = ""
+                files = None
+                while True:
+                    tm = re.search(
+                        r"(?:^|\s+)(partial:(?:true|false)|tree:[0-9a-fA-F]+|files:\d+)$",
+                        tail,
+                    )
+                    if not tm:
+                        break
+                    tok = tm.group(1)
+                    tail = tail[:tm.start()].strip()
+                    if tok.startswith("partial:"):
+                        partial = tok.split(":", 1)[1] == "true"
+                    elif tok.startswith("tree:"):
+                        tree = tok.split(":", 1)[1]
+                    elif tok.startswith("files:"):
+                        files = int(tok.split(":", 1)[1])
                 cur = {
                     "id": "E{}".format(m.group("n")),
                     "gates": [g for g in m.group("gate").split(",") if g],
@@ -652,9 +735,10 @@ def _parse_evidence(text):
                     "revision": m.group("rev"),
                     "command": _decode_command(m.group("cmd")),
                     "exit_code": int(m.group("exit")),
-                    "covering": m.group("covering").strip(),
-                    "confidence": (int(m.group("conf"))
-                                   if m.group("conf") else None),
+                    "covering": tail,
+                    "partial": partial,
+                    "tree": tree,
+                    "files": files,
                     "out": "",
                 }
                 out.append(cur)
@@ -688,16 +772,17 @@ def _parse_open(text):
             continue
         qid, rest = m.group(1), m.group(2)
         closed_by = ""
-        mc = re.search(r"—\s*closed by:\s*(\S+)", rest)
+        mc = re.search(r"(?:^|\s)(?:—|--|–)\s*closed by:\s*(\S+)", rest)
         if mc:
             closed_by = mc.group(1)
             rest = rest[:mc.start()].strip()
         settled = ""
-        ms = re.search(r"—\s*settled[- ]by:\s*(.*)$", rest)
+        ms = re.search(r"(?:^|\s)(?:—|--|–)\s*settled[- ]by:\s*(.*)$", rest)
         if ms:
             settled = ms.group(1).strip()
             rest = rest[:ms.start()].strip()
-        out.append({"id": qid, "text": rest.strip(" —").strip(),
+        out.append({"id": qid,
+                    "text": re.sub(r"\s*(?:—|--|–)\s*$", "", rest).strip(),
                     "settled_by": settled, "closed_by": closed_by})
     return out
 
@@ -711,17 +796,187 @@ def _parse_basis(text):
             continue
         fid, rest = m.group(1), m.group(2)
         source, confidence = "", ""
-        ms = re.search(r"—\s*source:\s*(.*?)(?=\s+—\s*confidence:|$)", rest)
-        if ms:
-            source = ms.group(1).strip()
-            rest = rest[:ms.start()].strip()
-        mc = re.search(r"—\s*confidence:\s*(\S+)", rest)
+        mc = re.search(r"(?:^|\s)(?:—|--|–)\s*confidence:\s*(\S+)", rest)
         if mc:
             confidence = mc.group(1).strip()
             rest = rest[:mc.start()].strip()
-        out.append({"id": fid, "text": rest.strip(" —").strip(),
+        ms = re.search(r"(?:^|\s)(?:—|--|–)\s*source:\s*(.*)$", rest)
+        if ms:
+            source = ms.group(1).strip()
+            rest = rest[:ms.start()].strip()
+        out.append({"id": fid,
+                    "text": re.sub(r"\s*(?:—|--|–)\s*$", "", rest).strip(),
                     "source": source, "confidence": confidence})
     return out
+
+
+# -------------------------------------------------------- git & scope ----
+
+def _parse_scope_rules(definition_text):
+    """(allow_paths, deny_paths) parsed from `## Constraints` and `## DO NOT`."""
+    allow_paths, deny_paths = [], []
+    bullets = (_bullets(_section(definition_text, "Constraints"))
+               + _bullets(_section(definition_text, "DO NOT")))
+    for item in bullets:
+        m = re.match(r"^(allow(?:_paths)?|deny(?:_paths)?)\s*[:：]\s*(.+)$",
+                     item.strip(), re.I)
+        if not m:
+            continue
+        kind = m.group(1).lower()
+        globs = [g.strip().strip("`").strip() for g in m.group(2).split(",")]
+        globs = [g for g in globs if g and not g.startswith("{{")]
+        if kind.startswith("allow"):
+            allow_paths.extend(globs)
+        else:
+            deny_paths.extend(globs)
+    return allow_paths, deny_paths
+
+
+def _glob_to_regex(pattern):
+    """Convert a path glob supporting `*`, `?`, `**` to an anchored regex."""
+    pat = pattern.replace("\\", "/").lstrip("./")
+    if pat.endswith("/"):
+        pat += "**"
+    i, n = 0, len(pat)
+    out = ["^"]
+    while i < n:
+        if pat[i:i + 3] == "**/":
+            out.append("(?:.+/)?")
+            i += 3
+        elif pat[i:i + 2] == "**":
+            out.append(".*")
+            i += 2
+        elif pat[i] == "*":
+            out.append("[^/]*")
+            i += 1
+        elif pat[i] == "?":
+            out.append("[^/]")
+            i += 1
+        else:
+            out.append(re.escape(pat[i]))
+            i += 1
+    out.append("$")
+    return re.compile("".join(out))
+
+
+def _glob_match(path, pattern):
+    norm = path.replace("\\", "/").lstrip("./")
+    return bool(_glob_to_regex(pattern).match(norm))
+
+
+def _scope_violations(files, allow_paths, deny_paths):
+    violations = []
+    for f in files:
+        if any(_glob_match(f, pat) for pat in deny_paths):
+            violations.append(f)
+            continue
+        if allow_paths and not any(_glob_match(f, pat) for pat in allow_paths):
+            violations.append(f)
+    return violations
+
+
+def _is_test_path(path):
+    norm = path.replace("\\", "/").lstrip("./")
+    base = norm.rsplit("/", 1)[-1]
+    return (
+        _glob_match(base, "test_*.py")
+        or _glob_match(base, "*_test.*")
+        or _glob_match(base, "*_spec.*")
+        or _glob_match(norm, "tests/**")
+        or _glob_match(norm, "**/tests/**")
+        or _glob_match(norm, "spec/**")
+        or _glob_match(norm, "**/spec/**")
+    )
+
+
+def _unquote_git_path(raw):
+    if raw.startswith('"') and raw.endswith('"'):
+        try:
+            return bytes(raw[1:-1], "utf-8").decode("unicode_escape")
+        except Exception:
+            return raw[1:-1]
+    return raw
+
+
+def _git_state(worktree):
+    """Return {head, tree_sha, files, test_files} for a git worktree, or None."""
+    try:
+        inside = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=worktree, capture_output=True, text=True, timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if inside.returncode != 0 or inside.stdout.strip() != "true":
+        return None
+    try:
+        top_proc = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=worktree, capture_output=True, text=True, timeout=5,
+        )
+        head_proc = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=worktree, capture_output=True, text=True, timeout=5,
+        )
+        stat_proc = subprocess.run(
+            ["git", "status", "--porcelain=v1", "-uall", "--", "."],
+            cwd=worktree, capture_output=True, text=True, timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if top_proc.returncode != 0 or stat_proc.returncode != 0:
+        return None
+    toplevel = os.path.realpath(top_proc.stdout.strip())
+    real_wt = os.path.realpath(worktree)
+    head = head_proc.stdout.strip() if head_proc.returncode == 0 else "UNBORN"
+
+    entries = []
+    for line in stat_proc.stdout.splitlines():
+        if len(line) < 4:
+            continue
+        status = line[:2]
+        raw_path = line[3:]
+        if " -> " in raw_path and ("R" in status or "C" in status):
+            raw_path = raw_path.split(" -> ", 1)[1]
+        rel_top = _unquote_git_path(raw_path)
+        abs_p = os.path.join(toplevel, rel_top)
+        wt_rel = os.path.relpath(abs_p, real_wt).replace(os.sep, "/")
+        if wt_rel == ".." or wt_rel.startswith("../"):
+            continue
+        if wt_rel == RIEL_DIR or wt_rel.startswith(RIEL_DIR + "/"):
+            continue
+        entries.append((status, wt_rel))
+
+    h = hashlib.sha256()
+    h.update((head + "\n").encode("utf-8"))
+    for status, path in sorted(entries, key=lambda x: (x[1], x[0])):
+        fp = os.path.join(real_wt, path)
+        if os.path.islink(fp):
+            fhash = "SYMLINK:" + os.readlink(fp)
+        elif os.path.isfile(fp):
+            fh_h = hashlib.sha256()
+            try:
+                with open(fp, "rb") as fh:
+                    while True:
+                        chunk = fh.read(65536)
+                        if not chunk:
+                            break
+                        fh_h.update(chunk)
+                fhash = fh_h.hexdigest()
+            except OSError:
+                fhash = "UNREADABLE"
+        else:
+            fhash = "MISSING"
+        h.update("{}\t{}\t{}\n".format(status, path, fhash).encode("utf-8"))
+
+    changed_paths = sorted({path for _status, path in entries})
+    test_files = [p for p in changed_paths if _is_test_path(p)]
+    return {
+        "head": head,
+        "tree_sha": h.hexdigest()[:12],
+        "files": changed_paths,
+        "test_files": test_files,
+    }
 
 
 # ------------------------------------------------------ shaping parse ----
@@ -751,7 +1006,7 @@ def _source_confidence(lines):
     """(source, confidence) from a finding's own lines — never across findings."""
     source = confidence = ""
     for ln in lines:
-        ms = re.search(r"—\s*source:\s*(.+)$", ln)
+        ms = re.search(r"(?:^|\s)(?:—|--|–)\s*source:\s*(.+)$", ln)
         if ms and not source:
             tail = ms.group(1)
             mc = re.search(r",\s*confidence\s*[:：]?\s*(\S+)", tail)
@@ -779,11 +1034,106 @@ def shaping_findings(text):
         if fid in seen:
             continue
         seen.add(fid)
-        claim = re.split(r"\s+—\s*source:", dossier["head"])[0].strip()
+        claim = re.split(r"\s+(?:—|--|–)\s*source:", dossier["head"])[0].strip()
         source, confidence = _source_confidence([dossier["head"]] + dossier["lines"])
-        out.append({"id": fid, "text": claim.strip(" —").strip(),
+        out.append({"id": fid,
+                    "text": re.sub(r"\s*(?:—|--|–)\s*$", "", claim).strip(),
                     "source": source, "confidence": confidence})
     return out
+
+
+_NON_FILE_SOURCE_RE = re.compile(
+    r"^(?:https?|ftp|cmd|command|benchmark|bench|url|issue|pr|note|env|doc|docs|spec|rfc|test|log|mailto):",
+    re.I,
+)
+
+
+def _parse_source_ref(source):
+    """Parse `repo@rev:path[:L[-L]][#sym]` or `path:L[-L][#sym]` -> tuple or None."""
+    s = (source or "").strip().strip("`").strip()
+    if not s:
+        return None
+    if s.startswith("repo@"):
+        m = re.match(
+            r"^repo@([^:\s]+):([^\s:#]+)(?::(\d+)(?:-(\d+))?)?(?:#([^\s,]+))?(?:\s|$)",
+            s,
+        )
+        if not m:
+            return None
+        return (
+            m.group(1),
+            m.group(2),
+            int(m.group(3)) if m.group(3) else None,
+            int(m.group(4)) if m.group(4) else None,
+            m.group(5) or "",
+        )
+    if "://" in s or _NON_FILE_SOURCE_RE.match(s):
+        return None
+    m = re.match(
+        r"^([^\s:#]+):(\d+)(?:-(\d+))?(?:#([^\s,]+))?(?:\s|$)",
+        s,
+    )
+    if not m:
+        return None
+    return (
+        None,
+        m.group(1),
+        int(m.group(2)),
+        int(m.group(3)) if m.group(3) else None,
+        m.group(4) or "",
+    )
+
+
+def _check_finding_source(fid, source, worktree):
+    """Verify a local file/line/symbol `— source:` reference against `worktree`."""
+    issues, warnings = [], []
+    parsed = _parse_source_ref(source)
+    if parsed is None:
+        return issues, warnings
+    _rev, rel_path, start_line, end_line, symbol = parsed
+    real_base = os.path.realpath(worktree)
+    if os.path.isabs(rel_path):
+        issues.append("{} source path escapes worktree: {}".format(fid, rel_path))
+        return issues, warnings
+    target = os.path.realpath(os.path.join(real_base, rel_path))
+    rel = os.path.relpath(target, real_base)
+    if rel == os.pardir or rel.startswith(os.pardir + os.sep):
+        issues.append("{} source path escapes worktree: {}".format(fid, rel_path))
+        return issues, warnings
+    if not os.path.isfile(target):
+        issues.append("{} source file not found in worktree: {}".format(fid, rel_path))
+        return issues, warnings
+    try:
+        with open(target, encoding="utf-8", errors="replace") as fh:
+            file_text = fh.read()
+    except OSError as exc:
+        issues.append("{} source file unreadable ({}): {}".format(fid, rel_path, exc))
+        return issues, warnings
+    lines = file_text.splitlines()
+    range_ok = True
+    if start_line is not None:
+        if start_line < 1 or start_line > len(lines):
+            range_ok = False
+            issues.append(
+                "{} source line {} out of bounds for {} (1..{})".format(
+                    fid, start_line, rel_path, len(lines)))
+        elif end_line is not None and (end_line < start_line or end_line > len(lines)):
+            range_ok = False
+            issues.append(
+                "{} source line range {}-{} out of bounds for {} (1..{})".format(
+                    fid, start_line, end_line, rel_path, len(lines)))
+    if symbol:
+        if symbol not in file_text:
+            issues.append(
+                "{} source symbol #{} not found in {}".format(fid, symbol, rel_path))
+        elif start_line is not None and range_ok:
+            hi = end_line if end_line is not None else start_line
+            window = "\n".join(lines[start_line - 1:hi])
+            if symbol not in window:
+                warnings.append(
+                    "{} source symbol #{} found in {} outside lines {}-{}".format(
+                        fid, symbol, rel_path, start_line, hi))
+    return issues, warnings
 
 
 def shaping_id(text):
@@ -821,7 +1171,7 @@ def slugify(name):
     return slug or "shaping"
 
 
-def validate_shaping(text):
+def validate_shaping(text, worktree=None):
     """(issues, warnings) for one versioned shaping source.
 
     A shaping answers ONE question: that is the unit a run binds and a PR
@@ -879,6 +1229,10 @@ def validate_shaping(text):
         if not f["source"]:
             issues.append("{} has no `— source:` — a finding without a "
                           "source is a hypothesis".format(f["id"]))
+        elif worktree is not None:
+            s_issues, s_warnings = _check_finding_source(f["id"], f["source"], worktree)
+            issues.extend(s_issues)
+            warnings.extend(s_warnings)
 
     # The ANSWER is mandatory, one line, and backed.
     a_lines = [ln.strip() for ln in
@@ -930,6 +1284,7 @@ def _worktree_paths(worktree):
         "project": os.path.join(riel_dir, PROJECT_MD),
         "shapings": os.path.join(riel_dir, SHAPINGS_DIR),
         "runs": os.path.join(riel_dir, RUNS_DIR),
+        "logs": os.path.join(riel_dir, LOGS_DIR),
         "lock": os.path.join(riel_dir, LOCK_NAME),
     }
 
@@ -1027,7 +1382,7 @@ def shapings_index(worktree):
     out = []
     for path in _shaping_files(_worktree_paths(worktree)["shapings"]):
         text = _read_file(path)
-        issues, warnings = validate_shaping(text)
+        issues, warnings = validate_shaping(text, worktree=worktree)
         out.append({
             "path": path,
             "rel": os.path.relpath(path, worktree),
@@ -1235,9 +1590,8 @@ class _Locked:
 # ---------------------------------------------------- state derivation ----
 
 def evidence_passes(ev):
-    """exit 0 AND (confidence omitted or >= 12) — an explicit low score vetoes."""
-    return ev["exit_code"] == 0 and (
-        ev["confidence"] is None or ev["confidence"] >= CONFIDENCE_PASS)
+    """exit 0 AND not partial — purely objective."""
+    return ev["exit_code"] == 0 and not ev.get("partial", False)
 
 
 def load_state(worktree, require_active=False, require_exists=True, path=None,
@@ -1278,6 +1632,12 @@ def load_state(worktree, require_active=False, require_exists=True, path=None,
     shaping_hash = None
     if active and meta.get("shaping_sha256") not in (None, "none"):
         shaping_hash = meta["shaping_sha256"]
+    allow_paths, deny_paths = _parse_scope_rules(definition_text)
+    git_info = _git_state(worktree)
+    scope_violations = (
+        _scope_violations(git_info["files"], allow_paths, deny_paths)
+        if git_info is not None else []
+    )
     st = {
         "path": run_path,
         # The contract's identity is its filename, the same slug `run=<slug>`
@@ -1300,6 +1660,10 @@ def load_state(worktree, require_active=False, require_exists=True, path=None,
         "nodes": graph_nodes,
         "edges": graph_edges,
         "register": register,
+        "git": git_info,
+        "allow_paths": allow_paths,
+        "deny_paths": deny_paths,
+        "scope_violations": scope_violations,
     }
     st["counted_evidence"] = [e for e in st["evidence"]
                               if active and e["revision"] == st["revision"]]
@@ -1308,11 +1672,35 @@ def load_state(worktree, require_active=False, require_exists=True, path=None,
     st["covered_claims"] = {c for e in st["counted_evidence"]
                             if evidence_passes(e) and st["active"]
                             for c in e["claims"]}
+    consecutive_failures = {g["id"]: 0 for g in st["gates"]}
+    for ev in st["counted_evidence"]:
+        for gid in ev["gates"]:
+            if ev["exit_code"] == 0:
+                consecutive_failures[gid] = 0
+            else:
+                consecutive_failures[gid] = consecutive_failures.get(gid, 0) + 1
+    st["consecutive_failures"] = consecutive_failures
+    st["stuck_gates"] = {
+        gid: count for gid, count in consecutive_failures.items()
+        if count >= STUCK_THRESHOLD
+    }
+    last_pass_tree = ""
+    for ev in st["counted_evidence"]:
+        if evidence_passes(ev) and ev.get("tree"):
+            last_pass_tree = ev["tree"]
+    st["dirty_since_evidence"] = bool(
+        active and git_info is not None and last_pass_tree
+        and last_pass_tree != git_info["tree_sha"]
+    )
     st["done"] = (
         bool(st["claims"])
         and all(c["id"] in st["covered_claims"] for c in st["claims"])
         and all(g["id"] in st["passed_gates"] for g in st["gates"])
+        and not st["scope_violations"]
+        and not st["dirty_since_evidence"]
     )
+    _complete, ready, _deps = _phase_completion(st)
+    st["ready_phases"] = ready
     st["current_phase"], st["next"] = _derive_phase(st)
     return st
 
@@ -1323,29 +1711,50 @@ def _phase_gate_ids(st, phase_id):
             if gate.get("phase") == phase_id]
 
 
+def _phase_completion(st):
+    """(complete_set, ready_list, deps_map) driven by real DAG predecessors."""
+    nodes, edges = st["nodes"], st["edges"]
+    order = _phase_order(nodes)
+    if not order:
+        return set(), [], {}
+    deps = _phase_deps(nodes, edges)
+    gates_by_phase = {pid: _phase_gate_ids(st, pid) for pid in order}
+    complete = set()
+    changed = True
+    while changed:
+        changed = False
+        for pid in order:
+            if pid in complete:
+                continue
+            if deps.get(pid, set()) <= complete and all(
+                gid in st["passed_gates"] for gid in gates_by_phase.get(pid, [])
+            ):
+                complete.add(pid)
+                changed = True
+    ready = [pid for pid in order
+             if pid not in complete and deps.get(pid, set()) <= complete]
+    return complete, ready, deps
+
+
 def _derive_phase(st):
-    """(current_phase, next) — gates drive the phase, the DAG drives next.
+    """(current_phase, next) — gates drive completion, the DAG drives ready phases.
 
     A phase is complete when every gate mapped to it has passing evidence
-    AND every earlier phase is complete; a phase with no gate completes
-    automatically once its predecessors do. `next` is the first work step
-    of the current phase (its label), falling back to the phase label.
+    AND all its DAG predecessor phases are complete. `current_phase` is the
+    first phase in `ready_phases` (or None if all complete). `next` is the
+    first work step of `current_phase` (its label), falling back to the phase
+    label.
     """
     nodes, edges = st["nodes"], st["edges"]
     if not nodes:
         return None, None
-    gates_by_phase = {
-        pid: _phase_gate_ids(st, pid) for pid in _phase_order(nodes)
-    }
+    complete, ready, _deps = _phase_completion(st)
     order = _phase_order(nodes)
-    done_phases = set()
-    current = None
-    for pid in order:
-        if all(gid in st["passed_gates"] for gid in gates_by_phase.get(pid, [])):
-            done_phases.add(pid)
-        else:
-            current = pid
-            break
+    if ready:
+        current = ready[0]
+    else:
+        incomplete = [pid for pid in order if pid not in complete]
+        current = incomplete[0] if incomplete else None
     if current is None:
         return None, ("done" if st["done"] else None)
     steps = _phase_steps(nodes, edges, current)
@@ -1444,6 +1853,11 @@ def _check_definition(text, nodes, edges, shaping_path, active, basis, basis_onl
                 "gate {} declares phase {} but lives in {} — membership is "
                 "structural, drop the suffix".format(
                     g["id"], g["declared_phase"], g["phase"]))
+        if not g.get("command"):
+            warnings.append(
+                "gate {} has no frozen command — add '— cmd: <command>' or "
+                "backticks so note cannot substitute a weaker command".format(
+                    g["id"]))
 
     # graph conventions — parsed shapes and parsed edges only
     if not nodes:
@@ -1608,8 +2022,12 @@ def _render_state_sections(meta, core, open_qs, evidence, current_phase):
                         ",".join(ev["claims"]) or "none", ev["revision"],
                         base64.b64encode(ev["command"].encode("utf-8")).decode("ascii"),
                         ev["exit_code"], ev["covering"]))
-            if ev["confidence"] is not None:
-                line += " confidence:{}".format(ev["confidence"])
+            if ev.get("partial"):
+                line += " partial:true"
+            if ev.get("tree"):
+                line += " tree:{}".format(ev["tree"])
+            if ev.get("files") is not None:
+                line += " files:{}".format(ev["files"])
             lines.append(line)
             if ev.get("out"):
                 lines.append("  out: {}".format(ev["out"]))
@@ -1688,7 +2106,7 @@ def _shape_validate(args, out, err):
     if not os.path.isfile(path):
         raise EngineError("no shaping file at {}".format(path))
     text = _read_file(path)
-    issues, warnings = validate_shaping(text)
+    issues, warnings = validate_shaping(text, worktree=args.worktree)
     for w in warnings:
         print("WARN: {}".format(w), file=err)
     if issues:
@@ -1794,7 +2212,7 @@ def _freeze_from_shaping(worktree, paths, definition_text, err, meta=None):
     referenced = _referenced_finding_ids(definition_text)
     if rel:
         stext = _read_file(abs_path)
-        s_issues, s_warns = validate_shaping(stext)
+        s_issues, s_warns = validate_shaping(stext, worktree=worktree)
         for w in s_warns:
             print("WARN: shaping: {}".format(w), file=err)
         if s_issues:
@@ -1936,6 +2354,37 @@ def _run_rebase(args, out, err):
     return 0
 
 
+def _focus_card(st):
+    """Compact phase-scoped focus card for status and note output."""
+    phase = st["current_phase"]
+    deliverable = []
+    if phase:
+        for pid, _title, body in phase_blocks(st["definition_text"]):
+            if pid == phase:
+                deliverable = _bullets(phase_sub(body, "Deliverable"))
+                break
+    pending_gates = [
+        {"id": g["id"], "label": g["label"], "command": g.get("command", "")}
+        for g in st["gates"]
+        if (phase is None or g.get("phase") == phase)
+        and g["id"] not in st["passed_gates"]
+    ]
+    open_claims = [
+        {"id": c["id"], "text": c["text"]}
+        for c in st["claims"]
+        if (phase is None or c.get("phase") == phase)
+        and c["id"] not in st["covered_claims"]
+    ]
+    return {
+        "phase": phase,
+        "deliverable": deliverable,
+        "pending_gates": pending_gates,
+        "open_claims": open_claims,
+        "do_not": _bullets(_section(st["definition_text"], "DO NOT")),
+        "core": [entry for _slot, entry in sorted(st["core"])],
+    }
+
+
 def _status_payload(worktree, st):
     """The ONE status shape — `run status` prints it, `run list` folds it."""
     shaping_rel, shaping_uid, shaping_path = _bound_shaping(
@@ -1949,6 +2398,7 @@ def _status_payload(worktree, st):
         "revision": st["revision"],
         "status": "active" if st["active"] else "draft",
         "current_phase": st["current_phase"],
+        "ready_phases": st.get("ready_phases", []),
         "next": st["next"],
         "claims": {c["id"]: ("covered" if c["id"] in st["covered_claims"]
                              else "open") for c in st["claims"]},
@@ -1959,6 +2409,10 @@ def _status_payload(worktree, st):
         "evidence": {"total": len(st["evidence"]),
                      "counted": len(st["counted_evidence"])},
         "done": st["done"],
+        "dirty_since_evidence": st.get("dirty_since_evidence", False),
+        "scope_violations": st.get("scope_violations", []),
+        "stuck_gates": st.get("stuck_gates", {}),
+        "focus": _focus_card(st),
         "shaping": ({"path": shaping_rel, "id": shaping_uid,
                      "sha256": st["shaping_hash"]} if shaping_rel else None),
         "todos": todo_projection(st),
@@ -2057,48 +2511,77 @@ def _run_slice(args, out, err):
 
 
 def _note_evidence(st, args):
-    """Run --command in the worktree; capture the REAL exit code + snippet.
+    """Run gate command in the worktree; capture REAL exit code, snippet, tail, logs.
 
     There is no way to self-supply an exit code: none exists as a flag.
     """
     definition_claims = {c["id"] for c in st["claims"]}
-    definition_gates = {g["id"] for g in st["gates"]}
+    gate_by_id = {g["id"]: g for g in st["gates"]}
     for g in args.gate:
-        if g not in definition_gates:
+        if g not in gate_by_id:
             raise EngineError("unknown gate {!r} — ## Gates has {}".format(
-                g, ", ".join(sorted(definition_gates)) or "no gates"))
+                g, ", ".join(sorted(gate_by_id)) or "no gates"))
     for c in args.claim:
         if c not in definition_claims:
             raise EngineError("unknown claim {!r} — ## Claims has {}".format(
                 c, ", ".join(sorted(definition_claims)) or "no claims"))
+    target_gates = [gate_by_id[g] for g in args.gate]
     if not args.command:
-        raise EngineError(
-            "--gate evidence needs --command (the engine runs it and "
-            "captures the exit code; self-supplied codes do not exist)")
+        if any(not g.get("command") for g in target_gates):
+            raise EngineError(
+                "--gate evidence needs --command (the engine runs it and "
+                "captures the exit code; self-supplied codes do not exist)")
+        distinct = {" ".join(g["command"].split()): g["command"]
+                    for g in target_gates}
+        if len(distinct) > 1:
+            raise EngineError(
+                "gates {} have different frozen commands — run them separately"
+                .format(", ".join(args.gate)))
+        command = target_gates[0]["command"]
+    else:
+        got_norm = " ".join(args.command.split())
+        for g in target_gates:
+            frozen = g.get("command", "")
+            if frozen and " ".join(frozen.split()) != got_norm:
+                raise EngineError(
+                    "gate {} is frozen to command {!r} — got {!r}; edit "
+                    "Definition and run 'run rebase' to change it".format(
+                        g["id"], frozen, args.command))
+        command = args.command
     if not args.covering:
         raise EngineError(
             "--gate evidence needs --covering (what scope the command "
             "actually covers)")
-    if args.confidence is not None and not 1 <= args.confidence <= 20:
-        raise EngineError("--confidence must be 1..20")
-    command = args.command
     try:
         proc = subprocess.run(
             command, shell=True, cwd=args.worktree,
             capture_output=True, timeout=NOTE_TIMEOUT)
         exit_code = proc.returncode
         raw = (proc.stdout or b"") + (proc.stderr or b"")
-        snippet = re.sub(r"\s+", " ",
-                         raw.decode("utf-8", "replace")).strip()
+        raw_text = raw.decode("utf-8", "replace")
     except subprocess.TimeoutExpired as exc:
         exit_code = 124  # conventional: the command was killed on timeout
         raw = (exc.stdout or b"") + (exc.stderr or b"")
-        snippet = (re.sub(r"\s+", " ",
-                          raw.decode("utf-8", "replace")).strip()
-                   + " [timeout after {}s]".format(NOTE_TIMEOUT)).strip()
+        raw_text = (raw.decode("utf-8", "replace").rstrip()
+                    + "\n[timeout after {}s]".format(NOTE_TIMEOUT)).strip()
     except OSError as exc:
         raise EngineError("could not run --command: {}".format(exc))
-    snippet = snippet[:NOTE_SNIPPET_CHARS]
+    snippet = re.sub(r"\s+", " ", raw_text).strip()[:NOTE_SNIPPET_CHARS]
+    tail = raw_text.strip()[-NOTE_FAILURE_TAIL_CHARS:]
+    partial = bool(getattr(args, "partial", False))
+    git_info = _git_state(args.worktree)
+    tree_sha = git_info["tree_sha"] if git_info is not None else ""
+    files_count = len(git_info["files"]) if git_info is not None else None
+    diff_stat = ({
+        "count": len(git_info["files"]),
+        "files": git_info["files"],
+        "test_files": git_info["test_files"],
+    } if git_info is not None else None)
+    scope_violations = (
+        _scope_violations(git_info["files"], st.get("allow_paths", []),
+                          st.get("deny_paths", []))
+        if git_info is not None else []
+    )
     next_n = 1 + max((int(e["id"][1:]) for e in st["evidence"]), default=0)
     records = []
     for i, g in enumerate(args.gate):
@@ -2110,17 +2593,40 @@ def _note_evidence(st, args):
             "command": command,
             "exit_code": exit_code,
             "covering": re.sub(r"\s+", " ", args.covering).strip(),
-            "confidence": args.confidence,
+            "partial": partial,
+            "tree": tree_sha,
+            "files": files_count,
             "out": snippet,
         })
-    return records
+    log_path = ""
+    if len(raw_text) > NOTE_SNIPPET_CHARS or exit_code != 0:
+        logs_dir = _worktree_paths(args.worktree)["logs"]
+        for rec in records:
+            target_log = os.path.join(logs_dir, "{}.log".format(rec["id"]))
+            _atomic_write(target_log, raw_text, args.worktree)
+            if not log_path:
+                log_path = os.path.relpath(
+                    target_log, args.worktree).replace(os.sep, "/")
+    runtime_info = {
+        "exit_code": exit_code,
+        "passed": (exit_code == 0 and not partial),
+        "partial": partial,
+        "raw_out": raw_text,
+        "tail": tail,
+        "log_path": log_path,
+        "diff_stat": diff_stat,
+        "scope_violations": scope_violations,
+        "tree_sha": tree_sha,
+    }
+    return records, runtime_info
 
 
 def _note_core(st, args):
     text = re.sub(r"[\r\n]+", " ", args.core).strip()
-    if " — " not in text:
+    if not re.search(r"\s+(?:—|--|–)\s+", text):
         raise EngineError(
-            "--core must look like 'name — defining fact' (em-dash)")
+            "--core must look like 'name — defining fact' (em-dash, --, or –)")
+    text = re.sub(r"\s+(?:—|--|–)\s+", " — ", text, count=1)
     core = list(st["core"])
     if args.core_slot is not None:
         slot = args.core_slot
@@ -2141,12 +2647,13 @@ def _note_core(st, args):
 def cmd_note(args, out, err):
     paths = _worktree_paths(args.worktree)
     gate_mode = bool(args.gate or args.claim or args.command
-                     or args.covering)
+                     or args.covering or getattr(args, "partial", False))
     if not any((args.gate, args.claim, args.command, args.covering,
+                getattr(args, "partial", False),
                 args.core, args.open is not None, args.close is not None)):
         raise EngineError(
-            "note writes state: --gate G# --claim P# --command CMD "
-            "--covering WHAT | --core 'name — fact' [--core-slot N] | "
+            "note writes state: --gate G# --claim P# [--command CMD] "
+            "--covering WHAT [--partial] | --core 'name — fact' [--core-slot N] | "
             "--open Q --settled-by TEST | --close Q# --evidence E#")
     if gate_mode and not args.gate:
         raise EngineError("--gate evidence needs at least one --gate")
@@ -2171,6 +2678,7 @@ def cmd_note(args, out, err):
                       or args.close is not None):
         raise EngineError("one note, one kind: gate evidence OR core OR "
                           "open/close — not a mix")
+    runtime_info = None
     with _Locked(paths["lock"]):
         st = load_state(args.worktree, require_active=True,
                         run=getattr(args, "run", None))
@@ -2180,7 +2688,7 @@ def cmd_note(args, out, err):
         core, open_qs, evidence = st["core"], st["open"], st["evidence"]
         what = ""
         if gate_mode:
-            new = _note_evidence(st, args)
+            new, runtime_info = _note_evidence(st, args)
             what = ", ".join(e["id"] for e in new)
             evidence = evidence + new
         if args.core is not None:
@@ -2224,6 +2732,55 @@ def cmd_note(args, out, err):
               len(st2["claims"]),
               ", ".join(sorted(st2["passed_gates"])) or "none",
               str(st2["done"]).lower()), file=out)
+    if gate_mode and runtime_info is not None:
+        print("gate_exit_code: {} | gate_passed: {}".format(
+            runtime_info["exit_code"],
+            str(runtime_info["passed"]).lower()), file=out)
+        if runtime_info["diff_stat"] is not None:
+            ds = runtime_info["diff_stat"]
+            shown = ", ".join(ds["files"][:8]) or "none"
+            if len(ds["files"]) > 8:
+                shown += ", ..."
+            diff_line = "diff: {} file(s) ({})".format(ds["count"], shown)
+            if ds["test_files"]:
+                diff_line += " | WARNING: modified test files: {}".format(
+                    ", ".join(ds["test_files"][:8]))
+            print(diff_line, file=out)
+        if runtime_info["scope_violations"]:
+            print("SCOPE VIOLATION: {}".format(
+                ", ".join(runtime_info["scope_violations"])), file=out)
+        for gid in args.gate:
+            if gid in st2["stuck_gates"]:
+                print("STUCK WARNING: {} failed {} consecutive times — stop "
+                      "blind patching, reassess hypothesis or escalate with ASK"
+                      .format(gid, st2["stuck_gates"][gid]), file=out)
+        focus = _focus_card(st2)
+        print("focus phase: {}".format(
+            focus["phase"] or ("done" if st2["done"] else "none")), file=out)
+        if focus["deliverable"]:
+            print("  deliverable: {}".format("; ".join(focus["deliverable"])),
+                  file=out)
+        if focus["pending_gates"]:
+            print("  pending_gates: {}".format("; ".join(
+                "{}: {}{}".format(
+                    g["id"], g["label"],
+                    " [cmd: {}]".format(g["command"]) if g["command"] else "")
+                for g in focus["pending_gates"])), file=out)
+        if focus["open_claims"]:
+            print("  open_claims: {}".format("; ".join(
+                "{}: {}".format(c["id"], c["text"])
+                for c in focus["open_claims"])), file=out)
+        if focus["do_not"]:
+            print("  do_not: {}".format("; ".join(focus["do_not"])), file=out)
+        if focus["core"]:
+            print("  core: {}".format("; ".join(focus["core"])), file=out)
+        if runtime_info["exit_code"] != 0:
+            print("--- gate output (exit {}) ---".format(
+                runtime_info["exit_code"]), file=out)
+            if runtime_info["tail"]:
+                print(runtime_info["tail"], file=out)
+        if runtime_info["log_path"]:
+            print("log: {}".format(runtime_info["log_path"]), file=out)
     return 0
 
 
@@ -2251,13 +2808,7 @@ def todo_projection(st):
         "content": "GOAL [{}]: {}".format(slug, objective or "<empty>"),
         "status": "completed" if st["done"] else "pending",
     }]
-    completed_phases = set()
-    for index, phase_id in enumerate(phase_ids):
-        predecessors_done = set(phase_ids[:index]) == completed_phases
-        phase_gate_ids = _phase_gate_ids(st, phase_id)
-        if predecessors_done and all(
-                gate_id in st["passed_gates"] for gate_id in phase_gate_ids):
-            completed_phases.add(phase_id)
+    completed_phases, _ready, _deps = _phase_completion(st)
     work_started = st["done"]
     for phase_id in phase_ids:
         steps = _phase_steps(nodes, edges, phase_id)
@@ -2899,6 +3450,9 @@ def build_parser(out=None, err=None):
         kwargs = {"help": param["help"]}
         if param["kind"] == "int":
             kwargs["type"] = int
+        elif param["kind"] == "bool":
+            kwargs["action"] = "store_true"
+            kwargs["default"] = False
         if param.get("repeat"):
             kwargs["action"] = "append"
             kwargs["default"] = []

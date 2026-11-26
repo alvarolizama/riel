@@ -1,7 +1,7 @@
 ---
 topic: delegate
 trigger: "Use when splitting a Riel run into subagents: immutable run slices, isolated worktrees, candidate JSON results and parent-side re-verification before Evidence."
-version: 2.2.1
+version: 2.3.0
 ---
 # delegate — One run, several workers
 
@@ -28,8 +28,12 @@ After every child require `git status --porcelain` to show only the allowlisted
 files: an unexpected `?? <dir>/` is a failed wave, not noise.
 
 A slice is generated with `riel_run(verb="slice", phase="F2", run="<slug>")` after
-its predecessors pass; `run` is required when several contracts are active. The child must know the `run_revision`, gate and claim IDs,
-command runner and expected output. Inherited slices do not activate new runs.
+its DAG predecessors pass (`ready_phases` lists all phases whose predecessors are
+complete, so parallel branches become ready together); `run` is required when
+several contracts are active. The child must know the `run_revision`, gate and
+claim IDs, command runner (including any frozen gate command and `allow`/`deny`
+glob rules in `Constraints`/`DO NOT`) and expected output. Inherited slices do
+not activate new runs.
 
 ## Return
 
@@ -37,9 +41,13 @@ A child returns candidate observations such as files changed, command, exit code
 are not durable evidence yet. A self-reported `passed: true` is never enough.
 
 The parent integrates the diff and calls `riel_note` with the specific gate,
-claims, `command` and `covering`. Riel executes the command in the parent worktree
-and writes its actual exit code. The Definition hash and referenced IDs must match.
-Only then is Evidence appended and the next DAG work enabled.
+claims, `covering`, and `command` (omitted when the gate declares a frozen
+command). Riel executes the command in the parent worktree and writes its actual
+exit code, `diff_stat` (warning if test files were modified), and any
+`SCOPE VIOLATION`. The Definition hash and referenced IDs must match; `partial=true`
+never satisfies a gate or claim, and any edit after passing evidence sets
+`dirty_since_evidence` until re-verified. Only then is Evidence appended and the
+next DAG work enabled.
 
 ## Failure and revision
 

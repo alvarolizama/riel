@@ -193,9 +193,23 @@ def assess(worktree) -> dict:
     The engine is reached the same safe way the tools reach it — in-process,
     explicit worktree, explicit sinks — so a gate turn never shells out.
     """
-    facts = {"present": False, "active": False, "claims": 0, "gates": 0,
-             "pending_claims": 0, "pending_gates": 0, "contracts": 0,
-             "pending_slugs": [], "error": None}
+    facts = {
+        "present": False,
+        "active": False,
+        "claims": 0,
+        "gates": 0,
+        "pending_claims": 0,
+        "pending_gates": 0,
+        "contracts": 0,
+        "pending_slugs": [],
+        "stale_slugs": [],
+        "dirty_slugs": [],
+        "scope_violations": {},
+        "stuck_gates": {},
+        "pending_details": [],
+        "do_not": [],
+        "error": None,
+    }
     root = _normalize(worktree)
     if root is None or not root.is_dir() or not _has_run(root):
         return facts
@@ -222,15 +236,21 @@ def assess(worktree) -> dict:
         return facts
     facts["contracts"] = len(contracts)
     # Several tracks may be active at once: the gate holds the turn while ANY
-    # of them has work without evidence. An unreadable contract is an error,
-    # never a silent "finished".
+    # of them has work without evidence. A stale contract MUST surface to the
+    # agent (rebase), while a genuinely unreadable contract fails open.
     for state in contracts:
         if not isinstance(state, dict):
             continue
+        slug = state.get("slug") or "?"
         if state.get("error"):
+            if "stale state" in str(state["error"]).lower():
+                facts["stale_slugs"].append(slug)
+                facts["active"] = True
+                continue
             facts["error"] = state["error"]
             return facts
-        if _is_active(state):
+        active = _is_active(state)
+        if active:
             facts["active"] = True
         facts["claims"] += len(state.get("claims") or {})
         facts["gates"] += len(state.get("gates") or {})
@@ -238,8 +258,38 @@ def assess(worktree) -> dict:
         pending_gates = _pending(state, "gates", "passed")
         facts["pending_claims"] += pending_claims
         facts["pending_gates"] += pending_gates
-        if (pending_claims or pending_gates) and _is_active(state):
-            facts["pending_slugs"].append(state.get("slug") or "?")
+        if not active:
+            continue
+        if pending_claims or pending_gates:
+            facts["pending_slugs"].append(slug)
+        if state.get("dirty_since_evidence"):
+            facts["dirty_slugs"].append(slug)
+        if state.get("scope_violations"):
+            facts["scope_violations"][slug] = list(state["scope_violations"])
+        if state.get("stuck_gates"):
+            facts["stuck_gates"][slug] = dict(state["stuck_gates"])
+        focus = state.get("focus")
+        if isinstance(focus, dict):
+            pending_g = [
+                {"id": g["id"], "command": str(g.get("command") or "")}
+                for g in (focus.get("pending_gates") or [])
+                if isinstance(g, dict) and g.get("id")
+            ]
+            open_c = [
+                c["id"]
+                for c in (focus.get("open_claims") or [])
+                if isinstance(c, dict) and c.get("id")
+            ]
+            if pending_g or open_c:
+                facts["pending_details"].append({
+                    "slug": slug,
+                    "pending_gates": pending_g,
+                    "open_claims": open_c,
+                })
+            for bullet in focus.get("do_not") or []:
+                text = str(bullet).strip()
+                if text and text not in facts["do_not"]:
+                    facts["do_not"].append(text)
     return facts
 
 
@@ -249,28 +299,107 @@ def nudge_message(worktree: str, facts: dict) -> str | None:
         return None
     if not facts.get("active"):
         return None  # a draft run is not the gate's business
-    pending_claims, pending_gates = facts.get("pending_claims", 0), facts.get("pending_gates", 0)
-    if not pending_claims and not pending_gates:
+    pending_claims = facts.get("pending_claims", 0)
+    pending_gates = facts.get("pending_gates", 0)
+    stale_slugs = facts.get("stale_slugs") or []
+    dirty_slugs = facts.get("dirty_slugs") or []
+    scope_violations = facts.get("scope_violations") or {}
+    stuck_gates = facts.get("stuck_gates") or {}
+    pending_details = facts.get("pending_details") or []
+    do_not = facts.get("do_not") or []
+
+    if not (stale_slugs or scope_violations or dirty_slugs or pending_gates or pending_claims):
         return None
+
+    lines = []
     parts = []
     if pending_gates:
         parts.append(f"{pending_gates} gate(s) sin evidencia")
     if pending_claims:
         parts.append(f"{pending_claims} claim(s) pendiente(s)")
-    slugs = facts.get("pending_slugs") or []
-    which = ("el run activo tiene" if len(slugs) <= 1 else
-             "los runs activos " + ", ".join("`" + s + "`" for s in slugs) + " tienen")
-    selector = "" if len(slugs) <= 1 else (
-        " Pasa `run: \"" + slugs[0] + "\"` (o el slug que toque) para elegir el contrato.")
-    return (
-        f"Riel: este turno editó código dentro de `{worktree}` y {which} "
-        f"{', '.join(parts)}.{selector}\n"
-        "Antes de cerrar: ejecuta los gates reales con "
-        "`riel_note(gates: [\"G#\"], command: \"<el comando real>\", covering: "
-        "\"<alcance>\", claims: [\"P#\"])` — el motor corre el comando y registra la "
-        "evidencia E# — o actualiza el estado del run si ya no aplica, y vuelve a "
-        "cerrar el turno."
-    )
+
+    if parts:
+        slugs = facts.get("pending_slugs") or []
+        which = ("el run activo tiene" if len(slugs) <= 1 else
+                 "los runs activos " + ", ".join("`" + s + "`" for s in slugs) + " tienen")
+        selector = "" if len(slugs) <= 1 else (
+            " Pasa `run: \"" + slugs[0] + "\"` (o el slug que toque) para elegir el contrato.")
+        lines.append(
+            f"Riel: este turno editó código dentro de `{worktree}` y {which} "
+            f"{', '.join(parts)}.{selector}"
+        )
+    else:
+        lines.append(f"Riel: este turno editó código dentro de `{worktree}` y el run activo requiere atención.")
+
+    if stale_slugs:
+        stale_list = ", ".join(f"`{s}`" for s in stale_slugs)
+        lines.append(
+            f"Contrato stale ({stale_list}): la definición o el shaping cambió; "
+            f"ejecuta `riel_run(verb=\"rebase\")` (run={stale_slugs[0]}) para re-fijar hashes."
+        )
+
+    if scope_violations:
+        for slug, paths in scope_violations.items():
+            path_list = ", ".join(str(p) for p in paths)
+            lines.append(
+                f"Violación de alcance (`{slug}`): archivo(s) fuera de scope: {path_list} — "
+                "reviértelos o actualiza la Definition y ejecuta `riel_run(verb=\"rebase\")`."
+            )
+
+    if dirty_slugs:
+        dirty_list = ", ".join(f"`{s}`" for s in dirty_slugs)
+        lines.append(
+            f"Cambios tras evidencia ({dirty_list}): se editó código después de la última "
+            "evidencia aprobada; vuelve a ejecutar el gate correspondiente con `riel_note`."
+        )
+
+    if pending_details:
+        detail_chunks = []
+        for entry in pending_details:
+            slug = entry.get("slug") or "?"
+            g_strs = [
+                f"{g['id']} (`{g['command']}`)" if g.get("command") else str(g["id"])
+                for g in (entry.get("pending_gates") or [])
+            ]
+            c_strs = [str(c) for c in (entry.get("open_claims") or [])]
+            chunk = []
+            if g_strs:
+                chunk.append("gates: " + ", ".join(g_strs))
+            if c_strs:
+                chunk.append("claims: " + ", ".join(c_strs))
+            if chunk:
+                prefix = f"[{slug}] " if len(pending_details) > 1 else ""
+                detail_chunks.append(prefix + "; ".join(chunk))
+        if detail_chunks:
+            lines.append("Pendiente ahora — " + " | ".join(detail_chunks))
+
+    if stuck_gates:
+        stuck_strs = [
+            f"{gid} ({slug}: {count} fallos)"
+            for slug, gmap in stuck_gates.items()
+            for gid, count in gmap.items()
+        ]
+        if stuck_strs:
+            lines.append(
+                "Gate atascado (" + ", ".join(stuck_strs) + "): detén los parches a ciegas, "
+                "revalúa tu hipótesis o escala al usuario."
+            )
+
+    if do_not:
+        compact_dn = "; ".join(do_not[:4])
+        if len(do_not) > 4:
+            compact_dn += f" (+{len(do_not) - 4} más)"
+        lines.append(f"DO NOT: {compact_dn}")
+
+    if pending_gates or pending_claims:
+        lines.append(
+            "Antes de cerrar: ejecuta los gates reales con "
+            "`riel_note(gates: [\"G#\"], command: \"<el comando real>\", covering: "
+            "\"<alcance>\", claims: [\"P#\"])` — el motor corre el comando y registra la "
+            "evidencia E# — o actualiza el estado del run si ya no aplica, y vuelve a "
+            "cerrar el turno."
+        )
+    return "\n".join(lines)
 
 
 def _session_cwd(session_id) -> str | None:

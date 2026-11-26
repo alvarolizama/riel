@@ -3,6 +3,59 @@
 Notable changes to Riel. Version numbers refer to `hermes_plugin/riel/plugin.yaml`;
 packaged guides carry their own versions.
 
+## 5.0.0
+
+### Added
+- **Frozen gate commands in `#### Gates`** (`— cmd: <command>`, `-- cmd:`, or
+  leading backticks like `- G1: \`make test\``): `riel_note` runs the frozen
+  command automatically when `command` is omitted and refuses substituting a
+  different command (edit the Definition and run `run rebase` to change it).
+  Unfrozen gates emit a validation warning and still require `command`.
+- **`--partial` (`partial=true`) on `riel_note`:** records intermediate `E#`
+  evidence (`partial:true`) without passing the gate or covering claims.
+- **Transparent gate failure output, `.riel/logs/<E#>.log`, and Stuck Breaker:**
+  `riel_note` reports `gate_exit_code`, `gate_passed`, `diff_stat` (with
+  warnings when test files were modified), Focus Card lines for the active
+  phase, and up to 3,000 chars of newline-preserved failure output directly;
+  large or failing outputs are saved to `.riel/logs/<E#>.log`. Consecutive
+  failures on the same gate in the current revision populate `stuck_gates` and
+  emit a `STUCK WARNING` at `>= 3` failures.
+- **Git `tree_sha`, `dirty_since_evidence`, and enforceable `allow`/`deny` scope
+  globs:** inside git worktrees, `E#` records `tree:<12hex>` (hash of `HEAD`
+  plus dirty/untracked files outside `.riel/`) and `files:<N>`. Later edits
+  outside `.riel/` set `dirty_since_evidence: true` and block `done` until
+  re-verified. `- allow: path/**` and `- deny: path/**` rules (`*`, `?`, `**`)
+  in `## Constraints` / `## DO NOT` populate `scope_violations`, print
+  `SCOPE VIOLATION`, and block `done`.
+- **Worktree verification of shaping `— source:` references:** `shape validate`
+  and `run activate` check `repo@<rev>:<path>[:start[-end]][#symbol]` and local
+  `<path>:start[-end][#symbol]` against the worktree (failing on missing files,
+  worktree escapes, out-of-range lines, or missing symbols; warning when a
+  symbol lies outside the cited lines; accepting non-file sources such as URLs,
+  `cmd:`, and `benchmark:` without file checks).
+- **`focus` and `ready_phases` in `run status`:** `focus` surfaces `phase`,
+  `deliverable`, `pending_gates` (with commands), `open_claims`, `do_not`, and
+  `core`; `ready_phases` lists all phases whose DAG predecessors are complete.
+
+### Changed
+- **Real DAG phase derivation:** phase completion and `ready_phases` follow real
+  DAG edges (parallel phases become ready together when predecessors pass;
+  linear authored order when no preamble edges exist).
+- **Postel clause separators:** ` — `, ` -- `, and ` – ` are all accepted across
+  parsers and normalized to ` — ` when the engine writes state.
+- **Gate hook and prompt section surfacing:** `pre_verify` catches `stale`,
+  `dirty_since_evidence`, and `scope_violations`, printing pending gates/claims
+  plus `DO NOT`; `section.py` surfaces `DO NOT`, `Core`, and stale/dirty/scope
+  alerts.
+
+### Fixed
+- Fixed stale `## Graph` reference in `templates/shaping.md` (`## Phases`).
+
+### Removed
+- **`confidence` on `riel_note`:** removed `--confidence` (`1..20`) and the
+  `>= 12` gate heuristic; evidence passes iff `exit_code == 0` and not
+  `partial`. (Shaping findings continue to use `confidence high|med|low`.)
+
 ## 4.1.0
 
 ### Changed

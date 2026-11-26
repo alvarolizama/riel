@@ -35,13 +35,33 @@ so a resumed session can reconcile without a second tool.
 ## Run status
 
 `riel_run(verb="status")` is the machine state for the gate and desktop chip. It
-answers the format and status, contract revision, derived phase and Next, claim and
-gate results, Open questions, Evidence and computed `done`. Riel does not derive
+answers the format and status, contract revision, derived `current_phase`,
+`ready_phases` and `next`, claim and gate results, Open questions, Evidence,
+`dirty_since_evidence`, `scope_violations`, `stuck_gates`, the active-phase
+`focus` card (`phase`, `deliverable`, `pending_gates` with commands,
+`open_claims`, `do_not`, `core`), and computed `done`. Riel does not derive
 activity from timestamp ordering or from checkpoint prose.
 
 Status failures are explicit: a stale shaping or Definition revision is not silently
 interpreted as a new Definition. Mutating code under an active run without closing all
-its claims and mandatory gates keeps `done` false.
+its claims and mandatory gates — or leaving `dirty_since_evidence` or
+`scope_violations` unresolved — keeps `done` false.
+
+## Gate hook and prompt section
+
+`pre_verify` reads the active contracts in the worktree via `run list` and holds
+the turn whenever any contract is `stale`, has `dirty_since_evidence`, has
+`scope_violations`, or still owes pending gates or open claims. Its nudge prints
+the actionable pending gates (with frozen commands when declared), open claims,
+and `## DO NOT` boundaries, and emits a `STUCK WARNING` when `stuck_gates` is
+populated.
+
+The `riel` prompt section (`section.py`) summarizes each active contract with its
+cursor and pending counts and surfaces `## DO NOT`, `## Core`, and stale,
+dirty, or scope alerts when present.
+
+`riel_clean` wipes `.riel/logs/` alongside the rest of `.riel/` (keeping only
+the lock and `archive/`).
 
 ## Packets
 

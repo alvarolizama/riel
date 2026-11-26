@@ -1,7 +1,7 @@
 ---
 topic: project
 trigger: "Use when a project is several questions: .riel/project.md orders the shapings, and each shaping runs once and delivers one PR."
-version: 1.1.1
+version: 1.2.0
 ---
 # project — The order of the questions
 
@@ -38,7 +38,8 @@ in each shaping's `## Question`, and `project status` reads them from there.
 ## What validation enforces
 
 - every node resolves to a real file in `.riel/shapings/` that passes
-  `shape validate` (one question, sourced findings);
+  `shape validate` (one question, sourced findings, and worktree-verified local
+  `— source:` file/line/symbol references);
 - one shaping appears once — one shaping is one run and one PR;
 - no cycles: a project orders work, it does not loop;
 - every edge names a known node.

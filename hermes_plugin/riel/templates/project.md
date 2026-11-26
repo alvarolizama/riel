@@ -15,7 +15,7 @@
      mermaid when tracks branch or run in parallel. A node label is the
      shaping's path, its uid (shp_xxxxxxxx) or its slug.
 
-     Progress is derived, never written here: a node is done when the run
-     archived at .riel/runs/<slug>.md is done. `project status` reads that
-     evidence and names the next shaping to run. -->
+     Progress is derived, never written here: a node is done when the contract
+     bound to that shaping in .riel/runs/<slug>.md is done. `project status`
+     reads that evidence and names the next shaping to run. -->
 - S1: .riel/shapings/{{slug}}.md

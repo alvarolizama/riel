@@ -125,12 +125,19 @@ def state_line(worktree: str) -> str:
     report = _read_runs(worktree)
     if not isinstance(report, dict) or not report.get("present") or report.get("error"):
         return ""
-    rows = [c for c in (report.get("contracts") or [])
-            if isinstance(c, dict) and c.get("active")]
+    contracts = [c for c in (report.get("contracts") or []) if isinstance(c, dict)]
     lines: List[str] = []
-    for contract in rows:
+    for contract in contracts:
         status = contract.get("status")
-        if not isinstance(status, dict) or status.get("error"):
+        if not isinstance(status, dict):
+            continue
+        err = status.get("error")
+        if err:
+            if "stale state" in str(err).lower():
+                slug = contract.get("slug") or status.get("slug") or "?"
+                lines.append(f"Worktree state — `{slug}` · STALE (run riel_run rebase)")
+            continue
+        if not contract.get("active"):
             continue
         parts: List[str] = ["`{}`".format(contract.get("slug") or "?")]
         goal = _cap(status.get("title") or status.get("goal"), STATE_FIELD_CHARS)
@@ -147,7 +154,26 @@ def state_line(worktree: str) -> str:
             total))
         if contract.get("done"):
             parts.append("done")
+        dirty = contract.get("dirty_since_evidence") or status.get("dirty_since_evidence")
+        if dirty:
+            parts.append("dirty since evidence")
+        scope_violations = contract.get("scope_violations") or status.get("scope_violations") or []
+        if scope_violations:
+            parts.append(f"scope violations: {len(scope_violations)}")
+        stuck_gates = contract.get("stuck_gates") or status.get("stuck_gates") or {}
+        if isinstance(stuck_gates, dict) and stuck_gates:
+            stuck_str = ", ".join(f"{gid}({cnt})" for gid, cnt in stuck_gates.items())
+            parts.append(f"stuck: {stuck_str}")
         lines.append("Worktree state — " + " · ".join(parts))
+
+        focus = contract.get("focus") if isinstance(contract.get("focus"), dict) else status.get("focus")
+        if isinstance(focus, dict):
+            do_not = focus.get("do_not") or []
+            if do_not:
+                lines.append("  DO NOT: " + _cap("; ".join(str(x) for x in do_not), STATE_FIELD_CHARS * 2))
+            core_items = focus.get("core") or []
+            if core_items:
+                lines.append("  Core: " + _cap("; ".join(str(x) for x in core_items), STATE_FIELD_CHARS * 2))
     if not lines:
         return ""
     return "\n".join(lines) + (

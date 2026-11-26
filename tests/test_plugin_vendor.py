@@ -9,8 +9,8 @@ Stdlib-only and Hermes-free on purpose. Two kinds of tests live here:
     is the sole writer of the formats and has its own suite; pinning the
     plugin layer to it would couple two suites two workers move at once.
 
-Version contract (v4.1.0, contracts executed in place): the manifest, the
-package README and the engine's VERSION all say 4.1.0 — asserted here so the three cannot
+Version contract (v5.0.0, contracts executed in place): the manifest, the
+package README and the engine's VERSION all say 5.0.0 — asserted here so the three cannot
 drift apart.
 
 Run:
@@ -38,7 +38,7 @@ sys.path.insert(0, str(HERE))
 import _stub_engine as stub  # noqa: E402
 
 MANIFEST = PLUGIN / "plugin.yaml"
-VERSION = "4.1.0"
+VERSION = "5.0.0"
 
 # The package's own tree: the prose (`guide/`), the engine the tools run
 # (`engine/`) and the run/shaping templates (`templates/`). They live here and
@@ -170,13 +170,13 @@ class PackageTest(unittest.TestCase):
 
 
 class VersionContractTest(unittest.TestCase):
-    """4.1.0 — said identically by manifest, README and engine."""
+    """5.0.0 — said identically by manifest, README and engine."""
 
     def test_the_manifest_is_3_0_0(self):
         self.assertEqual(_manifest_field("version"), VERSION, MANIFEST)
 
     def test_the_package_readme_says_the_same_version(self):
-        """The package's own README (the installed user's doc) names v4.1.0."""
+        """The package's own README (the installed user's doc) names v5.0.0."""
         readme = (PLUGIN / "README.md").read_text(encoding="utf-8")
         self.assertIn(f"v{VERSION}", readme,
                       f"hermes_plugin/riel/README.md does not say v{VERSION}")
@@ -496,6 +496,40 @@ class EngineIntegrationTest(unittest.TestCase):
             self.assertIn(key, payload)
         self.assertIn("ship", payload)
         self.assertIn("digest", payload)
+
+    def test_note_with_real_engine_frozen_command_partial_and_elevated_gate_fields(self):
+        run_path = Path(self.tmp) / ".riel" / "runs" / "demo.md"
+        run_path.parent.mkdir(parents=True)
+        run_path.write_text(
+            "# Run: demo\n<!-- riel-run/v1 -->\n\n"
+            "## Objective\nVerify v5 integration.\n\n"
+            "## Context\n\n### Why\nNeed real engine integration.\n\n"
+            "## Deliverable\nPassing note.\n\n"
+            "## Constraints\n- stdlib only.\n\n"
+            "## DO NOT\n- skip gates.\n\n"
+            "## Phases\n\n"
+            "### F1: run gate\n- RUN true\n\n"
+            "#### Claims\n- P1: gate passes — anchor: §F1#1\n\n"
+            "#### Gates\n- G1: gate passes — cmd: true\n\n"
+            "#### Deliverable\n- gate passed\n",
+            encoding="utf-8",
+        )
+        act = self.payload(self.tools.riel_run, {"verb": "activate", "worktree": self.tmp})
+        self.assertTrue(act["passed"], act)
+
+        partial = self.payload(self.tools.riel_note, {
+            "gates": ["G1"], "covering": "wip", "partial": True, "worktree": self.tmp,
+        })
+        self.assertEqual(partial["exit_code"], 0, partial)
+        self.assertEqual(partial["gate_exit_code"], 0)
+        self.assertFalse(partial["gate_passed"])
+
+        final = self.payload(self.tools.riel_note, {
+            "gates": ["G1"], "claims": ["P1"], "covering": "all", "worktree": self.tmp,
+        })
+        self.assertEqual(final["exit_code"], 0, final)
+        self.assertEqual(final["gate_exit_code"], 0)
+        self.assertTrue(final["gate_passed"])
 
 
 if __name__ == "__main__":

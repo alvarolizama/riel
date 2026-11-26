@@ -504,6 +504,26 @@ class ReadRunTest(unittest.TestCase):
                 self.assertFalse(report["present"])
                 self.assertIsInstance(report, dict)
 
+    def test_read_runs_preserves_v5_fields_and_counts_dirty_and_scope_as_pending(self):
+        stub.seed(
+            self.tmp,
+            goal="v5",
+            ready_phases=["F1"],
+            dirty_since_evidence=True,
+            scope_violations=["outside.py"],
+            stuck_gates={"G1": 2},
+            focus={"phase": "F1", "do_not": ["no"], "core": ["c — v"]},
+        )
+        report = self.status.read_runs(self.tmp)
+        self.assertTrue(report["present"])
+        self.assertEqual(report["pending"], 1)
+        row = report["contracts"][0]
+        self.assertEqual(row["ready_phases"], ["F1"])
+        self.assertTrue(row["dirty_since_evidence"])
+        self.assertEqual(row["scope_violations"], ["outside.py"])
+        self.assertEqual(row["stuck_gates"], {"G1": 2})
+        self.assertEqual(row["focus"]["phase"], "F1")
+
 
 @unittest.skipUnless(_fastapi_available(), "fastapi is not installed in this interpreter")
 class PluginApiRouteTest(unittest.TestCase):

@@ -1,7 +1,7 @@
 ---
 topic: shaping
 trigger: "Use when research must precede execution: .riel/shapings/<slug>.md asks ONE question and answers it with sourced findings, and a run binds exactly one shaping."
-version: 3.0.1
+version: 3.1.0
 ---
 # shaping — One question, one answer
 
@@ -79,14 +79,20 @@ The frozen Basis copies the heading, the source and the confidence — never the
 body or the diagram, so a delegated slice stays small.
 
 Facts derive constraints from findings and do not create competing `F#` ids.
-HTML comments are documentation, never findings. Only dossiers are read.
+HTML comments are documentation, never findings. Only dossiers are read. Clause
+separators accept ` — `, ` -- `, and ` – `.
 
 Pin repository evidence to its observed commit and symbol:
-`repo@057dc31:path/to/file.py:694-718#symbol`. The commit fixes what was
-investigated; path and symbol make later drift findable. Before activation,
-re-read the reference against current HEAD. A passed benchmark with command and
-output belongs here. An execution assertion about the future implementation
-belongs in the Contract's Claims instead.
+`repo@057dc31:path/to/file.py:694-718#symbol` (or worktree-relative
+`path/to/file.py:694-718#symbol`). `shape validate` and `run activate` verify
+repository source references against the actual worktree: a missing file,
+worktree-escaping path, out-of-range line numbers, or missing `#symbol` fails
+validation; a `#symbol` found in the file outside the cited line range emits a
+warning; non-file sources (URLs, `cmd:`, `benchmark:`, etc.) are accepted without
+file checks. The commit fixes what was investigated; path and symbol make later
+drift findable. Before activation, re-read the reference against current HEAD. A
+passed benchmark with command and output belongs here. An execution assertion
+about the future implementation belongs in the Contract's Claims instead.
 
 ## Not wanted, and what stays open
 

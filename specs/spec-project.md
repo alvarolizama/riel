@@ -49,8 +49,9 @@ Questions are never copied into the project: they live in each shaping's
 - a missing marker, a title that is not `# Project: <name>`, an empty Objective;
 - no graph, or a node id outside `S#`;
 - a node whose reference resolves to no shaping in `.riel/shapings/`;
-- a referenced shaping that fails `shape validate` (its issues are reported
-  against the node);
+- a referenced shaping that fails `shape validate` (including local
+  `— source:` file/line/symbol checks against the worktree — its issues are
+  reported against the node);
 - the same shaping bound by two nodes — one shaping is one run and one PR;
 - an edge naming an unknown node;
 - a cycle: a project orders work, it does not loop.

@@ -46,6 +46,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -375,13 +376,18 @@ def _note_argv(args: dict) -> list:
         flag, kind = param["flag"], param.get("kind", "str")
         caller_name = _load.note_caller_name(param)
         value = args.get(caller_name)
-        if value is None or (isinstance(value, str) and not value.strip()):
+        if value is None or (kind != "bool" and isinstance(value, str) and not value.strip()):
             continue
         if caller_name != name or kind == "list":
             if not isinstance(value, list) or any(not isinstance(i, str) for i in value):
                 raise ValueError(f"{caller_name} must be an array of strings")
             for item in value:
                 argv += [flag, item]
+        elif kind == "bool":
+            if not isinstance(value, bool):
+                raise ValueError(f"{caller_name} must be a boolean, got {value!r}")
+            if value:
+                argv.append(flag)
         elif kind == "int":
             try:
                 argv += [flag, str(int(value))]
@@ -427,7 +433,21 @@ def riel_note(args: dict, **kwargs) -> str:
                 "claims=['P1 …'] — the engine runs it and records the evidence"
             ),
         )
-    return _run(["note", *argv], args, kwargs, tool="riel_note")
+    raw = _run(["note", *argv], args, kwargs, tool="riel_note")
+    try:
+        payload = json.loads(raw)
+    except ValueError:
+        return raw
+    if payload.get("exit_code") == 0:
+        match = re.search(
+            r"gate_exit_code:\s*(\d+)\s*\|\s*gate_passed:\s*(true|false)",
+            payload.get("stdout") or "",
+        )
+        if match:
+            payload["gate_exit_code"] = int(match.group(1))
+            payload["gate_passed"] = (match.group(2) == "true")
+            return _dump(payload)
+    return raw
 
 
 def riel_clean(args: dict, **kwargs) -> str:

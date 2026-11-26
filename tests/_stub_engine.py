@@ -150,6 +150,8 @@ def _note(argv, worktree, out, err):
         if arg in ("--gate", "--claim"):
             i += 1
             (gate_ids if arg == "--gate" else claim_ids).append(argv[i])
+        elif arg == "--partial":
+            flags["partial"] = True
         elif arg.startswith("--"):
             i += 1
             flags[arg[2:].replace("-", "_")] = argv[i]
@@ -174,6 +176,7 @@ def _note(argv, worktree, out, err):
     if flags.get("next"):
         state["next"] = flags["next"]
 
+    gate_result = None
     if flags.get("command"):
         # The gate command IS a shell command by contract (the real engine
         # runs it the same way): it arrives from the test itself, not from a
@@ -181,15 +184,14 @@ def _note(argv, worktree, out, err):
         with open(os.devnull, "wb") as devnull:
             code = subprocess.call(flags["command"], shell=True, cwd=worktree,
                                    stdout=devnull, stderr=devnull)
-        try:
-            confidence = int(flags["confidence"]) if "confidence" in flags else None
-        except ValueError:
-            confidence = None
-        passed = code == 0 and (confidence is None or confidence >= 12)
+        partial = bool(flags.get("partial"))
+        passed = (code == 0) and not partial
+        gate_result = (code, passed)
         evidence = {
             "id": "E{}".format(len(state["evidence"]) + 1),
             "gates": gate_ids, "command": flags["command"],
             "covering": flags.get("covering", ""), "exit_code": code,
+            "partial": partial,
             "passed": passed,
         }
         state["evidence"].append(evidence)
@@ -214,6 +216,9 @@ def _note(argv, worktree, out, err):
     out.write(json.dumps({"ok": True, "claims": len(state["claims"]),
                           "gates": len(state["gates"]),
                           "evidence": len(state["evidence"])}) + "\n")
+    if gate_result is not None:
+        out.write("gate_exit_code: {} | gate_passed: {}\n".format(
+            gate_result[0], str(gate_result[1]).lower()))
     return 0
 
 
@@ -383,6 +388,11 @@ def run_verb(argv, worktree=None, out=None, err=None):
                     rows.append({"slug": slug,
                                  "run": ".riel/runs/{}.md".format(slug),
                                  "error": "the run state is unreadable"})
+                    continue
+                if state.get("error"):
+                    rows.append({"slug": slug,
+                                 "run": ".riel/runs/{}.md".format(slug),
+                                 "error": state["error"]})
                     continue
                 rows.append(dict(state, slug=slug,
                                  run=".riel/runs/{}.md".format(slug)))

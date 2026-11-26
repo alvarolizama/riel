@@ -192,6 +192,38 @@ class AssessTest(GateTestCase):
         self.assertTrue(facts["error"], "a corrupt state surfaces as an error, never a crash")
         self.assertIsNone(self.hooks.nudge_message(self.tmp, facts))
 
+    def test_a_stale_contract_surfaces_as_stale_slug_not_fatal_error(self):
+        self.seed(slug="auth", error="stale state: the definition changed since r1 — run `run rebase`")
+        facts = self.hooks.assess(self.tmp)
+        self.assertTrue(facts["present"])
+        self.assertTrue(facts["active"])
+        self.assertIsNone(facts["error"])
+        self.assertEqual(facts["stale_slugs"], ["auth"])
+
+    def test_dirty_scope_stuck_and_focus_are_extracted(self):
+        self.seed(
+            claims=("P1",),
+            gates=("G1",),
+            dirty_since_evidence=True,
+            scope_violations=["secret/key.txt"],
+            stuck_gates={"G1": 3},
+            focus={
+                "phase": "F1",
+                "deliverable": ["done"],
+                "pending_gates": [{"id": "G1", "label": "tests", "command": "pytest -q"}],
+                "open_claims": [{"id": "P1", "text": "works"}],
+                "do_not": ["never touch prod", "never skip tests"],
+                "core": ["key — value"],
+            },
+        )
+        facts = self.hooks.assess(self.tmp)
+        self.assertEqual(facts["dirty_slugs"], ["run"])
+        self.assertEqual(facts["scope_violations"], {"run": ["secret/key.txt"]})
+        self.assertEqual(facts["stuck_gates"], {"run": {"G1": 3}})
+        self.assertEqual(facts["pending_details"][0]["pending_gates"], [{"id": "G1", "command": "pytest -q"}])
+        self.assertEqual(facts["pending_details"][0]["open_claims"], ["P1"])
+        self.assertEqual(facts["do_not"], ["never touch prod", "never skip tests"])
+
 
 class NudgeMessageTest(GateTestCase):
     def test_pending_claims_and_gates_nudge(self):
@@ -229,6 +261,55 @@ class NudgeMessageTest(GateTestCase):
         self.run_gate("false")
         message = self.hooks.nudge_message(self.tmp, self.hooks.assess(self.tmp))
         self.assertIn(self.tmp, message)
+
+    def test_stale_contract_triggers_rebase_nudge(self):
+        self.seed(error="stale state: definition changed since r1 — run `run rebase`")
+        message = self.hooks.nudge_message(self.tmp, self.hooks.assess(self.tmp))
+        self.assertIsNotNone(message)
+        self.assertIn("riel_run", message)
+        self.assertIn("rebase", message)
+        self.assertIn("`run`", message)
+
+    def test_dirty_since_evidence_nudges_even_when_gates_and_claims_passed(self):
+        self.seed(claims=("P1",), gates=("G1",), dirty_since_evidence=True)
+        self.run_gate("true")
+        facts = self.hooks.assess(self.tmp)
+        self.assertEqual((facts["pending_claims"], facts["pending_gates"]), (0, 0))
+        message = self.hooks.nudge_message(self.tmp, facts)
+        self.assertIsNotNone(message)
+        self.assertIn("riel_note", message)
+        self.assertIn("`run`", message)
+
+    def test_scope_violations_nudge_names_the_offending_paths(self):
+        self.seed(claims=("P1",), gates=("G1",), scope_violations=["outside/bad.py"])
+        self.run_gate("true")
+        message = self.hooks.nudge_message(self.tmp, self.hooks.assess(self.tmp))
+        self.assertIsNotNone(message)
+        self.assertIn("outside/bad.py", message)
+        self.assertIn("rebase", message)
+
+    def test_focus_details_stuck_and_do_not_appear_in_nudge(self):
+        self.seed(
+            claims=("P1",),
+            gates=("G1",),
+            stuck_gates={"G1": 3},
+            focus={
+                "phase": "F1",
+                "deliverable": [],
+                "pending_gates": [{"id": "G1", "label": "unit", "command": "make test"}],
+                "open_claims": [{"id": "P1", "text": "passes"}],
+                "do_not": ["never delete logs"],
+                "core": [],
+            },
+        )
+        self.run_gate("false")
+        message = self.hooks.nudge_message(self.tmp, self.hooks.assess(self.tmp))
+        self.assertIsNotNone(message)
+        self.assertIn("G1", message)
+        self.assertIn("make test", message)
+        self.assertIn("P1", message)
+        self.assertIn("DO NOT: never delete logs", message)
+        self.assertIn("3 fallos", message)
 
 
 class PreVerifyCallbackTest(GateTestCase):

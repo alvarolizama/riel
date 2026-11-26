@@ -218,8 +218,13 @@ def read_runs(worktree: str, timeout: int = TIMEOUT_SECS) -> dict:
             "pending_claims": _pending(state, "claims", "covered"),
             "pending_gates": _pending(state, "gates", "passed"),
             "current_phase": state.get("current_phase"),
+            "ready_phases": list(state.get("ready_phases") or []),
             "next": state.get("next"),
             "revision": state.get("revision"),
+            "dirty_since_evidence": bool(state.get("dirty_since_evidence")),
+            "scope_violations": list(state.get("scope_violations") or []),
+            "stuck_gates": dict(state.get("stuck_gates") or {}),
+            "focus": state.get("focus") if isinstance(state.get("focus"), dict) else None,
             "updated": updated,
             "stale_secs": stale,
         })
@@ -227,8 +232,15 @@ def read_runs(worktree: str, timeout: int = TIMEOUT_SECS) -> dict:
     report["contracts"] = rows
     report["total"] = len(rows)
     report["active"] = sum(1 for r in rows if r["active"])
-    report["pending"] = sum(1 for r in rows
-                            if r["active"] and (r["pending_claims"] or r["pending_gates"]))
+    report["pending"] = sum(
+        1 for r in rows
+        if r["active"] and (
+            r["pending_claims"]
+            or r["pending_gates"]
+            or r["dirty_since_evidence"]
+            or r["scope_violations"]
+        )
+    )
     report["updated"] = newest
     report["stale_secs"] = max(0, int(time.time()) - newest) if newest else None
     return report

@@ -272,18 +272,24 @@ class NoteTests(TempDirTest):
         self.assertEqual(rc, 2)
         self.assertIn("unknown claim", err)
 
-    def test_confidence_bounds_and_low_confidence_vetoes(self):
+    def test_partial_evidence_records_without_passing_and_confidence_rejected(self):
         self.activate()
         rc, _out, err = run("note", "--gate", "G1", "--command", "true",
-                            "--covering", "x", "--confidence", "22",
+                            "--covering", "x", "--confidence", "15",
                             cwd=self.tmp)
         self.assertEqual(rc, 2)
-        self.assertIn("1..20", err)
-        rc, _out, err = run("note", "--gate", "G1", "--command", "true",
-                            "--covering", "x", "--confidence", "5",
-                            cwd=self.tmp)
+        self.assertIn("unrecognized arguments", err)
+        rc, out, err = run("note", "--gate", "G1", "--claim", "P1",
+                           "--command", "true", "--covering", "wip check",
+                           "--partial", cwd=self.tmp)
         self.assertEqual(rc, 0, err)
-        self.assertEqual(self.status()["gates"]["G1"], "pending")
+        self.assertIn("gate_exit_code: 0 | gate_passed: false", out)
+        body = self.read_run()
+        self.assertIn("partial:true", body)
+        st = self.status()
+        self.assertEqual(st["gates"]["G1"], "pending")
+        self.assertEqual(st["claims"]["P1"], "open")
+        self.assertFalse(st["done"])
 
     def test_core_slots_are_1_based(self):
         self.activate()
@@ -1187,6 +1193,9 @@ class ShapingV3Tests(TempDirTest):
         self.assertIn("1 finding(s)", out)
 
     def test_a_dossier_may_carry_its_own_diagram(self):
+        os.makedirs(os.path.join(self.tmp, "engine"), exist_ok=True)
+        with open(os.path.join(self.tmp, "engine", "run.py"), "w", encoding="utf-8") as fh:
+            fh.write("\n".join("# line {}".format(i) for i in range(1, 450)) + "\n")
         findings = ("### F1: one file holds both halves\n"
                     "The cut is Metadata.\n"
                     "— source: engine/run.py:442, confidence high\n\n"
@@ -1281,6 +1290,9 @@ class ShapingV3Tests(TempDirTest):
         self.assertEqual(rc, 1)
         self.assertIn("riel-shaping/v3", out)
     def test_the_basis_freezes_the_claim_not_the_dossier_body(self):
+        os.makedirs(os.path.join(self.tmp, "engine"), exist_ok=True)
+        with open(os.path.join(self.tmp, "engine", "run.py"), "w", encoding="utf-8") as fh:
+            fh.write("\n".join("# line {}".format(i) for i in range(1, 450)) + "\n")
         findings = ("### F1: one file holds both halves\n"
                     "A long body paragraph that must NOT travel into a slice.\n"
                     "— source: engine/run.py:442, confidence high\n\n"
@@ -1622,6 +1634,500 @@ class ProjectTests(TempDirTest):
         rc, out, _err = run("project", "status", cwd=self.tmp)
         self.assertEqual(rc, 1)
         self.assertIn("INVALID project", out)
+
+
+class FrozenGateTests(TempDirTest):
+    """Frozen gate commands prevent substituting weaker commands at note time."""
+
+    @staticmethod
+    def engine():
+        spec = importlib.util.spec_from_file_location("riel_engine_frozen", ENGINE)
+        assert spec is not None and spec.loader is not None
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def test_parse_frozen_gate_formats_and_warning(self):
+        eng = self.engine()
+        text = LIST_RUN.replace(
+            "- G1: parser tests pass",
+            "- G1: parser tests pass — cmd: python3 -c \"print('ok')\"",
+        ).replace(
+            "- G2: verbs wired",
+            "- G2: `true` — verbs wired",
+        )
+        gates = eng._parse_gates(text)
+        self.assertEqual(gates[0]["label"], "parser tests pass")
+        self.assertEqual(gates[0]["command"], "python3 -c \"print('ok')\"")
+        self.assertEqual(gates[1]["label"], "verbs wired")
+        self.assertEqual(gates[1]["command"], "true")
+
+        bt_only = LIST_RUN.replace("- G1: parser tests pass", "- G1: `make test`")
+        self.assertEqual(eng._parse_gates(bt_only)[0]["label"], "make test")
+        self.assertEqual(eng._parse_gates(bt_only)[0]["command"], "make test")
+
+        # Unfrozen gate emits a warning, not an issue
+        nodes, edges, _r = eng.contract_graph(LIST_RUN)
+        issues, warnings = eng._check_definition(LIST_RUN, nodes, edges, "", False, [])
+        self.assertEqual(issues, [])
+        self.assertTrue(any("G1 has no frozen command" in w for w in warnings), warnings)
+
+    def test_frozen_gate_auto_runs_and_refuses_substitution(self):
+        text = LIST_RUN.replace(
+            "- G1: parser tests pass",
+            "- G1: parser tests pass — cmd: python3 -c \"open('ran_frozen.txt','w').write('ok')\"",
+        ).replace(
+            "- G2: verbs wired",
+            "- G2: `true` -- verbs wired",
+        )
+        self.activate(text=text)
+        # Omitting --command runs the frozen command automatically
+        rc, out, err = run("note", "--gate", "G1", "--claim", "P1",
+                           "--covering", "frozen auto", cwd=self.tmp)
+        self.assertEqual(rc, 0, out + err)
+        self.assertTrue(os.path.isfile(os.path.join(self.tmp, "ran_frozen.txt")))
+        self.assertEqual(self.status()["gates"]["G1"], "passed")
+
+        # Substituting a different command is refused
+        rc, _out, err = run("note", "--gate", "G2", "--command", "echo fake",
+                            "--covering", "sub", cwd=self.tmp)
+        self.assertEqual(rc, 2)
+        self.assertIn("frozen to command", err)
+
+        # Whitespace-normalized matching command is accepted
+        rc, _out, err = run("note", "--gate", "G2", "--claim", "P2",
+                            "--command", "  true  ", "--covering", "exact",
+                            cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        self.assertTrue(self.status()["done"])
+
+    def test_multi_gate_frozen_mismatch_refused_and_shared_runs(self):
+        text = LIST_RUN.replace(
+            "- G1: parser tests pass", "- G1: g1 — cmd: true"
+        ).replace(
+            "- G2: verbs wired", "- G2: g2 — cmd: echo two"
+        )
+        self.activate(text=text)
+        rc, _out, err = run("note", "--gate", "G1", "--gate", "G2",
+                            "--covering", "both", cwd=self.tmp)
+        self.assertEqual(rc, 2)
+        self.assertIn("different frozen commands", err)
+
+        text_same = LIST_RUN.replace(
+            "- G1: parser tests pass", "- G1: g1 — cmd: true"
+        ).replace(
+            "- G2: verbs wired", "- G2: g2 — cmd: true"
+        )
+        shutil.rmtree(os.path.join(self.tmp, ".riel"))
+        self.activate(text=text_same)
+        rc, _out, err = run("note", "--gate", "G1", "--gate", "G2",
+                            "--covering", "shared", cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(self.status()["gates"], {"G1": "passed", "G2": "passed"})
+
+
+class GateFeedbackAndStuckTests(TempDirTest):
+    """Failure output tail, .riel/logs/<E#>.log, focus card, and stuck breaker."""
+
+    def test_failure_prints_multiline_tail_and_writes_log(self):
+        self.activate()
+        cmd = "python3 -c \"import sys; print('line one'); print('line two'); sys.exit(3)\""
+        rc, out, err = run("note", "--gate", "G1", "--command", cmd,
+                           "--covering", "fail check", cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        self.assertIn("gate_exit_code: 3 | gate_passed: false", out)
+        self.assertIn("--- gate output (exit 3) ---", out)
+        self.assertIn("line one\nline two", out)
+        self.assertIn("log: .riel/logs/E1.log", out)
+        self.assertIn("focus phase: F1", out)
+        self.assertIn("pending_gates:", out)
+        self.assertIn("open_claims:", out)
+        self.assertIn("do_not:", out)
+        log_file = os.path.join(self.tmp, ".riel", "logs", "E1.log")
+        self.assertTrue(os.path.isfile(log_file))
+        with open(log_file, encoding="utf-8") as fh:
+            self.assertEqual(fh.read().strip(), "line one\nline two")
+
+    def test_long_passing_output_writes_log_and_keeps_snippet_short(self):
+        self.activate()
+        cmd = "python3 -c \"print('x' * 500)\""
+        rc, out, err = run("note", "--gate", "G1", "--command", cmd,
+                           "--covering", "long output", cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        self.assertIn("log: .riel/logs/E1.log", out)
+        log_file = os.path.join(self.tmp, ".riel", "logs", "E1.log")
+        self.assertTrue(os.path.isfile(log_file))
+        with open(log_file, encoding="utf-8") as fh:
+            self.assertEqual(len(fh.read().strip()), 500)
+
+    def test_stuck_breaker_warns_after_three_failures_and_resets_on_pass(self):
+        self.activate()
+        run("note", "--core", "parser — single pass", cwd=self.tmp)
+        for i in range(2):
+            rc, out, err = run("note", "--gate", "G1", "--command", "false",
+                               "--covering", "try {}".format(i), cwd=self.tmp)
+            self.assertEqual(rc, 0, err)
+            self.assertNotIn("STUCK WARNING", out)
+        self.assertEqual(self.status()["stuck_gates"], {})
+
+        rc, out, err = run("note", "--gate", "G1", "--command", "false",
+                           "--covering", "try 3", cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        self.assertIn("STUCK WARNING: G1 failed 3 consecutive times", out)
+        self.assertIn("core: parser — single pass", out)
+        self.assertEqual(self.status()["stuck_gates"], {"G1": 3})
+
+        rc, out, err = run("note", "--gate", "G1", "--claim", "P1",
+                           "--command", "true", "--covering", "fixed",
+                           cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        self.assertNotIn("STUCK WARNING", out)
+        self.assertEqual(self.status()["stuck_gates"], {})
+
+
+class GitTreeAndScopeTests(TempDirTest):
+    """Git tree_sha, dirty_since_evidence, diff_stat, and allow/deny scope rules."""
+
+    def init_git(self):
+        subprocess.run(["git", "init"], cwd=self.tmp, check=True,
+                       capture_output=True)
+        subprocess.run(["git", "config", "user.email", "test@example.com"],
+                       cwd=self.tmp, check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.name", "Tester"],
+                       cwd=self.tmp, check=True, capture_output=True)
+        os.makedirs(os.path.join(self.tmp, "src"), exist_ok=True)
+        with open(os.path.join(self.tmp, "README.md"), "w", encoding="utf-8") as fh:
+            fh.write("# repo\n")
+        with open(os.path.join(self.tmp, "src", "app.py"), "w", encoding="utf-8") as fh:
+            fh.write("x = 1\n")
+        subprocess.run(["git", "add", "README.md", "src/app.py"],
+                       cwd=self.tmp, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"],
+                       cwd=self.tmp, check=True, capture_output=True)
+
+    def scoped_run(self):
+        return LIST_RUN.replace(
+            "- stdlib only.",
+            "- stdlib only.\n- allow: src/**, tests/**"
+        ).replace(
+            "- touch tools.py.",
+            "- touch tools.py.\n- deny: src/secret.txt"
+        )
+
+    def test_dirty_since_evidence_and_test_file_warning(self):
+        self.init_git()
+        self.activate(text=self.scoped_run())
+        with open(os.path.join(self.tmp, "src", "app.py"), "w", encoding="utf-8") as fh:
+            fh.write("x = 2\n")
+        rc, out, err = run("note", "--gate", "G1", "--claim", "P1",
+                           "--command", "true", "--covering", "p1",
+                           cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        self.assertIn("diff: 1 file(s) (src/app.py)", out)
+        body = self.read_run()
+        self.assertRegex(body, r"tree:[0-9a-f]{12}\s+files:1")
+
+        rc, out, err = run("note", "--gate", "G2", "--claim", "P2",
+                           "--command", "true", "--covering", "p2",
+                           cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        st = self.status()
+        self.assertFalse(st["dirty_since_evidence"])
+        self.assertTrue(st["done"])
+
+        # Edit a tracked file AFTER passing evidence -> dirty_since_evidence vetoes done
+        with open(os.path.join(self.tmp, "src", "app.py"), "w", encoding="utf-8") as fh:
+            fh.write("x = 3\n")
+        st = self.status()
+        self.assertTrue(st["dirty_since_evidence"])
+        self.assertFalse(st["done"])
+
+        # Modifying a test file emits a diff warning, and re-running gate clears dirty
+        os.makedirs(os.path.join(self.tmp, "tests"), exist_ok=True)
+        with open(os.path.join(self.tmp, "tests", "test_app.py"), "w", encoding="utf-8") as fh:
+            fh.write("assert True\n")
+        rc, out, err = run("note", "--gate", "G2", "--claim", "P2",
+                           "--command", "true", "--covering", "rerun",
+                           cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        self.assertIn("WARNING: modified test files: tests/test_app.py", out)
+        st = self.status()
+        self.assertFalse(st["dirty_since_evidence"])
+        self.assertTrue(st["done"])
+
+    def test_scope_violations_block_done_and_warn(self):
+        self.init_git()
+        self.activate(text=self.scoped_run())
+        with open(os.path.join(self.tmp, "README.md"), "w", encoding="utf-8") as fh:
+            fh.write("# outside allow\n")
+        with open(os.path.join(self.tmp, "src", "secret.txt"), "w", encoding="utf-8") as fh:
+            fh.write("nope\n")
+        rc, out, err = run("note", "--gate", "G1", "--claim", "P1",
+                           "--command", "true", "--covering", "p1",
+                           cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        self.assertIn("SCOPE VIOLATION:", out)
+        self.assertIn("README.md", out)
+        self.assertIn("src/secret.txt", out)
+        run("note", "--gate", "G2", "--claim", "P2",
+            "--command", "true", "--covering", "p2", cwd=self.tmp)
+        st = self.status()
+        self.assertEqual(st["scope_violations"], ["README.md", "src/secret.txt"])
+        self.assertFalse(st["done"])
+
+    def test_glob_matcher_supports_double_star_and_single_star(self):
+        spec = importlib.util.spec_from_file_location("riel_engine_glob", ENGINE)
+        assert spec is not None and spec.loader is not None
+        eng = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(eng)
+        self.assertTrue(eng._glob_match("docs/a.md", "docs/**"))
+        self.assertTrue(eng._glob_match("docs/sub/b.md", "docs/**"))
+        self.assertFalse(eng._glob_match("src/a.md", "docs/**"))
+        self.assertTrue(eng._glob_match("README.md", "*.md"))
+        self.assertFalse(eng._glob_match("docs/a.md", "*.md"))
+        self.assertTrue(eng._glob_match("docs/sub/a.md", "**/*.md"))
+
+
+class SourceVerificationTests(TempDirTest):
+    """Shaping `— source:` file/line/symbol verification against the worktree."""
+
+    def write_shaping(self, source_line, slug="engine"):
+        findings = ("### F1: claim text\n"
+                    "Support.\n"
+                    "— source: {}\n").format(source_line)
+        path = self.shaping_path(slug)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(shaping_v3(name=slug, findings=findings))
+        return path
+
+    def test_valid_repo_source_with_lines_and_symbol_passes(self):
+        os.makedirs(os.path.join(self.tmp, "src"), exist_ok=True)
+        with open(os.path.join(self.tmp, "src", "mod.py"), "w", encoding="utf-8") as fh:
+            fh.write("def alpha():\n    return 1\n\ndef beta():\n    return 2\n")
+        path = self.write_shaping("repo@HEAD:src/mod.py:1-5#beta, confidence high")
+        rc, out, err = run("shape", "validate", path, cwd=self.tmp)
+        self.assertEqual(rc, 0, out + err)
+        self.assertEqual(err, "")
+
+    def test_missing_file_out_of_range_lines_and_missing_symbol_fail(self):
+        path = self.write_shaping("repo@HEAD:src/missing.py:1-2#sym")
+        rc, out, _err = run("shape", "validate", path, cwd=self.tmp)
+        self.assertEqual(rc, 1)
+        self.assertIn("source file not found in worktree: src/missing.py", out)
+
+        os.makedirs(os.path.join(self.tmp, "src"), exist_ok=True)
+        with open(os.path.join(self.tmp, "src", "mod.py"), "w", encoding="utf-8") as fh:
+            fh.write("def alpha():\n    return 1\n\n\ndef beta():\n    return 2\n")
+        path = self.write_shaping("src/mod.py:1-99#alpha")
+        rc, out, _err = run("shape", "validate", path, cwd=self.tmp)
+        self.assertEqual(rc, 1)
+        self.assertIn("out of bounds", out)
+
+        path = self.write_shaping("src/mod.py:1-3#no_such_symbol")
+        rc, out, _err = run("shape", "validate", path, cwd=self.tmp)
+        self.assertEqual(rc, 1)
+        self.assertIn("source symbol #no_such_symbol not found", out)
+
+        # Symbol exists in file, outside the cited line range -> warning, not error
+        path = self.write_shaping("src/mod.py:1-2#beta")
+        rc, out, err = run("shape", "validate", path, cwd=self.tmp)
+        self.assertEqual(rc, 0, out + err)
+        self.assertIn("WARN:", err)
+        self.assertIn("outside lines 1-2", err)
+
+    def test_non_file_sources_and_traversal(self):
+        for src in ("http://example.com:8080/a", "https://example.com/a:1",
+                    "cmd: pytest:1", "benchmark: run 1:2", "scratch probe"):
+            path = self.write_shaping(src)
+            rc, out, err = run("shape", "validate", path, cwd=self.tmp)
+            self.assertEqual(rc, 0, src + ": " + out + err)
+
+        path = self.write_shaping("../outside.py:1")
+        rc, out, _err = run("shape", "validate", path, cwd=self.tmp)
+        self.assertEqual(rc, 1)
+        self.assertIn("escapes worktree", out)
+
+
+class DagAndFocusTests(TempDirTest):
+    """Real DAG phase derivation, ready_phases, and focus card in status."""
+
+    DIAMOND_RUN = """# Run: diamond
+<!-- riel-run/v1 -->
+
+## Objective
+Diamond DAG execution.
+
+## Context
+
+### Why
+Parallel phases converge cleanly.
+
+### Context keywords
+- dag → graph
+
+## Deliverable
+Four phases done.
+
+## Constraints
+- stdlib only.
+
+## DO NOT
+- skip F3.
+
+## Phases
+```mermaid
+flowchart TD
+  F1["root"] --> F2["left"]
+  F1 --> F3["right"]
+  F2 --> F4["join"]
+  F3 --> F4
+```
+
+### F1: root
+- RUN echo f1
+
+#### Claims
+- P1: root holds — anchor: §F1#1
+
+#### Gates
+- G1: root gate — cmd: true
+
+#### Deliverable
+- root built
+
+### F2: left
+- RUN echo f2
+
+#### Claims
+- P2: left holds — anchor: §F2#1
+
+#### Gates
+- G2: left gate — cmd: true
+
+#### Deliverable
+- left built
+
+### F3: right
+- RUN echo f3
+
+#### Claims
+- P3: right holds — anchor: §F3#1
+
+#### Gates
+- G3: right gate — cmd: true
+
+#### Deliverable
+- right built
+
+### F4: join
+- RUN echo f4
+
+#### Claims
+- P4: join holds — anchor: §F4#1
+
+#### Gates
+- G4: join gate — cmd: true
+
+#### Deliverable
+- join built
+"""
+
+    def test_diamond_dag_ready_phases_and_focus_card(self):
+        self.activate(text=self.DIAMOND_RUN, slug="diamond")
+        st = self.status("diamond")
+        self.assertEqual(st["ready_phases"], ["F1"])
+        self.assertEqual(st["current_phase"], "F1")
+        self.assertEqual(st["focus"]["phase"], "F1")
+        self.assertEqual(st["focus"]["deliverable"], ["root built"])
+        self.assertEqual(st["focus"]["pending_gates"],
+                         [{"id": "G1", "label": "root gate", "command": "true"}])
+        self.assertEqual(st["focus"]["open_claims"],
+                         [{"id": "P1", "text": "root holds"}])
+        self.assertEqual(st["focus"]["do_not"], ["skip F3."])
+
+        run("note", "--run", "diamond", "--gate", "G1", "--claim", "P1",
+            "--covering", "f1", cwd=self.tmp)
+        st = self.status("diamond")
+        self.assertEqual(st["ready_phases"], ["F2", "F3"])
+        self.assertEqual(st["current_phase"], "F2")
+
+        run("note", "--run", "diamond", "--gate", "G2", "--claim", "P2",
+            "--covering", "f2", cwd=self.tmp)
+        st = self.status("diamond")
+        self.assertEqual(st["ready_phases"], ["F3"])
+        self.assertEqual(st["current_phase"], "F3")
+
+        run("note", "--run", "diamond", "--gate", "G3", "--claim", "P3",
+            "--covering", "f3", cwd=self.tmp)
+        st = self.status("diamond")
+        self.assertEqual(st["ready_phases"], ["F4"])
+        self.assertEqual(st["current_phase"], "F4")
+
+        run("note", "--run", "diamond", "--gate", "G4", "--claim", "P4",
+            "--covering", "f4", cwd=self.tmp)
+        st = self.status("diamond")
+        self.assertEqual(st["ready_phases"], [])
+        self.assertIsNone(st["current_phase"])
+        self.assertTrue(st["done"])
+
+    def test_mermaid_decision_loop_tracks_phase_dependency(self):
+        self.activate(text=MERMAID_RUN, slug="mermaid")
+        # Passing G2 before G1 must NOT complete F2 because F1 -> D1 -> F2
+        run("note", "--run", "mermaid", "--gate", "G2", "--claim", "P2",
+            "--command", "true", "--covering", "g2", cwd=self.tmp)
+        st = self.status("mermaid")
+        self.assertEqual(st["ready_phases"], ["F1"])
+        self.assertEqual(st["current_phase"], "F1")
+
+
+class PostelParserTests(TempDirTest):
+    """Em-dash (—), double-hyphen (--), and en-dash (–) clause separators."""
+
+    def test_postel_separators_and_version(self):
+        spec = importlib.util.spec_from_file_location("riel_engine_postel", ENGINE)
+        assert spec is not None and spec.loader is not None
+        eng = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(eng)
+        self.assertEqual(eng.VERSION, "5.0.0")
+
+        self.assertEqual(eng._clauses("a -- b – c — d"), ["a", "b", "c", "d"])
+        shaping = (
+            "# Shaping: postel\n\n"
+            "<!-- riel-shaping/v3 id:shp_12345678 -->\n\n"
+            "## Question\nDoes Postel work?\n\n"
+            "## Answer\nYes — supported by F1\n\n"
+            "## Findings\n"
+            "### F1: double hyphen works -- source: scratch probe, confidence high\n\n"
+            "### F2: en dash works – source: memory probe, confidence med\n\n"
+            "## Facts\n- ok\n\n## Not wanted\n- none\n\n"
+            "## What we want\n- ok\n\n## Open\n- Q1: q? -- settled-by: test\n"
+        )
+        findings = eng.shaping_findings(shaping)
+        self.assertEqual(findings[0]["text"], "double hyphen works")
+        self.assertEqual(findings[0]["source"], "scratch probe")
+        self.assertEqual(findings[1]["text"], "en dash works")
+        self.assertEqual(findings[1]["source"], "memory probe")
+
+        basis_md = "## Context\n\n### Basis\n- F1: fact -- source: probe -- confidence: high\n"
+        basis = eng._parse_basis(basis_md)
+        self.assertEqual(basis, [{"id": "F1", "text": "fact",
+                                  "source": "probe", "confidence": "high"}])
+
+        open_md = "## Open\n- Q1: question? – settled-by: pytest -- closed by: E1\n"
+        opens = eng._parse_open(open_md)
+        self.assertEqual(opens, [{"id": "Q1", "text": "question?",
+                                  "settled_by": "pytest", "closed_by": "E1"}])
+
+        # --core normalizes '--' or '–' to canonical ' — ' on write
+        self.activate()
+        rc, _out, err = run("note", "--core", "sep -- normalized", cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        rc, _out, err = run("note", "--core", "endash – normalized", cwd=self.tmp)
+        self.assertEqual(rc, 0, err)
+        body = self.read_run()
+        self.assertIn("- 1. sep — normalized", body)
+        self.assertIn("- 2. endash — normalized", body)
 
 
 if __name__ == "__main__":
